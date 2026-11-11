@@ -114,57 +114,69 @@
 /** @brief 段掩码：保留 bit28-16，忽略 PS 与 SA */
 #define CAN_HW_MASK_J1939_SEG   (0x1FFF0000u)
 
-/* ---- M14：8 邮箱现实下的极限压缩 ---- */
-/*
- * @section HWCFG_8MB 这颗 FlexCAN 只有 **8 个邮箱**（mb0~mb7）
- *
- * 这一条是实测出来的，与 SDK 的计算不符：
- *
- * @code
- * FlexCanDrv_Configure():  msgBufNum = (512 / 16) * 3 = 96
- * !e 读到:                 MCR = 0x00830060 → MAXMB = 0x60 = 96
- * 实测:                    mb0~mb7 正常，mb8 及以上**一条帧都收不到**
- * @endcode
- *
- * 排查过程值得记下来，因为它伪装了两次：
- *  - 第一次把标准帧段配到 mb15/16/17，结果三条全哑，而同一套掩码放 mb15 时
- *    测试通过（0x0A0 段）—— 让人以为是掩码问题；
- *  - 把标准帧挪到 mb7/8/9 后，mb7 通、mb8/9 哑 —— 才确定是**编号上限**，不是掩码。
- *
- * 症状永远是"某几条报文静默收不到"，没有任何报错，`!e` 的错误计数也不涨。
- *
- * @warning 结论：**CAN0 可用邮箱 = mb0~mb7**。规划时按 8 个算，不要看 MAXMB。
- *          8 个邮箱要分给 TX（诊断响应 / NM / 业务）与 RX（诊断请求 / NM /
- *          J1939 / 标准帧），一个都不能浪费 —— 这就是下面用"超级段掩码"的原因。
- */
+/* ---- 真实矩阵：CAN1 整车网按 PF 分组（M19）---- */
 
 /**
- * @brief J1939 **全段**：只匹配 bit28-24（优先级 6 + DP/EDP=0），忽略 PGN 与 SA
- * @note  `0x18xxxxxx` 是 J1939 最常用的优先级段（P=6）。掩码 `0x1F000000`
- *        只保留 bit28-24，所以 `0x18FF0110`、`0x18FEE000`、`0x18FEA100`
- *        全部落进同一个邮箱，由 CanIf 按 PGN 细分。
+ * @section HWCFG_PF_GROUP 按 PDU Format 分组：34 条报文 → 7 个邮箱
  *
- * @warning 这个掩码会把**所有优先级 6 的扩展帧**都收进来（包括本工程不用
- *          的 PGN）。这是 8 邮箱约束下的必要代价：宁可多收进来让软件过滤，
- *          也不能因为邮箱不够而漏收。压测时正好用它检验软件过滤的分发能力。
+ * Foton L1 通信矩阵的 34 条 BCM 接收报文全部是 J1939 扩展帧，且**每条报文的
+ * PGN 都不同**（`PS` 字节各不相同）。若一条报文一个邮箱要 34 个；
+ * 按 **PF 分组** 只要 7 个：
+ *
+ * | mb | PF | 覆盖的 PGN | 条数 |
+ * |----|----|-----------|------|
+ * | 6 | 0xEB | TP.DT（传输协议数据） | 1 |
+ * | 7 | 0xEC | TP.CM（传输协议连接管理） | 1 |
+ * | 8 | 0xEE | ACL | 1 |
+ * | 9 | 0xF0 | EEC1/EEC3/ERC1/ERC3/EBC1/ETC2/CRASH | 6 |
+ * | 10 | 0xFD | EOI/DLCC1/EBC5 | 3 |
+ * | 11 | 0xFE | CCVS/CCVS1/VDC1/AMB/TCO1/DM1_TPMS/TIRE_COND/ETC5 | 8 |
+ * | 12 | 0xFF | ESCL1/ESCLM/PEPS1/PEPS2/ID1~3/DW/EEC3/ECC2/VCU4/ESCL_NM | 14 |
+ *
+ * 软件层（CanIf）再用 `0x1FFFFF00` 精确到 PGN，屏蔽源地址 —— 有些 PGN
+ * 矩阵里就是**同 PGN 多个 SA**（如 0xFEF1 有 SA=0x00 和 0x21 两条）。
+ *
+ * @warning **掩码必须屏蔽优先级 bit28:26。** 矩阵里同一条报文的优先级从 3 到 6
+ *          都有（`0x0CF00400` 是 P=3、`0x18FEF100` 是 P=6）。若沿用 CAN0 测试
+ *          通道的 `0x1FFF0000`（含 bit28:26），P 不一致的帧会被硬件直接丢掉，
+ *          且**没有任何报错** —— 症状是"某些 PGN 收得到、某些收不到"。
+ *
+ * @note 掩码取 `0x00FF0000` 而不是 `0x03FF0000`：后者会额外要求
+ *       bit25(R 保留位) 与 bit24(DP 数据页) 匹配 0。当前矩阵全是 DP=0，
+ *       但 J1939 里 DP=1 的 PGN（`0x1xxxxx`）是合法存在的，
+ *       屏蔽掉两位可以让硬件层对未来扩展免疫 —— 硬件宽、软件窄。
  */
-#define CAN_HW_ID_J1939_ALL     (0x18000000u)
-#define CAN_HW_MASK_J1939_ALL   (0x1F000000u)
+#define CAN_HW_MASK_J1939_PF    (0x00FF0000u)
 
-/**
- * @brief 标准帧**全段**：`0x000~0x3FF`（11 位标准 ID 的全部）
- *
- * @details 8 邮箱下标准帧只能占一个邮箱，而 BCM 的私有报文散落在
- *          0x0A0 / 0x100 / 0x110 / 0x201 / 0x321 —— 跨度覆盖整个标准 ID 空间，
- *          唯一的办法是一次全收，靠 CanIf 精确分发。
- *
- * @note 诊断请求 0x7E0 与 NM 0x500 **不在** 0x000~0x3FF 内，各自独立邮箱，
- *       所以不会被这个"全收"邮箱抢走。
- * @note 本机自发的心跳 0x123 / Com 0x200 不会进这个邮箱 ——
- *       `MCR.SRXDIS` 默认禁用自收。
- */
-#define CAN_HW_ID_STD_ALL       (0x000u)
-#define CAN_HW_MASK_STD_ALL     (0x400u)
+/** @brief PF=0xEB：J1939 TP.DT（传输协议数据传送，多帧载荷） */
+#define CAN_HW_ID_PF_EB         (0x18EB0000u)
+/** @brief PF=0xEC：J1939 TP.CM（传输协议连接管理，多帧握手） */
+#define CAN_HW_ID_PF_EC         (0x18EC0000u)
+/** @brief PF=0xEE：ACL（0x98EEFF00，SA=0x00） */
+#define CAN_HW_ID_PF_EE         (0x18EE0000u)
+/** @brief PF=0xF0：发动机/制动/变速箱相关（EEC1、ERC1、EBC1…） */
+#define CAN_HW_ID_PF_F0         (0x18F00000u)
+/** @brief PF=0xFD：直接灯控/制动（DLCC1、EOI、EBC5） */
+#define CAN_HW_ID_PF_FD         (0x18FD0000u)
+/** @brief PF=0xFE：车速/环境/胎压（CCVS、AMB、VDC1、TCO1…） */
+#define CAN_HW_ID_PF_FE         (0x18FE0000u)
+/** @brief PF=0xFF：BCM 相关（ESCL、PEPS、ID1~3、DW、VCU） */
+#define CAN_HW_ID_PF_FF         (0x18FF0000u)
+
+/* ---- 真实矩阵：CAN1 的 6 条发送报文（BCM → 总线）---- */
+
+/** @brief 0x18FE4021 BCM_LCSF：灯光控制状态反馈 */
+#define CAN_HW_ID_TX_LCSF       (0x18FE4021u)
+/** @brief 0x18FF0C21 BCM_CTRL：车身控制命令 */
+#define CAN_HW_ID_TX_CTRL       (0x18FF0C21u)
+/** @brief 0x0CFDCC21 BCM_OEL：外部照明（P=3，高优先级） */
+#define CAN_HW_ID_TX_OEL        (0x0CFDCC21u)
+/** @brief 0x18FDCD21 BCM_OWW：雨刮/洗涤 */
+#define CAN_HW_ID_TX_OWW        (0x18FDCD21u)
+/** @brief 0x18FE4E21 BCM_DOOR_CTRL：门锁控制 */
+#define CAN_HW_ID_TX_DOOR       (0x18FE4E21u)
+/** @brief 0x18FECA21 BCM_DM1：诊断信息（TPMS 相关） */
+#define CAN_HW_ID_TX_DM1        (0x18FECA21u)
 
 /**
  * @brief J1939 段内**最大 PGN**：0x18FFFF00（PGN 0xFFFF，SA=0）
@@ -365,8 +377,33 @@ typedef struct {
  */
 #define CAN_HW_HTH_COM              (5u)
 
+/* ---- M19：CAN1 真实矩阵的 6 条发送报文 ---- */
+/*
+ * 为什么从 6 开始而不是从 2 开始重排：HTH 2 已经被 CAN1 的测试心跳 0x124
+ * 占用（M8 验证过），把它挪走会让 `CanTest_SendCan1()` 与 M8 回归脚本失效。
+ * **追加编号比重排便宜** —— HTH 只是表下标，中间不空就行。
+ */
+
+/** @brief HTH 6：CAN1 `0x18FE4021` BCM_LCSF（灯光控制状态反馈） */
+#define CAN_HW_HTH_CAN1_LCSF        (6u)
+
+/** @brief HTH 7：CAN1 `0x18FF0C21` BCM_CTRL（车身控制命令） */
+#define CAN_HW_HTH_CAN1_CTRL        (7u)
+
+/** @brief HTH 8：CAN1 `0x0CFDCC21` BCM_OEL（外部照明，P=3 高优先级） */
+#define CAN_HW_HTH_CAN1_OEL         (8u)
+
+/** @brief HTH 9：CAN1 `0x18FDCD21` BCM_OWW（雨刮/洗涤） */
+#define CAN_HW_HTH_CAN1_OWW         (9u)
+
+/** @brief HTH 10：CAN1 `0x18FE4E21` BCM_DOOR_CTRL（门锁控制） */
+#define CAN_HW_HTH_CAN1_DOOR        (10u)
+
+/** @brief HTH 11：CAN1 `0x18FECA21` BCM_DM1（诊断信息） */
+#define CAN_HW_HTH_CAN1_DM1         (11u)
+
 /** @brief HTH 表长度 */
-#define CAN_HW_HOH_NUM              (6u)
+#define CAN_HW_HOH_NUM              (12u)
 
 /* ============================ [ 表 ] ============================ */
 

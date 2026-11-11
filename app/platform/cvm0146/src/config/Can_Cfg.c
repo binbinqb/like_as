@@ -172,39 +172,70 @@ static const CanHw_MsgCfgType CanHw_MsgCfgs0[] = {
 };
 
 /**
- * @brief CAN1 邮箱表
- * @note  结构与 CAN0 相同，只是 ID 换成 0x124/0x322，方便在 Kvaser 上区分两路。
- * @warning CAN1 的**邮箱号从 0 重新开始**：每个控制器有自己的邮箱 RAM，
- *          互不干扰。CAN0 用 0~3，CAN1 也用 0~1。
+ * @brief CAN1 邮箱表：**实车整车网**（Foton L1 通信矩阵）
+ *
+ * @details @section CANCFG_CAN1_LAYOUT 15 个邮箱承载 M8 测试 + 真实矩阵
+ *
+ * | mb | 方向 | 内容 | 说明 |
+ * |----|------|------|------|
+ * | 0 / 1 | TX / RX | `0x124` / `0x322` | M8 验证过的测试报文，**保留作为对照物** |
+ * | 2~7 | TX | 6 条真实发送报文 | 一条报文一个邮箱（ID 在 CfgMsgObj 时写死） |
+ * | 8~14 | RX | 7 个 PF 段 | 覆盖 34 条接收报文 |
+ *
+ * **为什么保留 0x124/0x322**：上板验证真实矩阵时，需要一个"确实能收发"的
+ * 参照物。如果全部换成真实报文，就分不清"新配置生效了"还是"某条路径恰好还在跑"。
+ * 而且 M8 的回归脚本依赖它们。
+ *
+ * @warning **邮箱号从 0 重新开始**：每个控制器有自己的邮箱 RAM，互不干扰。
+ *          CAN0 用 mb0~mb14，CAN1 也从 mb0 开始，不冲突。
  */
 static const CanHw_MsgCfgType CanHw_MsgCfgs1[] = {
-	/* mb0：TX 0x124，标准帧 8 字节，发送完成中断 */
+	/* ---- M8 测试报文（保留）---- */
+
+	/** mb0：TX `0x124` 标准帧，首字节递增 —— Kvaser 侧可肉眼确认发送节奏 */
 	{ 0u, 1u, CAN_HW_ID_CAN1_TX, false, CAN_HW_MB_TX, 8u, true,  0u },
 
-	/* mb1：RX 0x322，标准帧，全掩码 */
+	/** mb1：RX `0x322` 标准帧，全掩码 —— 与 CAN0 的 0x321 配对，验两路独立 */
 	{ 1u, 1u, CAN_HW_ID_CAN1_RX, false, CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
 
-	/**
-	 * mb2：RX **PGN 掩码**示例，给 `CanIf_Cfg.c` 的 PGN 过滤项提供底下的硬件通道。
-	 *
-	 * @details @section HW_MASK_WHY 为什么这里也要放掩码
-	 *          **硬件邮箱过滤发生在 CanIf 之前**：帧的 ID 不满足 `individualMask` 时，
-	 *          控制器根本不会把它搬进邮箱、也不会置中断 —— CanIf 的软件掩码再正确，
-	 *          也没有机会执行。所以"一条 CanIf 过滤项匹配一组报文"这个能力，
-	 *          必须**两层同时放行**：
-	 *
-	 *          | 层 | 配置 | 作用 |
-	 *          |----|------|------|
-	 *          | 硬件（本表） | `canid=0x18FF0000` + `mask=0x1FFF0000` | 把整个 0x18FFxxxx 段收进来 |
-	 *          | 软件（CanIf_Cfg） | `canid=0x18FF0100` + `mask=0x1FFFFF00` | 再按 PGN 精确到 0x18FF01xx |
-	 *
-	 *          硬件掩码刻意比软件掩码**宽**：让 0x18FF0100 和 0x18FF0200 都进来，
-	 *          由软件区分。若硬件掩码和软件一样窄，软件过滤就永远测不到（也永远不生效）。
-	 *
-	 * @note `individualMask` 的语义：**1 = 必须匹配，0 = 不关心**（FlexCAN 标准）。
-	 *       0x1FFF0000 表示"高 13 位（优先级/DP/PF）匹配，低 16 位（PS/SA）不限"。
+	/* ---- M19：真实矩阵的 6 条发送报文 ---- */
+	/*
+	 * @note 每条报文独占一个邮箱，因为厂商 `FlexCanDrv_SetTxMsg()` 只写数据区，
+	 *       **不回写 ID 与 DLC** —— 那两项在 `CfgMsgObj()` 时就烧进邮箱了。
+	 *       这条约束决定了 N 条 TX 报文必须有 N 个邮箱 + N 个 HTH。
 	 */
-	{ 2u, 1u, 0x18FF0000u, true, CAN_HW_MB_RX, 8u, true, 0x1FFF0000u },
+	{ 2u, 1u, CAN_HW_ID_TX_LCSF,  true, CAN_HW_MB_TX, 8u, true,  0u },
+	{ 3u, 1u, CAN_HW_ID_TX_CTRL,  true, CAN_HW_MB_TX, 8u, true,  0u },
+	{ 4u, 1u, CAN_HW_ID_TX_OEL,   true, CAN_HW_MB_TX, 8u, true,  0u },
+	{ 5u, 1u, CAN_HW_ID_TX_OWW,   true, CAN_HW_MB_TX, 8u, true,  0u },
+	{ 6u, 1u, CAN_HW_ID_TX_DOOR,  true, CAN_HW_MB_TX, 8u, true,  0u },
+	{ 7u, 1u, CAN_HW_ID_TX_DM1,   true, CAN_HW_MB_TX, 8u, true,  0u },
+
+	/* ---- M19：真实矩阵的 7 个接收 PF 段 ---- */
+	/*
+	 * @details @section CANCFG_PF_WHY 为什么按 PF 分组而不是一条报文一个邮箱
+	 *
+	 *          34 条接收报文的 **PGN 全不相同**（PS 字节各异），若一条一个邮箱要
+	 *          34 个；按 PF（bit23:16，即 EDP+PF）分组只要 **7 个**。
+	 *
+	 *          代价是硬件层放行得比实际需要更宽（同一个 PF 下可能有本工程不用的
+	 *          PGN），由 CanIf 的软件掩码 `0x1FFFFF00` 再精确到 PGN。
+	 *          这正是"硬件宽、软件窄"——**反过来做不到**：硬件不放行的帧
+	 *          连中断都不会有，软件配得再对也没机会执行。
+	 *
+	 * @warning 掩码必须用 `CAN_HW_MASK_J1939_PF`（`0x00FF0000`），
+	 *          **不能用 CAN0 测试通道的 `0x1FFF0000`**。区别在 bit28:26：
+	 *          `0x1FFF0000` 要求优先级也匹配，而真实矩阵里 `0x0CFDCC21` 是 P=3、
+	 *          `0x18FEF100` 是 P=6 —— 用含优先级的掩码会让 P 不一致的帧被硬件
+	 *          静默丢弃，症状是"某些 PGN 收得到、某些收不到"。
+	 */
+	{ 8u,  1u, CAN_HW_ID_PF_EB, true, CAN_HW_MB_RX, 8u, true, CAN_HW_MASK_J1939_PF },
+	{ 9u,  1u, CAN_HW_ID_PF_EC, true, CAN_HW_MB_RX, 8u, true, CAN_HW_MASK_J1939_PF },
+	{ 10u, 1u, CAN_HW_ID_PF_EE, true, CAN_HW_MB_RX, 8u, true, CAN_HW_MASK_J1939_PF },
+	{ 11u, 1u, CAN_HW_ID_PF_F0, true, CAN_HW_MB_RX, 8u, true, CAN_HW_MASK_J1939_PF },
+	{ 12u, 1u, CAN_HW_ID_PF_FD, true, CAN_HW_MB_RX, 8u, true, CAN_HW_MASK_J1939_PF },
+	{ 13u, 1u, CAN_HW_ID_PF_FE, true, CAN_HW_MB_RX, 8u, true, CAN_HW_MASK_J1939_PF },
+	{ 14u, 1u, CAN_HW_ID_PF_FF, true, CAN_HW_MB_RX, 8u, true, CAN_HW_MASK_J1939_PF },
 };
 
 /** @brief 每个通道一张邮箱表，下标 = 通道号 */
@@ -230,4 +261,24 @@ const CanHw_HohType CanHw_Hohs[CAN_HW_HOH_NUM] = {
 	{ 0u, 11u, CAN_HW_ID_NM,       8u },
 	/* HTH 5 → CAN0 邮箱 13，发 0x200（Com 信号，M10） */
 	{ 0u, 13u, CAN_HW_ID_COM_TX,   8u },
+
+	/* ---- M19：CAN1 真实矩阵的 6 条发送报文 ---- */
+	/*
+	 * @warning 这里的 `msgBufId` 必须与 `CanHw_MsgCfgs1[]` 的邮箱号**逐条对应**。
+	 *          对错了不会报错，只会"发出去的是别的 ID"或者"发不出去" ——
+	 *          `Can_Write()` 里有 ID 校验（`CanAc.c:962` 比对 `hoh->canId`），
+	 *          所以 ID 错会返回 `E_NOT_OK`，但**邮箱号错不会**被它发现。
+	 */
+	/* HTH 6  → CAN1 邮箱 2，发 0x18FE4021 BCM_LCSF */
+	{ 1u,  2u, CAN_HW_ID_TX_LCSF,  8u },
+	/* HTH 7  → CAN1 邮箱 3，发 0x18FF0C21 BCM_CTRL */
+	{ 1u,  3u, CAN_HW_ID_TX_CTRL,  8u },
+	/* HTH 8  → CAN1 邮箱 4，发 0x0CFDCC21 BCM_OEL */
+	{ 1u,  4u, CAN_HW_ID_TX_OEL,   8u },
+	/* HTH 9  → CAN1 邮箱 5，发 0x18FDCD21 BCM_OWW */
+	{ 1u,  5u, CAN_HW_ID_TX_OWW,   8u },
+	/* HTH 10 → CAN1 邮箱 6，发 0x18FE4E21 BCM_DOOR_CTRL */
+	{ 1u,  6u, CAN_HW_ID_TX_DOOR,  8u },
+	/* HTH 11 → CAN1 邮箱 7，发 0x18FECA21 BCM_DM1 */
+	{ 1u,  7u, CAN_HW_ID_TX_DM1,   8u },
 };

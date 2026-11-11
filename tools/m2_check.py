@@ -9,7 +9,7 @@
 	4. **CAN0 RX 标准帧**：发 `0x321` → 串口 `pdu=0 (CAN0 0x321)`，数据回显正确；
 	5. **CAN0 RX 扩展帧**：发 `0x18FF0001` → 串口 `pdu=1 (CAN0 0x18FF0001(ext))`；
 	6. **CAN1 TX**：`0x124`，标准帧，首字节递增，其余恒 C3；
-	7. **CAN1 RX**：发 `0x322` → 串口 `pdu=2 (CAN1 0x322)`；
+	7. **CAN1 RX**：发真实报文 `0x0CF00400` → 串口 `pdu=23`；
 	8. **TX 确认**：心跳行 `txok` 在增长 —— 证明两个通道的邮箱中断都在调
 	   `CanIf_TxConfirmation()`（这条最容易断：中断里漏处理 TX 分支，发送照样成功，
 	   但 confirmation 永远不来，接 CanTp 后会永久卡在第一帧）；
@@ -54,7 +54,7 @@ CAN0_TX_EXT = 0x18FF0002
 CAN0_RX_STD = 0x321
 CAN0_RX_EXT = 0x18FF0001
 CAN1_TX_STD = 0x124
-CAN1_RX_STD = 0x322
+CAN1_RX_EEC1 = 0x0CF00400   # M19：CAN1 的真实报文（PF=0xF0 段）
 
 RE_HB = re.compile(rb"\[\s*(\d+) ms\] alive #(\d+) txok=(\d+)")
 
@@ -206,34 +206,35 @@ def main():
 	results.append(("CAN0 RX: 扩展帧数据 8 字节全部正确",
 					"11 22 33 44 55 66 77 88" in resp1.lower()))
 
-	# ---- 7) CAN1 RX 0x322 ----
+	# ---- 7) CAN1 RX：真实矩阵报文 ----
+	#
+	# @warning M19 之前这里发的是 0x322（CAN1 的测试标准帧）。接入 Foton 真实矩阵后，
+	#          **CAN1 的过滤表整表换成了 34 条整车报文**，0x322 不再存在 ——
+	#          它在 mb1 上仍能被硬件收到（`!k` 的 mb1 会涨），但 CanIf 找不到
+	#          对应表项，静默丢弃。所以用例改成真实报文。
+	#
+	#          这也是"分层"的一个实证：**硬件收到 ≠ 软件收到**。
 	ser.reset_input_buffer()
-	bus1.send(can.Message(arbitration_id=CAN1_RX_STD,
+	bus1.send(can.Message(arbitration_id=CAN1_RX_EEC1,
 						  data=[0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8],
-						  is_extended_id=False, dlc=8))
-	time.sleep(0.5)
-	resp2 = ser.read(16384).decode("utf-8", "replace")
-	results.append(("CAN1 RX: 0x322 落到 pdu=2", "pdu=2" in resp2))
-	results.append(("CAN1 RX: 0x322 数据 8 字节全部正确",
-					"a1 a2 a3 a4 a5 a6 a7 a8" in resp2.lower()))
-
-	# ---- 8) RX 掩码匹配（J1939 PGN，忽略源地址）----
-	ser.reset_input_buffer()
-	# 0x18FF01AB 与过滤项 0x18FF0100 在掩码 0x1FFFFF00 下相等，SA=0xAB 被忽略
-	bus1.send(can.Message(arbitration_id=0x18FF01AB,
-						  data=[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
 						  is_extended_id=True, dlc=8))
 	time.sleep(0.5)
-	resp3 = ser.read(16384).decode("utf-8", "replace")
-	results.append(("RX 掩码: 0x18FF01AB 命中 PGN → pdu=3", "pdu=3" in resp3))
+	resp2 = ser.read(16384).decode("utf-8", "replace")
+	results.append(("CAN1 RX: 0x0CF00400 落到 pdu=23", "pdu=23" in resp2))
+	results.append(("CAN1 RX: 真实报文数据 8 字节全部正确",
+					"a1 a2 a3 a4 a5 a6 a7 a8" in resp2.lower()))
 
-	# 同一 PGN 的另一条不应命中（PS 不同）
+	# ---- 8) 软件过滤：同 PF 段内、矩阵里没有的 PGN 必须被丢掉 ----
+	#
+	# 0x18FF0700 的 PF=0xFF，**硬件段邮箱 mb14 会放行**（掩码只匹配 PF），
+	# 但 CanIf 的 34 条精确表里没有它 —— 所以是纯粹在验软件过滤层。
+	# 这一条比"硬件就挡掉"更有价值。
 	ser.reset_input_buffer()
-	bus1.send(can.Message(arbitration_id=0x18FF0200,
+	bus1.send(can.Message(arbitration_id=0x18FF0700,
 						  data=[0xEE] * 8, is_extended_id=True, dlc=8))
 	time.sleep(0.5)
 	resp4 = ser.read(16384).decode("utf-8", "replace")
-	results.append(("RX 掩码: 0x18FF0200 不命中 (PS 不同)", "[can] rx" not in resp4))
+	results.append(("RX 过滤: 0x18FF0700 硬件放行但软件丢弃", "[can] rx" not in resp4))
 
 	# ---- 9) 未匹配报文必须被静默丢弃 ----
 	# 注：这条验的是"硬件 + 软件两层合计"的效果 —— 0x7FF 在 CAN0 的邮箱表里

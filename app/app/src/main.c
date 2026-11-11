@@ -34,7 +34,7 @@
  *          打印放主循环。
  *
  * @author  binbina
- * @version V2.7.0
+ * @version V2.8.0
  *
  * @par 修改记录
  * | 版本   | 日期       | 作者    | 变更说明 |
@@ -57,6 +57,7 @@
  * | V2.5.0 | 2026-11-11 | binbina | M14：通信矩阵承载能力（段掩码邮箱 + 硬件/软件双层过滤压测） |
  * | V2.6.0 | 2026-11-11 | binbina | M15：ADC 模块（as-master 无，按三段式补；双单元 + 多通道 + PDB/TRGMUX） |
  * | V2.7.0 | 2026-11-11 | binbina | M18：PWM 模块（PwmLite 4 路、0%/100% 静态电平、同实例同频约束） |
+ * | V2.8.0 | 2026-11-11 | binbina | M19：CAN1 真实通信矩阵接入（34 RX 按 PF 分组 / 6 TX / 生成器注入） |
  */
 
 #include "platform_cvm0146.h"
@@ -405,6 +406,8 @@ static void Fault_Dump(void);
 /* 高频发送（`!f`）也在总线故障区，同样要前置声明 */
 static void CanTest_Burst(uint16_t n);
 static void CanTest_DumpRxCounters(void);
+static void CanTest_SendRealMatrix(void);
+static void PwmCmd_Exec(char c);
 
 /* 网络管理（M9）实现在"网络管理"区，晚于 CmdExec */
 static void Nm_CmdExec(char c);
@@ -689,6 +692,11 @@ static void CmdExec(char c)
 		/* EcuM：u=释放 RUN / U=回 RUN / q=模式查询（M11）/ z=睡一次（M12） */
 		EcuM_CmdExec(c);
 		return;
+	case 'M':
+		/* CAN1 真实矩阵发送（M19）：6 条报文各发一次，首字节 0xA1~0xA6。
+		 * Kvaser 挂在 CAN1 上才能收到（也需要它提供 ACK）。 */
+		CanTest_SendRealMatrix();
+		return;
 	case 'l':
 	case 'L':
 		/* PWM 验收（M18）：l=演示扫描 / L=恢复初值。
@@ -788,6 +796,66 @@ static void CanTest_SendCan1(void)
 }
 
 /**
+ * @brief 发一轮 CAN1 真实矩阵的 6 条报文（M19 验收用）
+ *
+ * @details 每条报文的**首字节放一个可区分的序号**（`0xA1`~`0xA6`），
+ *          这样 Kvaser 侧抓到帧后能一眼看出"哪一条到了、哪一条没到"，
+ *          不需要去比对 ID 表。
+ *
+ * @note  这 6 条目前**只从这里发**，还没接 Com。接 Com 之后应用应当
+ *        改信号值、由 `Com_MainFunctionTx` 按周期发 —— 直接调
+ *        `CanIf_Transmit()` 会绕过 Com 的打包与周期，等于把分层拆掉。
+ *        现在这么做是为了**单独验证 Tx 链路**（hoh → 邮箱 → 引脚）。
+ *
+ * @warning CAN1 上必须**有另一个节点**（Kvaser）提供 ACK，否则
+ *          TEC 会涨到 128 进入 error passive，之后 `Can_Write()` 返回
+ *          `CAN_BUSY`，表现为"发不出去"。这不是配置错。
+ */
+static void CanTest_SendRealMatrix(void)
+{
+	static const struct {
+		PduIdType pdu;
+		uint8_t   tag;
+		const char *name;
+	} tx[] = {
+		{ (PduIdType)CANIF_TX_CAN1_LCSF, 0xA1u, "0x18FE4021 LCSF" },
+		{ (PduIdType)CANIF_TX_CAN1_CTRL, 0xA2u, "0x18FF0C21 CTRL" },
+		{ (PduIdType)CANIF_TX_CAN1_OEL,  0xA3u, "0x0CFDCC21 OEL " },
+		{ (PduIdType)CANIF_TX_CAN1_OWW,  0xA4u, "0x18FDCD21 OWW " },
+		{ (PduIdType)CANIF_TX_CAN1_DOOR, 0xA5u, "0x18FE4E21 DOOR" },
+		{ (PduIdType)CANIF_TX_CAN1_DM1,  0xA6u, "0x18FECA21 DM1 " },
+	};
+	PduInfoType pdu;
+	uint8_t     data[8];
+	uint8_t     i;
+	uint8_t     j;
+	uint8_t     okCount = 0u;
+
+	/* 每条发 3 次：一帧也可能因为仲裁/总线错误丢掉，重复发便于肉眼核对 */
+	for (i = 0u; i < (uint8_t)ARRAY_SIZE(tx); i++) {
+		for (j = 0u; j < 8u; j++) {
+			data[j] = (uint8_t)(tx[i].tag + j);
+		}
+
+		pdu.SduDataPtr  = data;
+		pdu.SduLength   = 8u;
+		pdu.MetaDataPtr = NULL;
+
+		if (CanIf_Transmit(tx[i].pdu, &pdu) == E_OK) {
+			okCount++;
+			Platform_Printf("   tx %s  tag=0x%02X  ok\n",
+			                tx[i].name, (unsigned)tx[i].tag);
+		} else {
+			Platform_Printf("   tx %s  **E_NOT_OK**（CAN1 无 ACK？）\n",
+			                tx[i].name);
+		}
+	}
+
+	Platform_Printf("   %u / %u sent\n", (unsigned)okCount,
+	                (unsigned)ARRAY_SIZE(tx));
+}
+
+/**
  * @brief 发送一帧扩展帧（29 位，0x18FF0002）
  * @note  单独一条，用来证明"同一个 CanIf 能同时带标准帧和扩展帧"，
  *        而且扩展帧不需要应用做任何特殊处理 —— 标志位在配置表里。
@@ -842,6 +910,42 @@ static const char *const s_pduName[CANIF_RX_PDU_NUM] = {
 	"CAN0 0x18FF06xx(ext)", /* 20 CANIF_RX_J1939_FAST */
 	"CAN0 0x18FEE0xx(ext)", /* 21 CANIF_RX_J1939_ODO */
 	"CAN0 0x18FFFF00(ext)", /* 22 CANIF_RX_J1939_MAXID（段内最大 PGN） */
+
+	/* ---- M19：CAN1 真实矩阵（23~56），编号见 CanIf_Cfg.h ---- */
+	"CAN1 0x8CF00400 EEC1",	/* 23 */
+	"CAN1 0x8CFD9200 EOI",	/* 24 */
+	"CAN1 0x8CFE6CEE TCO1",	/* 25 */
+	"CAN1 0x90FFB04D ESCL1",	/* 26 */
+	"CAN1 0x90FFB24D ESCLM",	/* 27 */
+	"CAN1 0x90FFB634 PEPS",	/* 28 */
+	"CAN1 0x94F02B54 CRASH",	/* 29 */
+	"CAN1 0x98EEFF00 ACL",	/* 30 */
+	"CAN1 0x98F00000 ERC3",	/* 31 */
+	"CAN1 0x98F0000F ERC1",	/* 32 */
+	"CAN1 0x98F0010B EBC1",	/* 33 */
+	"CAN1 0x98F00503 ETC2",	/* 34 */
+	"CAN1 0x98FD0700 DLCC1",	/* 35 */
+	"CAN1 0x98FDC40B EBC5",	/* 36 */
+	"CAN1 0x98FE4F0B VDC1",	/* 37 */
+	"CAN1 0x98FECA33 DM1",	/* 38 */
+	"CAN1 0x98FEF100 CCVS1",	/* 39 */
+	"CAN1 0x98FEF121 CCVS",	/* 40 */
+	"CAN1 0x98FEF433 TIRE",	/* 41 */
+	"CAN1 0x98FEF500 AMB",	/* 42 */
+	"CAN1 0x98FF0534 PEPS1",	/* 43 */
+	"CAN1 0x98FF0917 IC",	/* 44 */
+	"CAN1 0x98FF0CEC DW",	/* 45 */
+	"CAN1 0x98FF12EF VCU",	/* 46 */
+	"CAN1 0x98FF4C56 ID1",	/* 47 */
+	"CAN1 0x98FF4D56 ID2",	/* 48 */
+	"CAN1 0x98FF4E56 ID3",	/* 49 */
+	"CAN1 0x98FF7534 PEPS2",	/* 50 */
+	"CAN1 0x98FF904D ESCL",	/* 51 */
+	"CAN1 0x98FFBA19 EEC3",	/* 52 */
+	"CAN1 0x98FFBC19 ECC2",	/* 53 */
+	"CAN1 0x9CEBFF21 TP",	/* 54 */
+	"CAN1 0x9CECFF21 TP",	/* 55 */
+	"CAN1 0x9CFEC321 ETC5",	/* 56 */
 };
 
 /**
@@ -2020,7 +2124,8 @@ int main(void)
 	Platform_Puts("  !b !B = dtc dump / clear (CAN bus-off snapshot)\n");
 	Platform_Puts("  !i    = inject one bus-off record (fault injection)\n");
 	Platform_Puts("  !e !f = CAN0 registers / burst 100 frames\n");
-	Platform_Puts("  !k !K = can rx counters / clear (stress)\n\n");
+	Platform_Puts("  !k !K = can rx counters / clear (stress)\n");
+	Platform_Puts("  !M    = CAN1 real matrix TX (6 msgs, tag A1~A6)\n\n");
 
 	for (;;) {
 		/* 1) 串口输入：`!x` 是控制命令，其余原样回显

@@ -143,7 +143,47 @@
 #define CANIF_RX_J1939_MAXID        (22u)
 
 /** @brief RX PDU 总数（配表时用于自检） */
-#define CANIF_RX_PDU_NUM            (23u)
+#define CANIF_RX_PDU_NUM            (57u)
+
+/* @generated BEGIN: CAN1 real matrix */
+/* 由 tools/sync_canif.py 从 can1.dbc 生成，请勿手改。
+ * 编号从 23 开始：CAN0 已占用 0~22。 */
+#define CANIF_RX_CAN1_EEC1_ELECTRONIC_ENGINE_CONTROLLER_1          (23u)  /**< 0x8CF00400 */
+#define CANIF_RX_CAN1_EOI                                          (24u)  /**< 0x8CFD9200 */
+#define CANIF_RX_CAN1_TCO1                                         (25u)  /**< 0x8CFE6CEE */
+#define CANIF_RX_CAN1_ESCL1                                        (26u)  /**< 0x90FFB04D */
+#define CANIF_RX_CAN1_ESCLM_PEPS                                   (27u)  /**< 0x90FFB24D */
+#define CANIF_RX_CAN1_PEPS_ESCLM                                   (28u)  /**< 0x90FFB634 */
+#define CANIF_RX_CAN1_CRASH_NOTIFICATION                           (29u)  /**< 0x94F02B54 */
+#define CANIF_RX_CAN1_ACL                                          (30u)  /**< 0x98EEFF00 */
+#define CANIF_RX_CAN1_ERC3                                         (31u)  /**< 0x98F00000 */
+#define CANIF_RX_CAN1_ERC1                                         (32u)  /**< 0x98F0000F */
+#define CANIF_RX_CAN1_EBC1_ELECTRONIC_BRAKE_CONTROLLER_1           (33u)  /**< 0x98F0010B */
+#define CANIF_RX_CAN1_ETC2                                         (34u)  /**< 0x98F00503 */
+#define CANIF_RX_CAN1_DLCC1_DIRECT_LAMP_CONTROL_COMMAND_1          (35u)  /**< 0x98FD0700 */
+#define CANIF_RX_CAN1_EBC5_ELECTRONIC_BRAKE_CONTROLLER_5           (36u)  /**< 0x98FDC40B */
+#define CANIF_RX_CAN1_VDC1_VEHICLE_DYNAMIC_STABILITY_CONTROL_1     (37u)  /**< 0x98FE4F0B */
+#define CANIF_RX_CAN1_DM1_TPMS                                     (38u)  /**< 0x98FECA33 */
+#define CANIF_RX_CAN1_CCVS1_CRUISE_CONTROL_VEHICLE_SPEED_1         (39u)  /**< 0x98FEF100 */
+#define CANIF_RX_CAN1_CCVS                                         (40u)  /**< 0x98FEF121 */
+#define CANIF_RX_CAN1_TIRE_CONDITION                               (41u)  /**< 0x98FEF433 */
+#define CANIF_RX_CAN1_AMB_AMBIENT_CONDITIONS                       (42u)  /**< 0x98FEF500 */
+#define CANIF_RX_CAN1_PEPS1                                        (43u)  /**< 0x98FF0534 */
+#define CANIF_RX_CAN1_IC_MSG                                       (44u)  /**< 0x98FF0917 */
+#define CANIF_RX_CAN1_DW_STATE                                     (45u)  /**< 0x98FF0CEC */
+#define CANIF_RX_CAN1_VCU_4                                        (46u)  /**< 0x98FF12EF */
+#define CANIF_RX_CAN1_ID1                                          (47u)  /**< 0x98FF4C56 */
+#define CANIF_RX_CAN1_ID2                                          (48u)  /**< 0x98FF4D56 */
+#define CANIF_RX_CAN1_ID3                                          (49u)  /**< 0x98FF4E56 */
+#define CANIF_RX_CAN1_PEPS2                                        (50u)  /**< 0x98FF7534 */
+#define CANIF_RX_CAN1_ESCL_NM                                      (51u)  /**< 0x98FF904D */
+#define CANIF_RX_CAN1_EEC3                                         (52u)  /**< 0x98FFBA19 */
+#define CANIF_RX_CAN1_ECC2                                         (53u)  /**< 0x98FFBC19 */
+#define CANIF_RX_CAN1_TP_DT                                        (54u)  /**< 0x9CEBFF21 */
+#define CANIF_RX_CAN1_TP_CM                                        (55u)  /**< 0x9CECFF21 */
+#define CANIF_RX_CAN1_ETC5                                         (56u)  /**< 0x9CFEC321 */
+#define CANIF_RX_CAN1_NUM                           (34u)
+/* @generated END: CAN1 real matrix */
 
 /* ============================ [ TX PDU 编号 ] ============================ */
 /*
@@ -177,8 +217,35 @@
  */
 #define CANIF_TX_COM_TEST          (5u)
 
+/* ---- M19：CAN1 真实矩阵的 6 条发送报文 ---- */
+/*
+ * @note 这 6 条目前**只由 `CanIf_Transmit()` 直接发**（`!n` 命令里的
+ *       `CanTest_SendRealMatrix()`），还没接 Com —— Com 侧的周期发送
+ *       需要 `Com_Cfg` 里对应 PDU 与信号，那是下一步。
+ * @warning `hoh` 必须与 `CanHw_Hohs[]` 同号。`CanIf_Cfg.c` 里用
+ *          `CAN_HW_HTH_CAN1_*` 宏引用，不要写裸数字。
+ */
+
+/** @brief CAN1：0x18FE4021 BCM_LCSF（灯光控制状态反馈） */
+#define CANIF_TX_CAN1_LCSF          (6u)
+
+/** @brief CAN1：0x18FF0C21 BCM_CTRL（车身控制命令） */
+#define CANIF_TX_CAN1_CTRL          (7u)
+
+/** @brief CAN1：0x0CFDCC21 BCM_OEL（外部照明，P=3） */
+#define CANIF_TX_CAN1_OEL           (8u)
+
+/** @brief CAN1：0x18FDCD21 BCM_OWW（雨刮/洗涤） */
+#define CANIF_TX_CAN1_OWW           (9u)
+
+/** @brief CAN1：0x18FE4E21 BCM_DOOR_CTRL（门锁控制） */
+#define CANIF_TX_CAN1_DOOR          (10u)
+
+/** @brief CAN1：0x18FECA21 BCM_DM1（诊断信息） */
+#define CANIF_TX_CAN1_DM1           (11u)
+
 /** @brief TX PDU 总数 */
-#define CANIF_TX_PDU_NUM            (6u)
+#define CANIF_TX_PDU_NUM            (12u)
 
 /* ============================ [ 周期 ] ============================ */
 

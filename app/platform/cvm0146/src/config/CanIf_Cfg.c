@@ -334,36 +334,248 @@ static const CanIf_RxPduType CanIf_RxPdus_CAN0[] = {
  *          加第二条时要注意"表内有序"，而不是"整表全局有序" ——
  *          `CanIf_RxDispatch()` 是按 `ControllerId` 选表后各自二分的。
  */
+/* @generated BEGIN: CAN1 real matrix */
 static const CanIf_RxPduType CanIf_RxPdus_CAN1[] = {
-	/* 0x322 标准帧 */
 	{
-		App_CanIfRxIndication,          /* rxInd */
-		CANIF_RX_CAN1_TEST,             /* rxPduId */
-		0x322u,                         /* canid */
-		0x1FFFFFFFu,                    /* mask */
-		1u,                             /* hoh：CAN1 邮箱 1 */
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_EEC1_ELECTRONIC_ENGINE_CONTROLLER_1,
+		0x0CF00400u,			/* canid：PF=0xF0 */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		11u,			/* hoh：mb11（PF=0xF0 段） */
 	},
-	/**
-	 * J1939 PGN 匹配示例：ID = 0x18FF0100，掩码 0x1FFFFF00。
-	 * 匹配式是 `rxPdu->canid == (canid & rxPdu->mask)`，所以：
-	 *   收到 0x18FF01AB → 0x18FF01AB & 0x1FFFFF00 = 0x18FF0100 → **命中**
-	 *   收到 0x18FF0200 → 0x18FF0200 & 0x1FFFFF00 = 0x18FF0200 → 不命中
-	 * 即"同一 PGN、任意源地址都收"，这正是 J1939 的常规用法。
-	 *
-	 * @warning **表里的 `canid` 必须本身就在掩码范围内**，即 `canid & mask == canid`。
-	 *          因为比较的是"掩码后的来帧 ID"与"原样存储的 canid"是否相等：
-	 *          若写 `canid=0x18FF0100` 却配 `mask=0x1FFF0000`，则
-	 *          `0x18FF0100 & 0x1FFF0000 = 0x18FF0000 != 0x18FF0100`，**永远匹配不上**。
-	 *          这个错误不会报任何警，症状只是"这条报文收不到"。
-	 */
 	{
-		App_CanIfRxIndication,          /* rxInd */
-		CANIF_RX_CAN1_PGN,              /* rxPduId */
-		0x18FF0100u,                    /* canid（PGN 基址） */
-		0x1FFFFF00u,                    /* mask：忽略最低 8 位（源地址） */
-		2u,                             /* hoh：CAN1 邮箱 2（硬件掩码 0x1FFF0000） */
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_EOI,
+		0x0CFD9200u,			/* canid：PF=0xFD */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		12u,			/* hoh：mb12（PF=0xFD 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_TCO1,
+		0x0CFE6CEEu,			/* canid：PF=0xFE */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		13u,			/* hoh：mb13（PF=0xFE 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_ESCL1,
+		0x10FFB04Du,			/* canid：PF=0xFF */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		14u,			/* hoh：mb14（PF=0xFF 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_ESCLM_PEPS,
+		0x10FFB24Du,			/* canid：PF=0xFF */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		14u,			/* hoh：mb14（PF=0xFF 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_PEPS_ESCLM,
+		0x10FFB634u,			/* canid：PF=0xFF */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		14u,			/* hoh：mb14（PF=0xFF 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_CRASH_NOTIFICATION,
+		0x14F02B54u,			/* canid：PF=0xF0 */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		11u,			/* hoh：mb11（PF=0xF0 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_ACL,
+		0x18EEFF00u,			/* canid：PF=0xEE */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		10u,			/* hoh：mb10（PF=0xEE 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_ERC3,
+		0x18F00000u,			/* canid：PF=0xF0 */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		11u,			/* hoh：mb11（PF=0xF0 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_ERC1,
+		0x18F0000Fu,			/* canid：PF=0xF0 */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		11u,			/* hoh：mb11（PF=0xF0 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_EBC1_ELECTRONIC_BRAKE_CONTROLLER_1,
+		0x18F0010Bu,			/* canid：PF=0xF0 */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		11u,			/* hoh：mb11（PF=0xF0 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_ETC2,
+		0x18F00503u,			/* canid：PF=0xF0 */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		11u,			/* hoh：mb11（PF=0xF0 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_DLCC1_DIRECT_LAMP_CONTROL_COMMAND_1,
+		0x18FD0700u,			/* canid：PF=0xFD */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		12u,			/* hoh：mb12（PF=0xFD 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_EBC5_ELECTRONIC_BRAKE_CONTROLLER_5,
+		0x18FDC40Bu,			/* canid：PF=0xFD */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		12u,			/* hoh：mb12（PF=0xFD 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_VDC1_VEHICLE_DYNAMIC_STABILITY_CONTROL_1,
+		0x18FE4F0Bu,			/* canid：PF=0xFE */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		13u,			/* hoh：mb13（PF=0xFE 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_DM1_TPMS,
+		0x18FECA33u,			/* canid：PF=0xFE */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		13u,			/* hoh：mb13（PF=0xFE 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_CCVS1_CRUISE_CONTROL_VEHICLE_SPEED_1,
+		0x18FEF100u,			/* canid：PF=0xFE */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		13u,			/* hoh：mb13（PF=0xFE 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_CCVS,
+		0x18FEF121u,			/* canid：PF=0xFE */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		13u,			/* hoh：mb13（PF=0xFE 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_TIRE_CONDITION,
+		0x18FEF433u,			/* canid：PF=0xFE */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		13u,			/* hoh：mb13（PF=0xFE 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_AMB_AMBIENT_CONDITIONS,
+		0x18FEF500u,			/* canid：PF=0xFE */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		13u,			/* hoh：mb13（PF=0xFE 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_PEPS1,
+		0x18FF0534u,			/* canid：PF=0xFF */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		14u,			/* hoh：mb14（PF=0xFF 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_IC_MSG,
+		0x18FF0917u,			/* canid：PF=0xFF */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		14u,			/* hoh：mb14（PF=0xFF 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_DW_STATE,
+		0x18FF0CECu,			/* canid：PF=0xFF */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		14u,			/* hoh：mb14（PF=0xFF 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_VCU_4,
+		0x18FF12EFu,			/* canid：PF=0xFF */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		14u,			/* hoh：mb14（PF=0xFF 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_ID1,
+		0x18FF4C56u,			/* canid：PF=0xFF */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		14u,			/* hoh：mb14（PF=0xFF 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_ID2,
+		0x18FF4D56u,			/* canid：PF=0xFF */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		14u,			/* hoh：mb14（PF=0xFF 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_ID3,
+		0x18FF4E56u,			/* canid：PF=0xFF */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		14u,			/* hoh：mb14（PF=0xFF 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_PEPS2,
+		0x18FF7534u,			/* canid：PF=0xFF */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		14u,			/* hoh：mb14（PF=0xFF 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_ESCL_NM,
+		0x18FF904Du,			/* canid：PF=0xFF */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		14u,			/* hoh：mb14（PF=0xFF 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_EEC3,
+		0x18FFBA19u,			/* canid：PF=0xFF */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		14u,			/* hoh：mb14（PF=0xFF 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_ECC2,
+		0x18FFBC19u,			/* canid：PF=0xFF */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		14u,			/* hoh：mb14（PF=0xFF 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_TP_DT,
+		0x1CEBFF21u,			/* canid：PF=0xEB */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		8u,			/* hoh：mb8（PF=0xEB 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_TP_CM,
+		0x1CECFF21u,			/* canid：PF=0xEC */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		9u,			/* hoh：mb9（PF=0xEC 段） */
+	},
+	{
+		App_CanIfRxIndication,	/* rxInd */
+		CANIF_RX_CAN1_ETC5,
+		0x1CFEC321u,			/* canid：PF=0xFE */
+		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		13u,			/* hoh：mb13（PF=0xFE 段） */
 	},
 };
+/* @generated END: CAN1 real matrix */
 
 /* ============================ [ TX PDU 表 ] ============================ */
 
@@ -428,6 +640,62 @@ static const CanIf_TxPduType CanIf_TxPdus[] = {
 		CAN_HW_HTH_COM,                 /* hoh */
 		CANIF_CHL_CAN0,                 /* ControllerId */
 	},
+
+	/* ---- M19：CAN1 真实矩阵的 6 条发送报文 ---- */
+	/*
+	 * @warning `hoh` 与 `CanHw_Hohs[]` 的 `msgBufId` 必须逐条对应
+	 *          （HTH 6 → CAN1 mb2 … HTH 11 → CAN1 mb7）。
+	 *          `Can_Write()` 会校验 `hoh->canId`，ID 写错会返回 `E_NOT_OK`；
+	 *          但**邮箱号写错它发现不了**，只会发到别的邮箱上去。
+	 */
+	{
+		App_CanIfTxConfirmation,        /* txConfirm */
+		CANIF_TX_CAN1_LCSF,             /* txPduId */
+		CAN_HW_ID_TX_LCSF,              /* canid：0x18FE4021 */
+		NULL,                           /* p_canid */
+		CAN_HW_HTH_CAN1_LCSF,           /* hoh：HTH 6 → CAN1 mb2 */
+		CANIF_CHL_CAN1,                 /* ControllerId */
+	},
+	{
+		App_CanIfTxConfirmation,
+		CANIF_TX_CAN1_CTRL,
+		CAN_HW_ID_TX_CTRL,              /* 0x18FF0C21 */
+		NULL,
+		CAN_HW_HTH_CAN1_CTRL,           /* HTH 7 → CAN1 mb3 */
+		CANIF_CHL_CAN1,
+	},
+	{
+		App_CanIfTxConfirmation,
+		CANIF_TX_CAN1_OEL,
+		CAN_HW_ID_TX_OEL,               /* 0x0CFDCC21，P=3 */
+		NULL,
+		CAN_HW_HTH_CAN1_OEL,            /* HTH 8 → CAN1 mb4 */
+		CANIF_CHL_CAN1,
+	},
+	{
+		App_CanIfTxConfirmation,
+		CANIF_TX_CAN1_OWW,
+		CAN_HW_ID_TX_OWW,               /* 0x18FDCD21 */
+		NULL,
+		CAN_HW_HTH_CAN1_OWW,            /* HTH 9 → CAN1 mb5 */
+		CANIF_CHL_CAN1,
+	},
+	{
+		App_CanIfTxConfirmation,
+		CANIF_TX_CAN1_DOOR,
+		CAN_HW_ID_TX_DOOR,              /* 0x18FE4E21 */
+		NULL,
+		CAN_HW_HTH_CAN1_DOOR,           /* HTH 10 → CAN1 mb6 */
+		CANIF_CHL_CAN1,
+	},
+	{
+		App_CanIfTxConfirmation,
+		CANIF_TX_CAN1_DM1,
+		CAN_HW_ID_TX_DM1,               /* 0x18FECA21 */
+		NULL,
+		CAN_HW_HTH_CAN1_DM1,            /* HTH 11 → CAN1 mb7 */
+		CANIF_CHL_CAN1,
+	},
 };
 
 /* ============================ [ 控制器 ] ============================ */
@@ -467,50 +735,53 @@ const CanIf_ConfigType CanIf_Config = {
 /**
  * @brief 检查接收过滤表是否满足二分查找的前置条件
  * @retval true  两张表都合法
- * @retval false 有乱序，或掩码项不在末尾
+ * @retval false 有项自身不合法，或有乱序
  *
  * @details 为什么需要它：`CanIf_RxDispatch()`（`CanIf.c:104`）用**二分查找**，
  *          但 C 语言没法在编译期检查"数组是否有序"，所以只能在初始化时验一遍。
  *
- *          要检查的两条：
- *          1. **精确项严格升序** —— 乱序会让二分跳过某些项；
- *          2. **掩码项必须排在所有精确项之后** —— 掩码项代表一个 ID 区间，
- *             夹在中间会让二分的区间收缩方向判错。
+ *          检查两条：
+ *          1. **每一项都落在自己的掩码区间内** —— `canid & mask == canid`。
+ *             不满足时这条**永远匹配不上**（比较的是"掩码后的来帧 ID"与
+ *             "原样存储的 canid"是否相等）。典型错法：写 `canid=0x18FF0100`
+ *             却配 `mask=0x1FFF0000`，`0x18FF0100 & 0x1FFF0000 = 0x18FF0000`
+ *             `!= 0x18FF0100`，于是静默失效。
+ *          2. **全表按 `canid` 严格升序**（精确项与掩码项一起比）。
  *
  *          违反任何一条都**不会报错**，症状只是"某条报文收不到"。
  *          本工程真的踩过：加 J1939 报文时把 `0x18FF0001` 留在原位
  *          （排在 `0x18FExxxx` 之前），结果它自己收不到了，
  *          而新加的四条全正常 —— 看起来像"老功能被新配置破坏"。
  *
- * @note  判据里用 `0x1FFFFFFF`（全掩码）来区分"精确项"和"掩码项"。
- *        将来如果真需要一条 `mask=0x1FFFFFFF` 但又想表达"区间"的项，
- *        这个判据会误判 —— 那时要引入显式的 `isMask` 字段。
+ * @note  **不检查"掩码区间是否重叠"**，这是刻意的：
+ *        重叠与否取决于 `canid` 的**高位**，而掩码可能只覆盖低位。
+ *        例如 CAN0 的 `0x0A0 + mask 0x7F8` 只匹配 11 位标准 ID 的 bit3~10，
+ *        扩展帧 `0x18FF00A0` 的低 11 位同样是 `0x0A0` —— 按"区间重叠"
+ *        判会报错，但实际运行完全正常（扩展帧由 J1939 段邮箱先收走）。
+ *        写成通用检查会大量误报，反而把这个函数变成"永远在警告"的噪声。
+ *        重叠由**表的设计者**保证，见各表顶部的注释。
  */
 bool CanIfCfg_CheckRxOrder(void)
 {
 	const CanIf_CtrlConfigType *ctrl;
+	const CanIf_RxPduType *p;
 	uint16_t i;
 	uint8_t c;
-	bool seenMask;
 
 	for (c = 0u; c < CanIf_Config.numOfCtrls; c++) {
 		ctrl = &CanIf_Config.CtrlConfigs[c];
-		seenMask = false;
 
 		for (i = 0u; i < ctrl->numOfRxPdus; i++) {
-			if (ctrl->rxPdus[i].mask != 0x1FFFFFFFu) {
-				seenMask = true;        /* 掩码项：此后不许再出现精确项 */
-				continue;
+			p = &ctrl->rxPdus[i];
+
+			/* 1) 自身必须落在自己的掩码区间内 */
+			if ((p->canid & p->mask) != p->canid) {
+				return false;
 			}
-			if (seenMask) {
-				return false;           /* 精确项排在掩码项之后 */
-			}
-			if (i > 0u) {
-				/* 与前一项比。前一项可能是掩码项，但它已被 seenMask 挡住，
-				 * 走到这里前一项一定是精确项。 */
-				if (ctrl->rxPdus[i].canid <= ctrl->rxPdus[i - 1u].canid) {
-					return false;       /* 未严格升序 */
-				}
+
+			/* 2) 与上一项严格升序（精确项和掩码项一起比） */
+			if ((i > 0u) && (p->canid <= ctrl->rxPdus[i - 1u].canid)) {
+				return false;
 			}
 		}
 	}
