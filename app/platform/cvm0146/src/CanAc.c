@@ -36,7 +36,11 @@
  *          （`flexcan_drv.c:1494`）只写数据区，**不回写 ID，也不回写 DLC** ——
  *          这两者在 `FlexCanDrv_CfgMsgObj()` 时就烧进邮箱了，运行期改不了。
  *          所以 N 条 TX 报文就要有 N 个 HTH + N 个邮箱。
- *          CAN0 有 96 个邮箱（`canRamNum=3`，8 字节数据时单邮箱 16 字节），容量够。
+ *          CAN0 资源：`canRamNum=3`、单邮箱 16 B → `MCR[MAXMB]=96`。
+ *          @warning `MAXMB` 只是**软件上限**，不代表硅片真的实现了 96 个。
+ *          本工程只实测验证到 mb15 可用（mb16/17 曾因掩码问题收不到帧，
+ *          那条路径没排除干扰），所以配表时**优先用低位邮箱**，
+ *          别把关键报文放到 mb16 以上。
  *
  *          @section CANAC_BUSOFF Bus-off 检测为什么要单独做
  *          FlexCAN 的 `BOFFREC=1`（SDK 的 `FlexCanDrv_Configure` 无条件打开）
@@ -108,6 +112,29 @@ static FlexCanDrv_MsgCfgType s_flexCfgs[CAN_CFG_NUM_CHANNELS][CANAC_MAX_MSG_CFGS
 
 /** @brief 每个控制器实际翻译出的邮箱条数 */
 static uint8_t s_flexCfgNum[CAN_CFG_NUM_CHANNELS];
+
+/* ============================ [ 压测计数（M14） ] ============================ */
+
+/**
+ * @brief 单个控制器支持统计的最大邮箱号
+ * @note  CVM014x 的 CAN0 RAM 是 3×512 B / 16 B = 96 个邮箱，
+ *        但本工程最多用到 17。取 32 是"覆盖两组中断线"的最小整组，
+ *        再大就要为没用到的邮箱白占 RAM（32×4 B×2 通道 = 256 B）。
+ */
+#define CANAC_MAX_MB    (32u)
+
+/** @brief 累计接收帧数（每控制器） */
+static uint32_t s_rxTotal[CAN_CFG_NUM_CHANNELS];
+
+/**
+ * @brief 按邮箱号分开的接收帧数
+ * @note  分开记的理由：压测时"总数对得上但某一条总丢"是很常见的现象，
+ *        这时只有按邮箱看才知道是哪个掩码区间出了问题。
+ */
+static uint32_t s_rxPerMb[CAN_CFG_NUM_CHANNELS][CANAC_MAX_MB];
+
+/** @brief 邮箱中断进入次数（用来算"每次中断平均处理几帧"） */
+static uint32_t s_isrCount[CAN_CFG_NUM_CHANNELS];
 
 /**
  * @brief 发送句柄登记表：邮箱号 → `Can_PduType.swPduHandle`
@@ -452,6 +479,16 @@ static void CanAc_MbIsr(uint8_t controller, FlexCanDrvType *obj)
 		mailbox.Hoh = (Can_HwHandleType)cfg->msgBufId;
 		mailbox.ControllerId = controller;
 
+		/* 压测计数（M14）：在交给 CanIf **之前**记账。
+		 * 记在这里而不是 CanIf 里，是为了区分两种"丢"：
+		 *   - 这里没涨   → 硬件层就没收到（掩码没放行 / 邮箱满 / 总线错误）
+		 *   - 这里涨了但应用没看到 → CanIf 软件过滤把帧丢了（表序或掩码错）
+		 * 压测时这两个数字对不上，问题定位就完全是两个方向。 */
+		s_rxTotal[controller]++;
+		if (cfg->msgBufId < CANAC_MAX_MB) {
+			s_rxPerMb[controller][cfg->msgBufId]++;
+		}
+
 		pdu.SduDataPtr = &msg.data[0];
 		pdu.SduLength = msg.dlc;
 		pdu.MetaDataPtr = NULL;
@@ -465,11 +502,40 @@ static void CanAc_MbIsr(uint8_t controller, FlexCanDrvType *obj)
 /**
  * @brief CAN0 邮箱 0~15 中断
  * @note  邮箱号按 16 个一组共用中断线，所以处理函数要遍历整组而不只是自己那一个。
- *        当前表里 4 个邮箱都在 0~15，只需这一条；超过 16 个邮箱时还要补
- *        `CAN0_ORed_16_31_MB_Handler` 并 `IrqDrv_EnableIrq(CAN0_ORed_16_31_MB_IRQn)`。
+ *        处理函数本身不区分组：`CanAc_MbIsr()` 遍历的是**配置表里的全部邮箱**，
+ *        各自检查自己的中断标志，所以两组共用一个实现是安全的
+ *        （已处理的邮箱标志被清掉，第二次进来不会重复上报）。
  */
 void CAN0_ORed_0_15_MB_Handler(void)
 {
+	s_isrCount[0]++;
+	CanAc_MbIsr(0u, &g_mcu.flexCanDrv0);
+}
+
+/**
+ * @brief CAN0 邮箱 16~31 中断（M14：标准帧段邮箱 16/17 落在这组）
+ *
+ * @details @section CANAC_MBGRP 为什么邮箱会跨组
+ *          邮箱号是**连续分配**的，而中断线按 16 个一组切。M14 把标准帧段
+ *          放到邮箱 15/16/17，正好跨在 `0~15` 与 `16~31` 的边界上：
+ *
+ *          | 邮箱 | 归属组 | 用途 |
+ *          |------|--------|------|
+ *          | 15 | 0~15 | 标准帧快变段 0x0A0~0x0A7 |
+ *          | 16 | **16~31** | 标准帧灯光段 0x100~0x107 |
+ *          | 17 | **16~31** | 标准帧车身 0x110 |
+ *
+ *          **只开 0~15 那条中断的后果**：邮箱 16/17 收到帧后标志位一直挂着，
+ *          不进中断也就没人读 —— 邮箱一直是满的，后续帧全丢。
+ *          而 `CanIf` 那边看起来一切正常（表配了、掩码也对），
+ *          症状是"0x100 段和 0x110 一条都收不到，0x0A0 段却正常"。
+ *
+ * @note 真要配到 48 个以上邮箱时，还要补 `CAN0_ORed_48_63_MB_Handler`。
+ *       本工程最多用到 17，两条中断足够。
+ */
+void CAN0_ORed_16_31_MB_Handler(void)
+{
+	s_isrCount[0]++;
 	CanAc_MbIsr(0u, &g_mcu.flexCanDrv0);
 }
 
@@ -480,6 +546,7 @@ void CAN0_ORed_0_15_MB_Handler(void)
  */
 void CAN1_ORed_0_15_MB_Handler(void)
 {
+	s_isrCount[1]++;
 	CanAc_MbIsr(1u, &g_mcu.flexCanDrv1);
 }
 
@@ -722,6 +789,10 @@ Std_ReturnType CanAc_Init(uint8_t Controller, const Can_ChannelConfigType *confi
 
 	if (Controller == 0u) {
 		IrqDrv_EnableIrq(CAN0_ORed_0_15_MB_IRQn);
+		/* M14：邮箱 16/17（标准帧段）落在 16~31 组。
+		 * 漏掉这条的症状是"0x100 段和 0x110 一条都收不到，0x0A0 段却正常"，
+		 * 因为邮箱 16/17 收到帧后没人读，一直满着。 */
+		IrqDrv_EnableIrq(CAN0_ORed_16_31_MB_IRQn);
 		IrqDrv_EnableIrq(CAN0_ORed_IRQn);         /* bus-off 上报（NVIC 100） */
 	} else if (Controller == 1u) {
 		IrqDrv_EnableIrq(CAN1_ORed_0_15_MB_IRQn);
@@ -1033,4 +1104,46 @@ void CanAc_DbgDump(uint8_t controller)
 	                (unsigned)((esr1 & FLEXCAN_ESR1_BOFFINT_MASK) >> FLEXCAN_ESR1_BOFFINT_SHIFT),
 	                (unsigned)((ctrl1 & FLEXCAN_CTRL1_BOFFMSK_MASK) >> FLEXCAN_CTRL1_BOFFMSK_SHIFT),
 	                (unsigned)((ctrl1 & FLEXCAN_CTRL1_ERRMSK_MASK) >> FLEXCAN_CTRL1_ERRMSK_SHIFT));
+}
+
+
+/* ============================ [ 压测接口（M14） ] ============================ */
+
+uint32_t Platform_CanRxTotal(uint8_t controller)
+{
+	if (controller >= CAN_CFG_NUM_CHANNELS) {
+		return 0u;
+	}
+	return s_rxTotal[controller];
+}
+
+uint32_t Platform_CanRxByMb(uint8_t controller, uint8_t mb)
+{
+	if ((controller >= CAN_CFG_NUM_CHANNELS) || (mb >= CANAC_MAX_MB)) {
+		return 0u;
+	}
+	return s_rxPerMb[controller][mb];
+}
+
+uint32_t Platform_CanIsrCount(uint8_t controller)
+{
+	if (controller >= CAN_CFG_NUM_CHANNELS) {
+		return 0u;
+	}
+	return s_isrCount[controller];
+}
+
+void Platform_CanResetRxCounters(void)
+{
+	uint8_t c;
+
+	for (c = 0u; c < CAN_CFG_NUM_CHANNELS; c++) {
+		uint8_t m;
+
+		s_rxTotal[c] = 0u;
+		s_isrCount[c] = 0u;
+		for (m = 0u; m < CANAC_MAX_MB; m++) {
+			s_rxPerMb[c][m] = 0u;
+		}
+	}
 }

@@ -101,8 +101,49 @@
  */
 #define CANIF_RX_COM_TEST           (11u)
 
+/* ============================ [ M14：通信矩阵压测（20 条） ] ============================ */
+/*
+ * 编号从 12 起**追加**，不动 0~11。理由：`main.c` 与各验收脚本是按编号
+ * 做断言的（"发 0x321 → pdu=0"），重排编号会让所有历史回归静默失效。
+ *
+ * 命名规则：`CANIF_RX_<域>_<用途>`。域为 `STD`（标准帧）或 `J1939`。
+ */
+
+/** @brief 标准帧快变段 0x0A0~0x0A7（10 ms，压中断） */
+#define CANIF_RX_STD_FAST           (12u)
+
+/** @brief 标准帧灯光控制段 0x100~0x107 */
+#define CANIF_RX_STD_LIGHT          (13u)
+
+/** @brief 标准帧车身状态 0x110 */
+#define CANIF_RX_STD_BODY           (14u)
+
+/** @brief J1939 PGN 0xFF00 车辆状态（复用 0x18FF0001 精确项，见 CanIf_Cfg.c） */
+#define CANIF_RX_J1939_VEH          (15u)
+
+/** @brief J1939 PGN 0xFF02 门锁状态 */
+#define CANIF_RX_J1939_DOOR         (16u)
+
+/** @brief J1939 PGN 0xFF03 雨刮状态 */
+#define CANIF_RX_J1939_WIPER        (17u)
+
+/** @brief J1939 PGN 0xFF04 **同一 PGN 多源地址**（验证掩码分组） */
+#define CANIF_RX_J1939_MULTI        (18u)
+
+/** @brief J1939 PGN 0xFF05 报警 */
+#define CANIF_RX_J1939_ALARM        (19u)
+
+/** @brief J1939 PGN 0xFF06 高频扩展帧（20 ms，压扩展帧中断） */
+#define CANIF_RX_J1939_FAST         (20u)
+
+/** @brief J1939 PGN 0xFEE0 里程（1000 ms，慢变） */
+#define CANIF_RX_J1939_ODO          (21u)
+
+/** @brief J1939 ID 极值 0x1FFFFF00（验二分查找的右边界） */
+#define CANIF_RX_J1939_MAXID        (22u)
+
 /** @brief RX PDU 总数（配表时用于自检） */
-#define CANIF_RX_PDU_NUM            (12u)
+#define CANIF_RX_PDU_NUM            (23u)
 
 /* ============================ [ TX PDU 编号 ] ============================ */
 /*

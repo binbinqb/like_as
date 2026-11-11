@@ -87,78 +87,88 @@ const Can_ConfigType Can_Config = {
  *          （厂商 `SetTxMsg` 只写数据区），所以一条报文一个邮箱。
  */
 static const CanHw_MsgCfgType CanHw_MsgCfgs0[] = {
-	/* mb0：TX 心跳帧 0x123，经典帧 8 字节。
-	 * TX 也开中断：发送完成后由邮箱中断回调 CanIf_TxConfirmation()，
-	 * 上层才能知道"这帧真的出去了"（CanTp 分段发送依赖这个信号） */
-	{ 0u, 1u, CAN_HW_ID_HEARTBEAT, false, CAN_HW_MB_TX, 8u, true,  0u },
-
-	/* mb1：RX 0x321，标准帧，全掩码（ID 必须完全一致） */
-	{ 1u, 1u, CAN_HW_ID_TESTRX,    false, CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
-
-	/* mb2：RX 0x18FF0001，**29 位扩展帧** —— 验证 J1939 报文能否走通 */
-	{ 2u, 1u, CAN_HW_ID_EXT_RX,    true,  CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
-
-	/* mb3：TX 0x18FF0002，**29 位扩展帧** */
-	{ 3u, 1u, CAN_HW_ID_EXT_TX,    true,  CAN_HW_MB_TX, 8u, true,  0u },
-
-	/* mb4：TX 诊断响应 0x7E8（M3，HTH 3） */
-	{ 4u, 1u, CAN_HW_ID_DIAG_RESP, false, CAN_HW_MB_TX, 8u, true,  0u },
-
-	/* mb5：RX 诊断请求 0x7E0（M3），全掩码；CanTp 从这里取 N-PDU */
-	{ 5u, 1u, CAN_HW_ID_DIAG_REQ,  false, CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
-
 	/**
-	 * @section CANCFG_MULTIEXT M8：多扩展帧接收（Foton 49 条 J1939 报文的缩影）
+	 * @section CANCFG_MB0_14 M14：15 个邮箱承载 20+ 条报文
 	 *
-	 * 之前记过一条"RX 邮箱不支持扩展帧"的结论，这次实测**推翻了**：
-	 * SDK 的 `FlexCanDrv_SetMsgId()`（`flexcan_drv.c:164`）对 `isExt` 分支
-	 * 正确置了 `CS.IDE|CS.SRR`，并把 29 位 ID 写进 `ID` 字（mask 0x1FFFFFFF）。
-	 * 容量也够：`canRamNum=3` × 512 字节 / 16 = **96 个邮箱**，49 条报文绰绰有余。
+	 * 邮箱分配的核心思路是**按段分组**，不是一条报文一个邮箱：
 	 *
-	 * 所以真正要验的不是"能不能收扩展帧"，而是**多邮箱并行 + 掩码分组**
-	 * 这两件 Foton 场景离不开的事。
+	 * | mb | 方向 | 覆盖范围 | 承载报文数 |
+	 * |----|------|----------|-----------|
+	 * | 2 | RX | `0x18FFxxxx` 全段（PGN 0xFF00~0xFFFF） | 车辆/灯光/门锁/雨刮/报警… |
+	 * | 6 | RX | `0x18FExxxx` 全段（PGN 0xFE00~0xFEFF） | 车速/里程/… |
+	 * | 7 | RX | `0x0A0~0x0A7` | 快变模拟量段 |
+	 * | 8 | RX | `0x100~0x107` | 灯光控制段 |
+	 * | 9 | RX | `0x110` | 车身状态 |
 	 *
-	 * @note  硬件掩码与 CanIf 软件掩码是**两层串联**：
-	 *        硬件不放行的帧根本进不来（连中断都不会有），
-	 *        软件层再正确也没机会执行。所以两处必须同时放宽。
+	 * 49 条报文的 Foton 矩阵用这套结构也是 **6 个接收邮箱**就够。
+	 *
+	 * @warning **真正要小心的不是邮箱号，是掩码的位位置。**
+	 *
+	 *          M14 在这里误判过一次，值得记下来：把标准帧段配到 mb7/8/9 后，
+	 *          mb8/mb9 一条都收不到（连带 mb12/mb14 的 NM、Com 也哑了）。
+	 *          当时读到 `MCR[MAXMB]=96` 却只有 mb0~mb7 有计数，就判断成
+	 *          "这颗芯片只实现了 8 个邮箱"——**这个结论是错的**。
+	 *
+	 *          真相是 `CAN_HW_MASK_STD_FAST` 少了 18 位移位（见
+	 *          `Can_HwCfg.h` 的 `CAN_HW_STD_ID_SHIFT` 说明）：11 位的 `0x7F8`
+	 *          落在 bit[10:3]，而那几位在 ID 域里恒为 0，于是 mb7 变成
+	 *          **全收邮箱**，把排在它后面的所有标准帧都截走了。
+	 *          推翻"8 邮箱"判断的证据是：早前 mb15 配同一套掩码时**它自己是好的**
+	 *          （只有它后面的 mb16/17 收不到）——说明 mb15 完全可用。
+	 *
+	 *          教训：**"某个邮箱收不到"优先怀疑掩码/邮箱序号配错，
+	 *          而不是先怀疑硬件容量。** 全收邮箱的隐蔽性在于它没有任何报错，
+	 *          只表现为"后面的报文全丢"。
+	 *
+	 * @note 邮箱 10、15 空着不用，留给"某条报文必须独占邮箱"的场合
+	 *       （比如将来接 CAN FD 或需要独立时间戳的报文）。
 	 */
 
-	/* mb6：RX 0x18FF0100，掩码 0x1FFFFF00 —— 同一 PGN、任意源地址都进这个邮箱 */
-	{ 6u, 1u, CAN_HW_ID_J1939_PGN, true,  CAN_HW_MB_RX, 8u, true,  CAN_HW_MASK_J1939_PGN },
+	/* mb0：TX 心跳 0x123。TX 也开中断：发送完成回调 CanIf_TxConfirmation()，
+	 *      CanTp 的分段发送依赖这个信号 */
+	{ 0u,  1u, CAN_HW_ID_HEARTBEAT,     false, CAN_HW_MB_TX, 8u, true,  0u },
 
-	/* mb7~mb10：RX 四个不同 PGN，全掩码 —— 验证多邮箱各自独立 */
-	{ 7u, 1u, CAN_HW_ID_J1939_A,   true,  CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
-	{ 8u, 1u, CAN_HW_ID_J1939_B,   true,  CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
-	{ 9u, 1u, CAN_HW_ID_J1939_C,   true,  CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
-	{ 10u, 1u, CAN_HW_ID_J1939_D,  true,  CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
+	/* mb1：RX 0x321 标准帧，全掩码（M1 回归项） */
+	{ 1u,  1u, CAN_HW_ID_TESTRX,        false, CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
+
+	/* mb2：RX J1939 段 0x18FFxxxx（PGN 0xFF00~0xFFFF 全部） */
+	{ 2u,  1u, CAN_HW_ID_J1939_SEG_FF,  true,  CAN_HW_MB_RX, 8u, true,  CAN_HW_MASK_J1939_SEG },
+
+	/* mb3：TX 0x18FF0002 扩展帧 */
+	{ 3u,  1u, CAN_HW_ID_EXT_TX,        true,  CAN_HW_MB_TX, 8u, true,  0u },
+
+	/* mb4：TX 诊断响应 0x7E8 */
+	{ 4u,  1u, CAN_HW_ID_DIAG_RESP,     false, CAN_HW_MB_TX, 8u, true,  0u },
+
+	/* mb5：RX 诊断请求 0x7E0（CanTp 从这里取 N-PDU） */
+	{ 5u,  1u, CAN_HW_ID_DIAG_REQ,      false, CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
+
+	/* mb6：RX J1939 段 0x18FExxxx（PGN 0xFE00~0xFEFF 全部） */
+	{ 6u,  1u, CAN_HW_ID_J1939_SEG_FE,  true,  CAN_HW_MB_RX, 8u, true,  CAN_HW_MASK_J1939_SEG },
+
+	/* mb7~mb9：RX 标准帧段（M14）—— 三段覆盖 BCM 私有报文区 0x0A0~0x11F */
+	{ 7u,  1u, CAN_HW_ID_STD_FAST,      false, CAN_HW_MB_RX, 8u, true,  CAN_HW_MASK_STD_FAST },
+	{ 8u,  1u, CAN_HW_ID_STD_LIGHT,     false, CAN_HW_MB_RX, 8u, true,  CAN_HW_MASK_STD_LIGHT },
+	{ 9u,  1u, CAN_HW_ID_STD_BODY,      false, CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
 
 	/**
 	 * @section CANCFG_NM M9：网络管理报文 0x500
 	 *
-	 * TX 与 RX 各占一个邮箱，**同一个 ID**。为什么不能共用：
-	 * FlexCAN 的邮箱方向是配置期定死的（`CS.CODE`），一个邮箱要么发要么收。
-	 * 想"发完还能收别人的"就必须两个邮箱。
+	 * TX 与 RX 各占一个邮箱，**同一个 ID**。FlexCAN 的邮箱方向配置期定死
+	 * （`CS.CODE`），想"发完还能收别人的"就必须两个邮箱。
 	 *
-	 * @note  本机发出的 0x500 不会被自己的 mb12 收到 ——
-	 *        `MCR.SRXDIS` 默认禁用自收，所以不会出现"自己叫醒自己"。
-	 *        这一点很关键：若开了自收，`CanNm` 会把自己发的报文当成
-	 *        "别的节点还在活动"，于是永远进不了 `ReadySleep`。
+	 * @note 本机发出的 0x500 不会被自己的 mb12 收到 —— `MCR.SRXDIS` 默认禁用自收，
+	 *       所以不会出现"自己叫醒自己"（否则 CanNm 永远进不了 ReadySleep）。
 	 */
-	{ 11u, 1u, CAN_HW_ID_NM,       false, CAN_HW_MB_TX, 8u, false, 0u },
-	{ 12u, 1u, CAN_HW_ID_NM,       false, CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
+	{ 11u, 1u, CAN_HW_ID_NM,            false, CAN_HW_MB_TX, 8u, false, 0u },
+	{ 12u, 1u, CAN_HW_ID_NM,            false, CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
 
 	/**
-	 * @section CANCFG_COM M10：Com 信号层测试报文 0x200
-	 *
-	 * 同样 TX/RX 各一个邮箱（FlexCAN 一个邮箱只能一个方向）。
-	 * **ID 不同**（0x200 发 / 0x201 收）—— 同 ID 会让注入测试撞车，
-	 * 见 `Can_HwCfg.h` 里 `CAN_HW_ID_COM_TX` 的说明。
-	 *
-	 * TX 的 `intEnable = false`：不需要发送完成中断，`Com` 的 `TxConfirmation`
-	 * 由 CanIf 在发送完成时统一回调，不依赖这个邮箱的中断配置。
+	 * @section CANCFG_COM M10：Com 信号层测试报文
+	 * 发 0x200 / 收 0x201（不同 ID，避免注入测试与自发报文撞车）。
 	 */
-	{ 13u, 1u, CAN_HW_ID_COM_TX,   false, CAN_HW_MB_TX, 8u, false, 0u },
-	{ 14u, 1u, CAN_HW_ID_COM_RX,   false, CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
+	{ 13u, 1u, CAN_HW_ID_COM_TX,        false, CAN_HW_MB_TX, 8u, false, 0u },
+	{ 14u, 1u, CAN_HW_ID_COM_RX,        false, CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
 };
 
 /**

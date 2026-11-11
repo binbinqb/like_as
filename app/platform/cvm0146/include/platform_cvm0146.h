@@ -262,6 +262,48 @@ Std_ReturnType Platform_FlashWrite(uint32_t addr, const void *data, uint32_t len
  */
 void Platform_FlashRead(uint32_t addr, void *buf, uint32_t len);
 
+/* ============================ [ CAN 压测计数 ] ============================ */
+/*
+ * 用来量化"丢了多少帧" —— 只测"收没收到"是不够的：500 kbps 满总线时，
+ * 大部分帧是收到了、少数丢了，而"偶尔少一条"在串口日志里看不出来。
+ *
+ * 三个数字要一起看：
+ *   | 现象 | 含义 |
+ *   |------|------|
+ *   | RX 总数 < 发送方计数器 | 硬件层丢帧：掩码没放行 / 邮箱满 / 总线错误 |
+ *   | RX 总数正常但应用没看到 | CanIf 软件过滤丢了（表序或掩码错） |
+ *   | ISR 次数接近 RX 总数 | 每次中断只处理 1 帧，中断开销大 |
+ */
+
+/**
+ * @brief 取累计接收帧数
+ * @param[in] controller 通道号（0 = CAN0）
+ * @return 帧数；通道号非法时返回 0
+ */
+uint32_t Platform_CanRxTotal(uint8_t controller);
+
+/**
+ * @brief 取某个邮箱的接收帧数
+ * @param[in] controller 通道号
+ * @param[in] mb         邮箱号（< 32）
+ * @return 帧数；参数非法时返回 0
+ * @note  压测时"总数对得上但某一条总丢"很常见，按邮箱看才知道是哪个掩码区间。
+ */
+uint32_t Platform_CanRxByMb(uint8_t controller, uint8_t mb);
+
+/**
+ * @brief 取邮箱中断进入次数
+ * @param[in] controller 通道号
+ * @return 次数
+ */
+uint32_t Platform_CanIsrCount(uint8_t controller);
+
+/**
+ * @brief 清零所有压测计数
+ * @note  不会影响通信，只是把统计窗口重新对齐到"从现在开始"。
+ */
+void Platform_CanResetRxCounters(void);
+
 /* ============================ [ 跳转到应用 ] ============================ */
 
 /**

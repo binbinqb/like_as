@@ -80,8 +80,16 @@ CASES = [
 	(0x18FEA100, 9, "PGN 0xFEA1"),
 ]
 
-# 负例：同 PGN 段、不同 PGN，必须收不到
-NEGATIVE = [(0x18FF0200, "PGN 0xFF02（不在过滤表里）")]
+# 负例：同 PGN 段、不同 PGN，必须收不到。
+#
+# ⚠ 不能再用 0x18FF0200 —— M14 把 PGN 0xFF02（门锁状态）正式接进了过滤表
+#   （`CANIF_RX_J1939_DOOR`），它**应该**收到。当年这条负例成立是因为
+#   那时表里只有 FF00 和 FF01。
+#
+# 现在用 PGN 0xFF07：它落在硬件段邮箱（掩码 0x1FFF0000 覆盖 0x18FFxxxx）的
+# 范围内，所以**硬件会放行**、能进 mb2；但软件过滤表里没有它，
+# 应该被 CanIf 丢掉。这比"硬件就挡掉"更有价值 —— 它验的是软件过滤层。
+NEGATIVE = [(0x18FF0700, "PGN 0xFF07（硬件段放行、软件表没有）")]
 
 DATA = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88]
 
@@ -146,7 +154,7 @@ def main():
 		time.sleep(0.15)
 	time.sleep(0.4)
 	out = ser.read(8192).decode("utf-8", "replace")
-	note("负例：0x18FF0200 被过滤（收不到）",
+	note("负例：0x18FF0700 被软件过滤（收不到）",
 		 len(RE_RX.findall(out)) == 0,
 		 "收到 %d 帧" % len(RE_RX.findall(out)))
 

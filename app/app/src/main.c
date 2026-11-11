@@ -137,6 +137,23 @@ static volatile PduIdType s_rxPduId;
 static uint8_t           s_rxData[8];
 static volatile uint32_t s_rxCount;
 
+/**
+ * @brief 按 **PDU 编号**分开的接收帧数（M14 压测）
+ *
+ * @details 存在的理由是硬件层计数**看不到软件过滤**：
+ *          | 现象 | 含义 |
+ *          |------|------|
+ *          | 邮箱计数涨了、PDU 计数没涨 | CanIf 过滤表把帧丢了（表序 / 掩码 / canid 写错） |
+ *          | 邮箱计数涨了、PDU 计数涨在别的项 | 过滤表区间重叠，帧被前一项截走 |
+ *          | 两个都涨但数值不等 | 有一项被多个邮箱投递（重复配置） |
+ *
+ *          只验硬件计数时，这三类错**全部表现成"收到了"**，测不出来。
+ *
+ * @note 下标就是 `CANIF_RX_*`。诊断、NM、Com 三条走别的回调，
+ *       在这里恒为 0 —— 那是正常的，不代表丢帧。
+ */
+static uint32_t s_rxPerPdu[CANIF_RX_PDU_NUM];
+
 /** @brief 发送完成计数（CanIf 回调里累加） */
 static volatile uint32_t s_txConfirmCount;
 
@@ -168,6 +185,13 @@ void App_CanIfRxIndication(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
 	s_rxDlc   = n;
 	s_rxPduId = RxPduId;
 	s_rxCount++;
+
+	/* 压测计数（M14）：这是**软件过滤之后**的计数，
+	 * 与平台层的按邮箱计数配合，才能区分"硬件没收到"和"软件丢了"。 */
+	if (RxPduId < (PduIdType)CANIF_RX_PDU_NUM) {
+		s_rxPerPdu[RxPduId]++;
+	}
+
 	s_rxFlag  = true;
 }
 
@@ -370,6 +394,7 @@ static void Fault_Dump(void);
 
 /* 高频发送（`!f`）也在总线故障区，同样要前置声明 */
 static void CanTest_Burst(uint16_t n);
+static void CanTest_DumpRxCounters(void);
 
 /* 网络管理（M9）实现在"网络管理"区，晚于 CmdExec */
 static void Nm_CmdExec(char c);
@@ -450,6 +475,25 @@ static void CmdExec(char c)
 	case 'e':
 		/* 寄存器现场：TEC/REC 有没有涨、BOFFMSK 开没开、当前 FLTCONF */
 		CanAc_DbgDump(0u);
+		return;
+	case 'k':
+	case 'K':
+		/* M14 压测：k=打印接收计数（按邮箱）/ K=清零。
+		 * 三个数字要一起看：RX 总数、ISR 次数、按邮箱细分。
+		 *   总数 < 对端发送数  → 硬件层丢（掩码/邮箱满/总线错误）
+		 *   总数对但应用没看到 → CanIf 软件过滤丢了（表序或掩码错）
+		 *   ISR 次数 ≈ 总数   → 每次中断只处理 1 帧，中断开销大 */
+		if (c == 'K') {
+			uint8_t pdu;
+
+			Platform_CanResetRxCounters();
+			for (pdu = 0u; pdu < (uint8_t)CANIF_RX_PDU_NUM; pdu++) {
+				s_rxPerPdu[pdu] = 0u;
+			}
+			Platform_Puts("  can rx counters cleared (mailbox + pdu)\n");
+			return;
+		}
+		CanTest_DumpRxCounters();
 		return;
 	case 'u':
 	case 'U':
@@ -563,6 +607,43 @@ static void CanTest_SendExt(void)
 }
 
 /**
+ * @brief PDU 编号 → 人类可读名称（下标必须与 `CANIF_RX_*` 一一对应）
+ *
+ * @note  放文件级而不是函数内：`CanTest_DrainRx()` 打印单帧、
+ *        `CanTest_DumpRxCounters()` 打印按 PDU 的计数，两处都要用。
+ * @note  长度由 `CANIF_RX_PDU_NUM` 约束 —— 少写一条会直接编译不过。
+ *        这比运行期打印成 `?` 好：`?` 和"收到未知 PDU"在现象上分不开，
+ *        会让人误判成过滤器配错。
+ * @note  诊断请求（PDU 4）与 NM（PDU 10）、Com（PDU 11）都不走
+ *        `App_CanIfRxIndication`，名称只是占位。
+ */
+static const char *const s_pduName[CANIF_RX_PDU_NUM] = {
+	"CAN0 0x321",           /* 0  CANIF_RX_TEST */
+	"CAN0 0x18FF0001(ext)", /* 1  CANIF_RX_EXT_TEST */
+	"CAN1 0x322",           /* 2  CANIF_RX_CAN1_TEST */
+	"CAN1 0x18FF01xx(ext)", /* 3  CANIF_RX_CAN1_PGN */
+	"CAN0 0x7E0(diag)",     /* 4  CANIF_RX_DIAG_REQ */
+	"CAN0 0x18FF01xx(ext)", /* 5  CANIF_RX_J1939_PGN（灯光） */
+	"CAN0 0x18FEF1xx(ext)", /* 6  CANIF_RX_J1939_A（车速） */
+	"CAN0 0x18FEC1xx(ext)", /* 7  CANIF_RX_J1939_B */
+	"CAN0 0x18FEB1xx(ext)", /* 8  CANIF_RX_J1939_C */
+	"CAN0 0x18FEA1xx(ext)", /* 9  CANIF_RX_J1939_D */
+	"CAN0 0x500(NM)",       /* 10 CANIF_RX_NM（不走本回调，占位） */
+	"CAN0 0x201(com)",      /* 11 CANIF_RX_COM_TEST（不走本回调，占位） */
+	"CAN0 0x0A0~A7",        /* 12 CANIF_RX_STD_FAST */
+	"CAN0 0x100~107",       /* 13 CANIF_RX_STD_LIGHT */
+	"CAN0 0x110",           /* 14 CANIF_RX_STD_BODY */
+	"CAN0 0x18FF00xx(ext)", /* 15 CANIF_RX_J1939_VEH（预留） */
+	"CAN0 0x18FF02xx(ext)", /* 16 CANIF_RX_J1939_DOOR */
+	"CAN0 0x18FF03xx(ext)", /* 17 CANIF_RX_J1939_WIPER */
+	"CAN0 0x18FF04xx(ext)", /* 18 CANIF_RX_J1939_MULTI */
+	"CAN0 0x18FF05xx(ext)", /* 19 CANIF_RX_J1939_ALARM */
+	"CAN0 0x18FF06xx(ext)", /* 20 CANIF_RX_J1939_FAST */
+	"CAN0 0x18FEE0xx(ext)", /* 21 CANIF_RX_J1939_ODO */
+	"CAN0 0x18FFFF00(ext)", /* 22 CANIF_RX_J1939_MAXID（段内最大 PGN） */
+};
+
+/**
  * @brief 把收到的帧打印出来（主循环里调用，不在中断里）
  *
  * @note  打印的是**逻辑 PDU 号**而不是 CAN ID —— 这是 M2 之后的正常形态：
@@ -570,23 +651,6 @@ static void CanTest_SendExt(void)
  */
 static void CanTest_DrainRx(void)
 {
-	/**
-	 * @note  下标必须覆盖全部 `CANIF_RX_*`。漏掉的话打印成 `?`，
-	 *        而"看到 ?"和"收到未知 PDU"是两回事，会让人误判成过滤器出错。
-	 *        诊断请求（PDU 4）不走这个回调（它从 CanTp 进来），所以只是占位。
-	 */
-	static const char *const pduName[] = {
-		"CAN0 0x321",           /* CANIF_RX_TEST */
-		"CAN0 0x18FF0001(ext)", /* CANIF_RX_EXT_TEST */
-		"CAN1 0x322",           /* CANIF_RX_CAN1_TEST */
-		"CAN1 0x18FF01xx(ext)", /* CANIF_RX_CAN1_PGN */
-		"CAN0 0x7E0(diag)",     /* CANIF_RX_DIAG_REQ */
-		"CAN0 0x18FF01xx(ext)", /* CANIF_RX_J1939_PGN */
-		"CAN0 0x18FEF100(ext)", /* CANIF_RX_J1939_A */
-		"CAN0 0x18FEC100(ext)", /* CANIF_RX_J1939_B */
-		"CAN0 0x18FEB100(ext)", /* CANIF_RX_J1939_C */
-		"CAN0 0x18FEA100(ext)", /* CANIF_RX_J1939_D */
-	};
 	const char *name;
 	uint8_t i;
 
@@ -595,7 +659,7 @@ static void CanTest_DrainRx(void)
 	}
 	s_rxFlag = false;
 
-	name = (s_rxPduId < (PduIdType)ARRAY_SIZE(pduName)) ? pduName[s_rxPduId] : "?";
+	name = (s_rxPduId < (PduIdType)ARRAY_SIZE(s_pduName)) ? s_pduName[s_rxPduId] : "?";
 
 	Platform_Printf("[can] rx #%u pdu=%u (%s) dlc=%u data=",
 	                (unsigned)s_rxCount, (unsigned)s_rxPduId, name,
@@ -627,6 +691,63 @@ static void CanTest_DrainRx(void)
  * @note  帧间隔 10 ms：太快会互相覆盖同一个邮箱（`Can_Write` 对同一 HTH
  *        是覆盖语义），反而没机会在总线上参与仲裁。
  */
+/**
+ * @brief 打印 CAN 接收计数（M14 压测用）
+ *
+ * @details 三个数字一起看才能定位：
+ *          | 现象 | 含义 |
+ *          |------|------|
+ *          | total < 对端发送数 | **硬件层**丢：掩码没放行 / 邮箱满 / 总线错误 |
+ *          | total 正常但应用没看到 | **CanIf 软件过滤**丢了：表序或掩码错 |
+ *          | perIsr ≈ 1.0 | 每次中断只处理 1 帧，中断开销最大 |
+ *          | perIsr 明显 > 1 | 多帧积压后一起处理，说明主循环有延迟 |
+ *
+ * @note 按邮箱分开打印的原因：压测时"总数对得上但某一条总丢"很常见，
+ *       这时只有看到具体是哪个 mb 少了，才能判断是哪个掩码区间有问题。
+ */
+static void CanTest_DumpRxCounters(void)
+{
+	uint8_t ch;
+	uint8_t mb;
+
+	Platform_Puts("  can rx counters  (m = mailbox)\n");
+	for (ch = 0u; ch < CAN_CFG_NUM_CHANNELS; ch++) {
+		uint32_t total = Platform_CanRxTotal(ch);
+		uint32_t isr = Platform_CanIsrCount(ch);
+		uint32_t perInt = (isr != 0u) ? (total / isr) : 0u;
+		uint32_t frac = (isr != 0u) ? ((total * 100u / isr) % 100u) : 0u;
+
+		Platform_Printf("   CAN%u  total=%-6u isr=%-6u perISR=%u.%02u\n",
+		                (unsigned)ch, (unsigned)total, (unsigned)isr,
+		                (unsigned)perInt, (unsigned)frac);
+
+		for (mb = 0u; mb < 18u; mb++) {
+			uint32_t n = Platform_CanRxByMb(ch, mb);
+
+			if (n != 0u) {
+				Platform_Printf("     mb%-2u = %u\n", (unsigned)mb, (unsigned)n);
+			}
+		}
+	}
+
+	/* 软件过滤之后的计数（M14）。
+	 * 与上面的按邮箱计数对照，就能判断 CanIf 有没有把帧丢掉或投错项：
+	 *   邮箱有、PDU 没有 → 过滤表的 canid/mask 与硬件段不一致
+	 *   邮箱有、PDU 有但落在别的编号 → 表项区间重叠，被前一项截走 */
+	Platform_Puts("  pdu rx counters  (after CanIf software filter)\n");
+	{
+		uint8_t pdu;
+
+		for (pdu = 0u; pdu < (uint8_t)CANIF_RX_PDU_NUM; pdu++) {
+			if (s_rxPerPdu[pdu] != 0u) {
+				Platform_Printf("     pdu %-2u = %-6u %s\n",
+				                (unsigned)pdu, (unsigned)s_rxPerPdu[pdu],
+				                s_pduName[pdu]);
+			}
+		}
+	}
+}
+
 static void CanTest_Burst(uint16_t n)
 {
 	uint16_t i;
@@ -1678,7 +1799,8 @@ int main(void)
 	Platform_Puts("  !z    = sleep once (STOP mode, 100 ms fallback wake)\n");
 	Platform_Puts("  !b !B = dtc dump / clear (CAN bus-off snapshot)\n");
 	Platform_Puts("  !i    = inject one bus-off record (fault injection)\n");
-	Platform_Puts("  !e !f = CAN0 registers / burst 100 frames\n\n");
+	Platform_Puts("  !e !f = CAN0 registers / burst 100 frames\n");
+	Platform_Puts("  !k !K = can rx counters / clear (stress)\n\n");
 
 	for (;;) {
 		/* 1) 串口输入：`!x` 是控制命令，其余原样回显

@@ -163,13 +163,40 @@ static void CanIfCfg_NmTxConfirmation(PduIdType TxPduId, Std_ReturnType result)
  *        这个值就是 PduR 的 `pathId`，改一处即可。
  */
 static const CanIf_RxPduType CanIf_RxPdus_CAN0[] = {
-	/**
-	 * 0x201 Com 信号测试（M10）：交给 PduR → Com。
-	 * @note 必须是全表第一条 —— 二分查找要求 canid 升序，0x201 最小。
-	 *       顺序错了这条会**静默收不到**（M8 踩过同样的坑）。
-	 * @note 收 0x201 而不是 0x200：0x200 是本节点的发送 ID，
-	 *       同 ID 会让注入测试撞车（见 `Can_HwCfg.h` 的说明）。
-	 */
+	/* ------------------------------------------------------------------
+	 * 标准帧段（M14）：BCM 私有报文，用区间掩码合并成一两个表项
+	 *
+	 * `canid & mask == canid` 是硬要求（见 CAN1 表末尾的说明），
+	 * 所以段基址必须是"区间下界"：0x0A0 配 0x7F8 覆盖 0x0A0~0x0A7。
+	 * ------------------------------------------------------------------ */
+	{
+		App_CanIfRxIndication,          /* rxInd */
+		CANIF_RX_STD_FAST,              /* rxPduId */
+		CAN_HW_ID_STD_FAST,             /* canid：0x0A0 */
+		/* 软件掩码用 **11 位原值**，不是 `CAN_HW_MASK_STD_FAST`。
+		 * 那个宏是硬件值（左移 18 位），只给邮箱 RXIMR 用。
+		 * 这里直接与未移位的 canid 比对，写 0x1FE00000 会一条都匹配不上。 */
+		0x7F8u,                         /* mask：覆盖 0x0A0~0x0A7 */
+		7u,                             /* hoh：CAN0 邮箱 7 */
+	},
+	{
+		App_CanIfRxIndication,
+		CANIF_RX_STD_LIGHT,
+		CAN_HW_ID_STD_LIGHT,            /* 0x100 */
+		0x7F8u,                         /* 软件掩码：覆盖 0x100~0x107（理由同上） */
+		8u,                             /* hoh：CAN0 邮箱 8 */
+	},
+	{
+		App_CanIfRxIndication,
+		CANIF_RX_STD_BODY,
+		CAN_HW_ID_STD_BODY,             /* 0x110，单条精确 */
+		0x1FFFFFFFu,
+		9u,                             /* hoh：CAN0 邮箱 9 */
+	},
+
+	/* ------------------------------------------------------------------
+	 * 核心报文（M1~M10 的回归项，编号与语义一律不动）
+	 * ------------------------------------------------------------------ */
 	{
 		CanIfCfg_ComRxIndication,       /* rxInd */
 		CANIF_RX_COM_TEST,              /* rxPduId */
@@ -177,30 +204,20 @@ static const CanIf_RxPduType CanIf_RxPdus_CAN0[] = {
 		0x1FFFFFFFu,                    /* mask */
 		14u,                            /* hoh：CAN0 邮箱 14 */
 	},
-
-	/* 0x321 标准帧：M1 就有的报文，保留做回归 */
 	{
 		App_CanIfRxIndication,          /* rxInd */
 		CANIF_RX_TEST,                  /* rxPduId */
 		0x321u,                         /* canid */
-		0x1FFFFFFFu,                    /* mask：ID 必须完全一致 */
+		0x1FFFFFFFu,                    /* mask */
 		1u,                             /* hoh：CAN0 邮箱 1 */
 	},
-
-	/**
-	 * 0x500 网络管理（M9）：交给 PduR → CanNm，**不交给应用**。
-	 * @note 位置在 0x321 与 0x7E0 之间，因为二分查找要求 canid 升序 ——
-	 *       这不只是为了好看，顺序错了这条会静默收不到（见 M8 的坑）。
-	 */
 	{
 		CanIfCfg_NmRxIndication,        /* rxInd */
 		CANIF_RX_NM,                    /* rxPduId */
 		CAN_HW_ID_NM,                   /* canid：0x500 */
 		0x1FFFFFFFu,                    /* mask */
-		12u,                            /* hoh：CAN0 邮箱 12（NM 专用接收） */
+		12u,                            /* hoh：CAN0 邮箱 12 */
 	},
-
-	/* 0x7E0 诊断请求（M3）：交给 PduR → CanTp 重组 → Dcm */
 	{
 		CanIfCfg_DiagRxIndication,      /* rxInd */
 		CANIF_RX_DIAG_REQ,              /* rxPduId */
@@ -210,55 +227,104 @@ static const CanIf_RxPduType CanIf_RxPdus_CAN0[] = {
 	},
 
 	/**
-	 * @section CANIFCFG_J1939 M8：J1939 多报文（模拟 Foton 场景）
+	 * @section CANIFCFG_J1939 J1939 段（M8 / M14）
 	 *
 	 * @warning **顺序是硬约束，不是习惯。** `CanIf_RxDispatch()` 用的是
 	 *          **二分查找**（`CanIf.c:104` 的 `l/h/m` 三指针），靠
 	 *          `var->canid` 与来帧 ID 比较来收缩区间。所以：
 	 *
 	 *          1. 全表**严格按 `canid` 升序**；
-	 *          2. **所有掩码项必须排在精确项之后**（掩码项代表一个 ID 区间，
-	 *             夹在中间会让二分在某个方向判错）。
+	 *          2. **掩码项覆盖的区间之间不能重叠**，也不能与精确项重叠 ——
+	 *             重叠时"命中哪一个"取决于二分走到哪一项，是未定义行为。
 	 *
-	 *          这两条都不会报错，症状只是"某条报文收不到"。
 	 *          本工程在这一条上真的踩过：加 J1939 报文时把 0x18FF0001
-	 *          留在了原位（排在 0x18FExxxx 之前），结果它自己收不到了，
-	 *          而新加的四条全正常 —— 看起来像"老功能被新配置破坏了"，
-	 *          实际是表序坏了。
+	 *          留在了原位（排在 0x18FExxxx 之前），结果它自己收不到了。
 	 *          为此 `CanIfCfg_CheckRxOrder()` 在初始化时自检，见文件末尾。
+	 *
+	 * @note M14 的段化设计：PGN 0xFExx 全部由邮箱 6（段掩码 0x1FFF0000）收进来，
+	 *       这里再按 PGN 精确到 0x1FFFFF00 —— **硬件宽、软件窄**，
+	 *       两层串联。硬件不放行的帧连中断都不会有，软件层再对也没用。
 	 */
 
-	/* 四个不同 PGN，精确匹配，按 canid 升序 */
+	/* PGN 0xFEA1 / FEB1 / FEC1（M8 的四个"不同 PGN"回归项，改走段邮箱） */
 	{
-		App_CanIfRxIndication, CANIF_RX_J1939_D, 0x18FEA100u, 0x1FFFFFFFu, 10u,
+		App_CanIfRxIndication, CANIF_RX_J1939_D, 0x18FEA100u, 0x1FFFFF00u, 6u,
 	},
 	{
-		App_CanIfRxIndication, CANIF_RX_J1939_C, 0x18FEB100u, 0x1FFFFFFFu, 9u,
+		App_CanIfRxIndication, CANIF_RX_J1939_C, 0x18FEB100u, 0x1FFFFF00u, 6u,
 	},
 	{
-		App_CanIfRxIndication, CANIF_RX_J1939_B, 0x18FEC100u, 0x1FFFFFFFu, 8u,
-	},
-	{
-		App_CanIfRxIndication, CANIF_RX_J1939_A, 0x18FEF100u, 0x1FFFFFFFu, 7u,
+		App_CanIfRxIndication, CANIF_RX_J1939_B, 0x18FEC100u, 0x1FFFFF00u, 6u,
 	},
 
-	/* 0x18FF0001 扩展帧（M2）：单条 J1939 报文，精确匹配。
-	 * 它比 0x18FExxxx 大，所以必须排在它们**之后** —— 这正是踩过的坑。 */
+	/** PGN 0xFEE0 里程（M14 新增，1000 ms 慢变） */
+	{
+		App_CanIfRxIndication, CANIF_RX_J1939_ODO, 0x18FEE000u, 0x1FFFFF00u, 6u,
+	},
+
+	/** PGN 0xFEF1 车速（M8 回归项，改走段邮箱） */
+	{
+		App_CanIfRxIndication, CANIF_RX_J1939_A, 0x18FEF100u, 0x1FFFFF00u, 6u,
+	},
+
+	/**
+	 * 0x18FF0001 —— **PGN 0xFF00 段内的精确项**（M2 的扩展帧回归）。
+	 *
+	 * @warning 它必须**排在 0x18FF0100 段项之前**：0x18FF0001 数值更小，
+	 *          且精确项只占一个 ID，不与 [0x18FF0100, 0x18FF01FF] 重叠。
+	 *          如果先写段项，二分在收缩区间时会跳过这一条。
+	 */
 	{
 		App_CanIfRxIndication,          /* rxInd */
 		CANIF_RX_EXT_TEST,              /* rxPduId */
 		0x18FF0001u,                    /* canid */
-		0x1FFFFFFFu,                    /* mask */
-		2u,                             /* hoh：CAN0 邮箱 2 */
+		0x1FFFFFFFu,                    /* mask：精确匹配 */
+		2u,                             /* hoh：CAN0 邮箱 2（FF 段） */
 	},
 
-	/* 最后一条：同 PGN 任意源地址（唯一的掩码项，必须放全表末尾） */
+	/** PGN 0xFF01 灯光状态（同 PGN 任意源地址 —— M8 的掩码分组回归项） */
 	{
-		App_CanIfRxIndication,          /* rxInd */
-		CANIF_RX_J1939_PGN,             /* rxPduId */
-		0x18FF0100u,                    /* canid（PGN 基址，落在掩码范围内） */
-		0x1FFFFF00u,                    /* mask：忽略最低 8 位源地址 */
-		6u,                             /* hoh：CAN0 邮箱 6（硬件掩码同值） */
+		App_CanIfRxIndication, CANIF_RX_J1939_PGN, 0x18FF0100u, 0x1FFFFF00u, 2u,
+	},
+
+	/** PGN 0xFF02 门锁状态（M14） */
+	{
+		App_CanIfRxIndication, CANIF_RX_J1939_DOOR, 0x18FF0200u, 0x1FFFFF00u, 2u,
+	},
+
+	/** PGN 0xFF03 雨刮状态（M14） */
+	{
+		App_CanIfRxIndication, CANIF_RX_J1939_WIPER, 0x18FF0300u, 0x1FFFFF00u, 2u,
+	},
+
+	/**
+	 * PGN 0xFF04 **同一 PGN、三个不同源地址**（M14 的核心压测项）
+	 * @note 这一条覆盖 0x18FF0401 / 0402 / 0405，验"一个表项收一组 SA"。
+	 */
+	{
+		App_CanIfRxIndication, CANIF_RX_J1939_MULTI, 0x18FF0400u, 0x1FFFFF00u, 2u,
+	},
+
+	/** PGN 0xFF05 报警（M14） */
+	{
+		App_CanIfRxIndication, CANIF_RX_J1939_ALARM, 0x18FF0500u, 0x1FFFFF00u, 2u,
+	},
+
+	/** PGN 0xFF06 高频扩展帧（M14，20 ms，压扩展帧中断） */
+	{
+		App_CanIfRxIndication, CANIF_RX_J1939_FAST, 0x18FF0600u, 0x1FFFFF00u, 2u,
+	},
+
+	/**
+	 * 最后一条：**段内最大 PGN** `0x18FFFF00`（PGN 0xFFFF、SA 0x00）。
+	 * @note 二分查找最容易在两端出错，两端出错的表现是"只有最小/最大的那条收不到"。
+	 *       0x0A0 验左端，这一条验右端。
+	 * @warning 这里**不能用 29 位 ID 极值 `0x1FFFFF00`**：它的 bit[28:16] 是
+	 *          `0x1FFFF`，不满足硬件段掩码 `0x1FFF0000` 要求的 `0x18FF0`，
+	 *          压根不会进邮箱。M14 第一次跑就是这一条报 FAIL。
+	 */
+	{
+		App_CanIfRxIndication, CANIF_RX_J1939_MAXID, CAN_HW_ID_J1939_MAXPGN, 0x1FFFFF00u, 2u,
 	},
 };
 
