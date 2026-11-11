@@ -430,31 +430,43 @@ static void EcuM_CmdExec(char c);
  */
 static void AdcCmd_Probe(void)
 {
-	Adc_ValueGroupType raw = 0u;
-	Adc_StatusType     st;
-	uint32_t           t0;
+	uint8_t g;
 
-	Adc_StartGroupConversion((Adc_GroupType)ADC_CFG_GROUP_PROBE);
+	for (g = 0u; g < (uint8_t)ADC_CFG_NUM_GROUPS; g++) {
+		Adc_ValueGroupType raw[ADC_CFG_MAX_CH_PER_GROUP];
+		uint8_t  n = Adc_Cfg_GroupChannels[g];
+		Adc_StatusType st;
+		uint32_t t0;
+		uint8_t  i;
 
-	t0 = Platform_NowMs();
-	do {
-		st = Adc_GetGroupStatus((Adc_GroupType)ADC_CFG_GROUP_PROBE);
-	} while ((st != ADC_COMPLETED) && ((Platform_NowMs() - t0) < 5u));
+		Adc_StartGroupConversion((Adc_GroupType)g);
 
-	if (st != ADC_COMPLETED) {
-		Platform_Printf("[adc] timeout, status=%u (PDB/trigger chain broken?)\n",
-		                (unsigned)st);
-		return;
+		t0 = Platform_NowMs();
+		do {
+			st = Adc_GetGroupStatus((Adc_GroupType)g);
+		} while ((st != ADC_COMPLETED) && ((Platform_NowMs() - t0) < 5u));
+
+		if (st != ADC_COMPLETED) {
+			Platform_Printf("[adc] g%u timeout, status=%u (PDB/trigger chain broken?)\n",
+			                (unsigned)g, (unsigned)st);
+			continue;
+		}
+
+		/* 显式传缓冲区：本探针不依赖 Adc_SetupResultBuffer，
+		 * 顺便把"两条用法都支持"这件事验掉。 */
+		if (Adc_ReadGroup((Adc_GroupType)g, raw) != E_OK) {
+			Platform_Printf("[adc] g%u read failed\n", (unsigned)g);
+			continue;
+		}
+
+		Platform_Printf("[adc] g%u:", (unsigned)g);
+		for (i = 0u; i < n; i++) {
+			/* 12 位满量程 4095 对应参考电压 3300 mV */
+			Platform_Printf(" %u(%umV)", (unsigned)raw[i],
+			                (unsigned)(((uint32_t)raw[i] * 3300u) / 4095u));
+		}
+		Platform_Puts("\n");
 	}
-
-	if (Adc_ReadGroup((Adc_GroupType)ADC_CFG_GROUP_PROBE, &raw) != E_OK) {
-		Platform_Puts("[adc] read failed (no result buffer?)\n");
-		return;
-	}
-
-	/* 12 位满量程 4095 对应参考电压 3300 mV */
-	Platform_Printf("[adc] raw=%u  mv=%u\n",
-	                (unsigned)raw, (unsigned)(((uint32_t)raw * 3300u) / 4095u));
 }
 
 static void CmdExec(char c)
@@ -1829,14 +1841,10 @@ int main(void)
 	 *       和 CanIf/CanNm 一样由表驱动。现在直接调是为了让最小验证先跑起来。
 	 * ------------------------------------------------------------------ */
 	{
-		/* 结果缓冲区由调用方提供并保持有效（AUTOSAR 约定，不做内部拷贝）。
-		 * static 而不是栈上：`Adc_ReadGroup` 可能被主循环反复调用，
-		 * 栈变量出了作用域就失效。 */
-		static Adc_ValueGroupType s_adcProbeBuf[1];
-
+		/* 探针用显式缓冲区读组结果（`Adc_ReadGroup(g, raw)`），
+		 * 所以这里不调 `Adc_SetupResultBuffer()` —— 它是给业务侧
+		 * "先绑定、后异步读"的用法留的，两条路径 `Adc_ReadGroup` 都支持。 */
 		Adc_Init(&Adc_Config);
-		(void)Adc_SetupResultBuffer((Adc_GroupType)ADC_CFG_GROUP_PROBE,
-		                            s_adcProbeBuf);
 	}
 
 	/* 应用请求 RUN。`EcuM_RequestRUN` 只置标志，真正的动作在
