@@ -1062,11 +1062,31 @@ build.bat --app=App                           # slot A 镜像
 build.bat --app=AppB                          # slot B 镜像
 
 python tools/flash.py --boot --run            # 首次部署：boot + App 一起烧
+python tools/flash.py --elf <App|AppB> --force --run   # 开发迭代：烧完保证它会跑
 python tools/uds_flash.py --elf build/nt/CM4GCC/AppB/AppB.exe --verify   # 升级到 B 槽
 ```
 
 **boot 只占 54 KB**：`Mcu_Init()` 会把 20 多个外设驱动全拉进镜像（56 KB），
 boot 走精简版 `Platform_McuInitMinimal()`，只初始化 clock/flash/power/reset/pins/uart。
+
+#### 为什么开发迭代必须加 `--force`
+
+J-Link/CSpyBat 只写镜像、**不动槽尾 meta**。于是"刚烧进去的新镜像"和
+"meta 里记的旧 rollingCounter"对不上 —— boot 仍去启动计数更大的那个槽，
+新固件永远没机会跑。**症状是"烧写成功、串口输出还是老版本"**，
+极容易误判成编译没生效（M14 排查时就先怀疑过固件没烧进去）。
+
+`--force` 的做法：从 ELF 的 `.interrupts` 段判断镜像链接在哪个槽，
+然后把**另一个槽**的 meta 区（主 + 备，共 2 个 4 KB 内的扇区）整段写 0，
+让 boot 认为它没有有效元数据。只影响另一个槽，正在跑的那份不动。
+
+> **踩过的坑：`objcopy -I binary` 造出来的 ELF 没有程序头（PHDR）。**
+> CSpyBat 只按程序头下载，于是它什么都不烧、`rc` 还返回 0。
+> 第一次实现就是这么"报告清零成功"，回读却一个字没变。
+> 现在改用 `arm-none-eabi-ld` + 链接脚本（并加 `-z max-page-size=0x1000`，
+> 否则默认 64 KB 页对齐会把 LOAD 段撑成 64 KB，连带擦掉大半个预留区），
+> 并且**强制 J-Link 回读校验** —— 不复信退出码。
+
 
 ### 已知缺口（bootloader 方向）
 
