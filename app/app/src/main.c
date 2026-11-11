@@ -34,7 +34,7 @@
  *          打印放主循环。
  *
  * @author  binbina
- * @version V2.5.0
+ * @version V2.6.0
  *
  * @par 修改记录
  * | 版本   | 日期       | 作者    | 变更说明 |
@@ -55,6 +55,7 @@
  * | V2.3.0 | 2026-11-11 | binbina | M12：唤醒源识别 + EcuM 唤醒接口 + STOP 模式手动睡眠（!z） |
  * | V2.4.0 | 2026-11-11 | binbina | M13：A/B 分区（双镜像 + 槽尾 meta + UDS 刷非活动槽） |
  * | V2.5.0 | 2026-11-11 | binbina | M14：通信矩阵承载能力（段掩码邮箱 + 硬件/软件双层过滤压测） |
+ * | V2.6.0 | 2026-11-11 | binbina | M15：ADC 模块（as-master 无，按三段式补；双单元 + 多通道 + PDB/TRGMUX） |
  */
 
 #include "platform_cvm0146.h"
@@ -1840,12 +1841,13 @@ int main(void)
 	 * @note TODO：正式版应把这一步挪进 `EcuM_Cfg.c` 的 `DriverInitOne` 表，
 	 *       和 CanIf/CanNm 一样由表驱动。现在直接调是为了让最小验证先跑起来。
 	 * ------------------------------------------------------------------ */
-	{
-		/* 探针用显式缓冲区读组结果（`Adc_ReadGroup(g, raw)`），
-		 * 所以这里不调 `Adc_SetupResultBuffer()` —— 它是给业务侧
-		 * "先绑定、后异步读"的用法留的，两条路径 `Adc_ReadGroup` 都支持。 */
-		Adc_Init(&Adc_Config);
-	}
+	/* ADC 已归位到 `EcuM_Cfg.c` 的 `DriverInitListZero`（Port → Can → Adc），
+	 * 由 `EcuM_Init()` 统一按表调用，这里不再手工初始化 ——
+	 * 顺序由表保证，以后加模块只改表不改 main。
+	 *
+	 * 探针用显式缓冲区读组结果（`Adc_ReadGroup(g, raw)`），
+	 * 所以全程不调 `Adc_SetupResultBuffer()`；它是给"先绑定、后异步读"
+	 * 的用法留的，两条路径 `Adc_ReadGroup` 都支持。 */
 
 	/* 应用请求 RUN。`EcuM_RequestRUN` 只置标志，真正的动作在
 	 * `EcuM_MainFunction()` 里 —— 所以紧接着推一次，让 RUN 同步生效，

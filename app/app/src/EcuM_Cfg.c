@@ -69,6 +69,8 @@
 /* ---- 阶段 Zero ---- */
 #include "Port.h"
 #include "Can.h"
+#include "Adc.h"        /* M15：ADC 属于 MCAL，排在 Port 之后 */
+#include "Adc_Cfg.h"    /* Adc_Config：表项的 config 字段要用 */
 
 /* ---- 阶段 One ---- */
 #include "CanIf.h"
@@ -90,6 +92,22 @@
 static const EcuM_DriverInitItemType EcuM_DriverInitListZero[] = {
 	{ (EcuM_DriverInitFncType)Port_Init, NULL },
 	{ (EcuM_DriverInitFncType)Can_Init,  NULL },
+	/**
+	 * @brief ADC 初始化
+	 * @note  这一项是**唯一带参数**的 MCAL 初始化项 —— 标准 `Adc_Init()`
+	 *        要求传入配置指针，而其他模块（Port/Can）都是从自己的
+	 *        `Xxx_Cfg.c` 里取全局实例、不接受参数。
+	 *
+	 * @note  表项的第二个字段就是给这种情形准备的：`EcuM_MainFunction()`
+	 *        会把 `config` 原样传给 `InitFnc`。
+	 *
+	 * @warning 函数指针转换 `(EcuM_DriverInitFncType)Adc_Init` 在 ISO C 里
+	 *          属于类型不兼容（`const Adc_ConfigType *` vs `const void *`），
+	 *          严格说是 UB；但 ARM AAPCS 下所有指针参数走同一个寄存器，
+	 *          实际安全。本工程对 `Mcu_Init` / `Port_Init` 一直这么处理，
+	 *          保持一致。若将来过 MISRA 认证，需在外面包一层适配函数。
+	 */
+	{ (EcuM_DriverInitFncType)Adc_Init,  &Adc_Config },
 };
 
 /* ============================ [ 初始化表：One ] ============================ */

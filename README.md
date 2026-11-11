@@ -26,7 +26,9 @@
 | **M12** | **睡眠/唤醒框架**：唤醒源识别 + EcuM 唤醒接口 + STOP 模式手动睡眠（`!z`） | ✅ 已上板，`m12_check.py` **15 项全过** |
 | **M13** | **A/B 分区 UDS bootloader**：双镜像 + 槽尾 meta + 刷非活动槽 | ✅ 已上板，双向升级验过 |
 | **M14** | **通信矩阵承载能力**：20 条构造报文 / 段掩码邮箱 / 硬件+软件双层过滤压测 | ✅ 已上板，`m14_check.py` 4 组全过 |
-| M15 | 端口唤醒（PTE4）+ DeepSleep/Standby + 电流实测 | 待做 |
+| **M15** | **ADC 模块**（as-master 无此模块，按三段式补）：ADC0+ADC1 双单元、多通道、PDB+TRGMUX 软触发 | ✅ 已上板，`!j` 三路读数稳定 |
+| M16 | 端口唤醒（PTE4）+ DeepSleep/Standby + 电流实测 | 待做 |
+| — | **IO 扩展链（I2C/TCA9539、RS2260 MUX）暂停**，等实际板子 | 待做 |
 
 > **M2 的关键变化**：应用层不再看见 CAN ID，也不再看见通道号。`main.c` 只说"发 TxPdu 2"，
 > 报文 ID / 邮箱号 / 扩展位 / 挂在哪一路，全在 `CanIf_Cfg.c` 与 `Can_Cfg.c` 两张表里。
@@ -1123,11 +1125,13 @@ H:/as/
           PortAc.c              PortAc_PinInit → PinsDrv
           DioAc.c               DioAc_Read/WriteChannel → PinsDrv
           CanAc.c               CanAc_* + **Can_Write** + 邮箱中断（收发都在这）
+          AdcAc.c               M15：ADC0/ADC1 + PDB0/PDB1 + TRGMUX（**唯一碰 ADC 寄存器的地方**）
           FlashAc.c             M13：PFlash 单扇区擦 / phrase 写 / 判空（**关中断 + 回读校验**）
           BootMeta.c            M13：meta 主备读写 + 活动槽判定 + 镜像 CRC 校验
           FlashLoader.c         M13：0x31/0x34/0x36/0x37 回调（分片擦、对齐写、meta 落盘）
           config/
             Port_Cfg.c/h        引脚 MUX/方向/初始电平（唯一配 MUX 的地方）
+            Adc_Cfg.c/h         M15：组/通道表（hwUnit + hwChannel + 采样时间 + 参考电压）
             Dio_Cfg.c/h         通道号 → 端口/引脚
             Can_Cfg.c/h         通道参数（波特率/STB/hwInstanceId）**+ 邮箱表 + HTH 表**
                                 M14：15 个邮箱按**段**分组（20+ 条报文，49 条也够用）
@@ -1151,6 +1155,8 @@ H:/as/
     mcal/
       SConscript                遍历 */
       Can/                      AS 原样 Can.c（198 行，只状态机）+ Can_Priv.h
+      Adc/                      M15：Adc.c（薄转发）+ Adc_Priv.h（配置结构 + AdcAc_* 边界）
+                                **as-master 没有这个模块**，按它的三段式补
       Dio/                      AS 原样 Dio.c（38 行）
       Port/                     AS 原样 Port.c（33 行）
     communication/
@@ -1516,7 +1522,103 @@ FlexCAN 把一帧投给**编号最小的匹配邮箱**，所以 mb7 变成全收
 | 邮箱涨、PDU 涨在**别的项** | 过滤表区间重叠，被前一项截走 |
 | 两套都涨但数值不等 | 同一条被多个邮箱投递（重复配置） |
 
-## 下一步：真低功耗（M15）
+## M15 验收：ADC 模块（as-master 没有这个模块，按它的三段式补）
+
+### 先说清"1:1 移植"的边界
+
+核对 as-master 的 MCAL，只有 **六个模块**：
+
+| as-master | 本工程 |
+|---|---|
+| `Can` `Dio` `Port` | ✅ 已移植（AS 原样 + CVM0146 的 AC） |
+| `Eep` `Fls` | ❌ 未移植（用厂商 FEE/NvM 引擎替代，M4 已定版） |
+| `Lin` | ❌ 本项目不用 LIN |
+| **`Adc`** / **`I2c`** | **as-master 里根本没有** |
+
+所以"1:1"能做到的是**结构 1:1、命名 1:1**，接口必须按 AUTOSAR 标准补
+（`SWS_ADCDriver` / `SWS_I2CDriver` 手册就在 `doc/` 里）。
+这次补的是 ADC；I2C 因实际板子未到，暂停。
+
+### 三段式结构（与 Port/Dio 逐字同构）
+
+```
+infras/include/Adc.h             标准 API / 类型 / 错误码（0x0A~0x1C 核对了原文）
+infras/mcal/Adc/Adc_Priv.h       配置结构 + AdcAc_* 边界   ← 分层分界线
+infras/mcal/Adc/Adc.c            DET 校验 + 查表 + 转发，**零寄存器**
+app/platform/cvm0146/src/AdcAc.c ADC0/ADC1 + PDB0/PDB1 + TRGMUX
+app/platform/cvm0146/src/config/Adc_Cfg.{c,h}
+```
+
+判断分层有没有破的硬标准：**`Adc.c` 里不出现 `ADC0` / `SC1` / `PDB` 任何一个词**。
+
+`Adc_Init` 已归位到 `EcuM_Cfg.c` 的 `DriverInitListZero`（Port → Can → Adc），
+它是表里**唯一带 config 参数**的项 —— 标准 `Adc_Init()` 要配置指针，
+而 Port/Can 都是从自己的 `Xxx_Cfg.c` 取全局实例。
+
+### 实测（`!j`，连读三次一致）
+
+```
+[adc] g0: 1921(1548mV) 2252(1814mV)   ← ADC0：POT1(ch12) + VBAT(ch13)，双通道
+[adc] g1: 2241(1805mV)                ← ADC1：POT2(ch2)，单通道
+```
+
+一次 `TrgMuxDrv_GenSWTrigger()` 同时触发 PDB0 和 PDB1，两个 ADC 各自扫完自己的组。
+
+| 信号源 | 引脚 | 通道 | 出处 |
+|---|---|---|---|
+| AN_POT_1 | PTC14 | ADC0_SE12 | 《CVM0146 开发板快速入门》表 2（p7） |
+| AN_POT_2 | PTD2 | ADC1_SE2 | 同上 |
+| I_AN_VBAT | PTC15 | ADC0_SE13 | 同上，分压比 0.23 |
+
+> 附带结论：**ADC 引脚复位默认就是模拟功能，不需要在 `Port_Cfg.c` 里配**。
+> 官方 `adc_pdb_trigger` 例程同样一行引脚配置都没有。
+
+### 六个坑，全是"不报错只不工作"
+
+| # | 现象 | 根因 | 修法 |
+|---|------|------|------|
+| ① | `!j` 永远 `timeout, status=1 (BUSY)` | **ADC0/PDB0 的时钟 `Mcu_Init()` 里不开**。`AdcDrv_Configure()` 写寄存器返回成功，但模块根本没跑 | `ClockDrv_ConfigureClock(CLOCKDRV_ADCn, PLL, div=4)` + `CLOCKDRV_PDBn` 开 gating |
+| ② | 开了时钟仍 timeout | **软件触发必须经 TRGMUX**。单独 `PdbDrv_SwtrigCmd()` 不走 —— `trgInSel` 未选通时 SWTRIG 不启动计数 | `TrgMuxDrv_Configure({SIM_SW_TRIG → PDBn_TRG_IN})` + `TrgMuxDrv_GenSWTrigger()` |
+| ③ | 配置读回全对，PDB 就是不动 | `PdbDrv_Configure()` **不调** `PdbDrv_LoadCmd()`，配置只在缓冲区，要置 `LDOK` 才加载 | Configure 后显式 `PdbDrv_LoadCmd()` |
+| ④ | 读数在 554~677 之间乱跳 | 通道号填的是 PTA0（悬空），不是电位器 | 按表 2 填 `ADC0_SE12`。悬空漂、接上稳，是最直观的判据 |
+| ⑤ | 一直 BUSY，但单通道曾经是好的 | **槽位必须在 `AdcDrv_Configure()` 里一次定死**。使能后再用 `AdcDrv_ConfigureChn()` 改**不保证生效** | 把槽位写进 `chnCfg[]`，运行期只触发不改通道 |
+| ⑥ | **单通道组正常、双通道组 timeout** | 多通道要 PDB 预触发**背靠背**：`preTrgCfg.mode[0][1..n-1] = PDBDRV_PRETRG_BB_MODE`。只配 `mode[0][0]` 时一次触发只转第一个通道 | 按通道数补齐 BB_MODE |
+
+> ⑥ 最值钱：它的表现是"ADC1 单通道好好的、ADC0 双通道死的"，
+> 极易被误判成"多通道不可用"或"ADC0 坏了"。实际上 ADC0 一点问题没有。
+
+### 两个概念别混：槽位 ≠ 通道
+
+| 概念 | 含义 | 谁决定 |
+|---|---|---|
+| **槽位** | SC1A/SC1B… 的序号，决定**结果进哪个 Rn** | 组内通道的**顺序** |
+| **通道** | ADCH 域，决定**采样哪个引脚** | 配置表 `hwChannel` |
+
+`AdcDrv_ConfigureChn(obj, chn, state)` 里 `chn` 是槽位、`state` 才是 ADCH。
+搞反了读到的是"另一个槽位上一次的值"，而不是报错。
+
+### 能力边界
+
+| 能力 | 状态 |
+|---|---|
+| ADC0 / ADC1 双单元 | ✅ 一个 `GenSWTrigger` 同时触发两个 PDB |
+| 单组多通道（一次触发扫全组） | ✅ 槽位 = 组内序号 |
+| 组内跨单元 | ❌ Init 阶段显式拒绝 |
+| **一个单元多个组** | ❌ 显式拒绝（槽位重叠，后配的覆盖先配的） |
+
+> 最后一条对 MUX 有直接影响：**两个 RS2260 的 COM 都接 ADC0 时，不能做成两个组**，
+> 得合成一个组（组内多通道），或者一个接 ADC0、一个接 ADC1。
+> 这个约束现在就在代码里挡着，不会到跑起来才发现。
+
+### 已知缺口
+
+- **采样时间没有标定**：`samplingTime = 20` 对开发板的电位器（低阻）够用，
+  实测抖动只有 ±1 LSB；但接 RS2260（Ron ≈ 105 Ω + 分压网络）后源阻抗变高，
+  **必须重新扫一遍找收敛点**
+- `VDDA` 是否为 3.3 V 未验证：`VBAT` 读数 1814 mV，按分压比 0.23 反推 `VIN ≈ 7.9 V`，
+  与实际供电是否吻合待确认。把电位器拧到两端，读数应压到 `0` / `4095`
+
+## 下一步：真低功耗（M16）
 
 **bootloader 已在 M13 完成**（见上一章）。低功耗按用户要求往后放，框架在 M12 已经通了，但**还没省电**。
 真正落地要做的四步：
