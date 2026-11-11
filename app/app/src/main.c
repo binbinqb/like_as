@@ -34,7 +34,7 @@
  *          打印放主循环。
  *
  * @author  binbina
- * @version V2.4.0
+ * @version V2.5.0
  *
  * @par 修改记录
  * | 版本   | 日期       | 作者    | 变更说明 |
@@ -47,10 +47,14 @@
  * | V1.5.0 | 2026-11-10 | binbina | M4：接存储栈（NvM/FEE），启动计数 + 延迟落盘 + GC 压测 + DET |
  * | V1.6.0 | 2026-11-11 | binbina | M5：bus-off 检测/记录，故障快照持久化到 DTC 块 |
  * | V1.7.0 | 2026-11-11 | binbina | M6：故障表下沉为 Dem，接 Dcm 0x19/0x14；抽公共 ISO-TP 脚本 |
- * | V1.8.0 | 2026-11-11 | binbina | M7：0x27 安全访问（恒通过）+ 0x2E 写 DID（VIN 落 NvM） |\n * | V1.9.0 | 2026-11-11 | binbina | M9：接 CanNm/Nm 网络管理（0x500，200 ms），ComM 状态镜像 |\n * | V2.0.0 | 2026-11-11 | binbina | M10：接 Com 信号层（0x200，100 ms），位打包/大小端/信号超时 |\n * | V2.1.0 | 2026-11-11 | binbina | M11：EcuM 三阶段初始化 + ComM/CanSM 标准链路 |
+ * | V1.8.0 | 2026-11-11 | binbina | M7：0x27 安全访问（恒通过）+ 0x2E 写 DID（VIN 落 NvM） |
+ * | V1.9.0 | 2026-11-11 | binbina | M9：接 CanNm/Nm 网络管理（0x500，200 ms），ComM 状态镜像 |
+ * | V2.0.0 | 2026-11-11 | binbina | M10：接 Com 信号层（0x200，100 ms），位打包/大小端/信号超时 |
+ * | V2.1.0 | 2026-11-11 | binbina | M11：EcuM 三阶段初始化 + ComM/CanSM 标准链路 |
  * | V2.2.0 | 2026-11-11 | binbina | M11b：修 CAN 低功耗死锁（平台管时钟 / STOPPED 只 freeze），链路全通 |
  * | V2.3.0 | 2026-11-11 | binbina | M12：唤醒源识别 + EcuM 唤醒接口 + STOP 模式手动睡眠（!z） |
  * | V2.4.0 | 2026-11-11 | binbina | M13：A/B 分区（双镜像 + 槽尾 meta + UDS 刷非活动槽） |
+ * | V2.5.0 | 2026-11-11 | binbina | M14：通信矩阵承载能力（段掩码邮箱 + 硬件/软件双层过滤压测） |
  */
 
 #include "platform_cvm0146.h"
