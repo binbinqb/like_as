@@ -24,15 +24,29 @@
 
 /**
  * @brief 探针组的通道表
- * @note  `samplingTime` 填 20（ADC 时钟周期）。这个值不是随便给的：
- *        MUX（RS2260）的 Ron ≈ 105 Ω 会串进采样网络，源阻抗越高需要的
- *        采样时间越长。20 只是起点，**必须上板扫一遍找收敛点**。
- * @note  `refVoltageMv` 填 3300：CVM014x 用 VDDA 做参考时就是 3.3 V。
- *        若板上用的是外部 VREF，这里和 `AdcAc.c` 的 `refVolSel` 必须一起改。
+ *
+ * @note **通道取值出处**：《曦华科技 CVM0146 开发板快速入门》表 2「模拟输入」
+ *       （文件号 CVA-CVM014x-EVK-003，版本 2.0，第 7 页）：
+ *
+ *       | MCU 端口 | 网络名 | ADC 通道 | 说明 |
+ *       |----------|--------|----------|------|
+ *       | PTC14 | AN_POT_1 | **ADC0_SE12** | 电位计 1，本探针用它 |
+ *       | PTD2  | AN_POT_2 | ADC1_SE2  | 电位计 2，在 ADC1 上（本模块暂不支持） |
+ *       | PTC15 | I_AN_VBAT | ADC0_SE13 | 电池电压，分压比 0.23（Vadc = VIN×0.23） |
+ *
+ *       选 POT1 而不是 VBAT 的原因：电位计能手动拧，读数必须跟着变 ——
+ *       这是"链路真的在采样"最直接的证据；VBAT 是固定分压，
+ *       读到一个数也无法区分"采样正确"和"读到的是残值"。
+ *
+ * @note `samplingTime` 填 20（ADC 时钟周期）。这个值不是随便给的：
+ *       MUX（RS2260）的 Ron ≈ 105 Ω 会串进采样网络，源阻抗越高需要的
+ *       采样时间越长。20 只是起点，**必须上板扫一遍找收敛点**。
+ * @note `refVoltageMv` 填 3300：CVM014x 用 VDDA 做参考时就是 3.3 V。
+ *       若板上用的是外部 VREF，这里和 `AdcAc.c` 的 `refVolSel` 必须一起改。
  */
 static const Adc_ChannelConfigType Adc_Channels_Probe[] = {
 	{
-		/* hwChannel    */ 0u,
+		/* hwChannel    */ 12u,      /* ADC0_SE12 ← PTC14 / AN_POT_1（电位计 1） */
 		/* resolution   */ 12u,
 		/* samplingTime */ 20u,
 		/* refVoltageMv */ 3300u,
