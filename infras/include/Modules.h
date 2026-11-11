@@ -21,6 +21,9 @@
 #define MODULE_ID_DEM ((uint16_t)54)
 #define MODULE_ID_DOIP ((uint16_t)173)
 #define MODULE_ID_DIO ((uint16_t)120)
+/* ADC 驱动。AUTOSAR 标准模块号 123（DIO=120、PORT=124，它正好夹在中间）。
+ * as-master 未移植 ADC，所以这里没有现成值可抄，按标准补。 */
+#define MODULE_ID_ADC ((uint16_t)123)
 #define MODULE_ID_ECUM ((uint16_t)10)
 #define MODULE_ID_EA ((uint16_t)40)
 #define MODULE_ID_EEP ((uint16_t)90)

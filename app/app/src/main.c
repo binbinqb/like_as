@@ -68,6 +68,8 @@
 #include "Dcm.h"
 #include "Dio.h"
 #include "Dio_Cfg.h"
+#include "Adc.h"         /* M15：ADC 标准接口 */
+#include "Adc_Cfg.h"     /* ADC_CFG_GROUP_PROBE 等组号 */
 #include "Port.h"
 
 #include "NvM.h"         /* AUTOSAR 外观：NvM_Init / ReadBlock / WriteBlock / WriteAll */
@@ -410,6 +412,51 @@ static void Com_CmdExec(char c);
 /* ECU 状态管理（M11） */
 static void EcuM_CmdExec(char c);
 
+/**
+ * @brief ADC 探针：启动一次组转换 → 等完成 → 读原始值 → 换算 mV（`!j`）
+ *
+ * @details 这是 M15 的**最小验证件**，只做一件事：证明
+ *          `Adc_StartGroupConversion()` → PDB 软触发 → ADC 转换 → COCO
+ *          → `Adc_ReadGroup()` 这条链路真的走通了。
+ *
+ * @note 为什么不用回调而用轮询：`CVM014x` 的 ADC 完成中断没有被 SDK 封装，
+ *       只有 `AdcDrv_GetCocon()` 这个标志位。轮询虽然笨，但语义明确、
+ *       不会引入中断优先级问题 —— 先证链路，再谈效率。
+ *
+ * @warning 超时给 5 ms 是**故意设小**的：一次 12 位转换在几十 MHz 的
+ *          ADC 时钟下只要几微秒。如果 5 ms 都没完成，说明触发链路断了
+ *          （PDB 没使能 / pretrigger 没配对 / ADC 没 Enable），
+ *          而不是"再多等一会就好"。快速失败比慢速等待更容易定位。
+ */
+static void AdcCmd_Probe(void)
+{
+	Adc_ValueGroupType raw = 0u;
+	Adc_StatusType     st;
+	uint32_t           t0;
+
+	Adc_StartGroupConversion((Adc_GroupType)ADC_CFG_GROUP_PROBE);
+
+	t0 = Platform_NowMs();
+	do {
+		st = Adc_GetGroupStatus((Adc_GroupType)ADC_CFG_GROUP_PROBE);
+	} while ((st != ADC_COMPLETED) && ((Platform_NowMs() - t0) < 5u));
+
+	if (st != ADC_COMPLETED) {
+		Platform_Printf("[adc] timeout, status=%u (PDB/trigger chain broken?)\n",
+		                (unsigned)st);
+		return;
+	}
+
+	if (Adc_ReadGroup((Adc_GroupType)ADC_CFG_GROUP_PROBE, &raw) != E_OK) {
+		Platform_Puts("[adc] read failed (no result buffer?)\n");
+		return;
+	}
+
+	/* 12 位满量程 4095 对应参考电压 3300 mV */
+	Platform_Printf("[adc] raw=%u  mv=%u\n",
+	                (unsigned)raw, (unsigned)(((uint32_t)raw * 3300u) / 4095u));
+}
+
 static void CmdExec(char c)
 {
 	Std_ReturnType rc = E_OK;
@@ -505,6 +552,14 @@ static void CmdExec(char c)
 	case 'z':
 		/* EcuM：u=释放 RUN / U=回 RUN / q=模式查询（M11）/ z=睡一次（M12） */
 		EcuM_CmdExec(c);
+		return;
+	case 'j':
+		/* ADC 探针（M15）：读一次探针组，打印原始值与换算电压。
+		 * 存在的意义是**验证链路**，不是业务功能 ——
+		 * 在它出现之前，Adc 模块虽然编译通过，但整个被 --gc-sections 丢弃了
+		 * （没有任何调用点），镜像里连一个 Adc_* 符号都没有。
+		 * 这也是"编译通过 ≠ 代码在跑"的最好例证。 */
+		AdcCmd_Probe();
 		return;
 	case 'v':
 	case 'y':
@@ -1761,6 +1816,28 @@ int main(void)
 	 * ------------------------------------------------------------------ */
 	EcuM_Init();
 	EcuM_StartupTwo();
+
+	/* ------------------------------------------------------------------
+	 * ADC 初始化（M15 最小验证）
+	 *
+	 * @note 位置说明：必须排在 `EcuM_Init()` 之后 —— ADC 引脚的方向/MUX
+	 *       由 `Port_Init()` 配置，而 Port 在 EcuM 的 `DriverInitZero` 里。
+	 *       排在前面的症状是"ADC 能转，但读到的永远是 0 或满量程"
+	 *       （引脚还挂在别的复用功能上）。
+	 *
+	 * @note TODO：正式版应把这一步挪进 `EcuM_Cfg.c` 的 `DriverInitOne` 表，
+	 *       和 CanIf/CanNm 一样由表驱动。现在直接调是为了让最小验证先跑起来。
+	 * ------------------------------------------------------------------ */
+	{
+		/* 结果缓冲区由调用方提供并保持有效（AUTOSAR 约定，不做内部拷贝）。
+		 * static 而不是栈上：`Adc_ReadGroup` 可能被主循环反复调用，
+		 * 栈变量出了作用域就失效。 */
+		static Adc_ValueGroupType s_adcProbeBuf[1];
+
+		Adc_Init(&Adc_Config);
+		(void)Adc_SetupResultBuffer((Adc_GroupType)ADC_CFG_GROUP_PROBE,
+		                            s_adcProbeBuf);
+	}
 
 	/* 应用请求 RUN。`EcuM_RequestRUN` 只置标志，真正的动作在
 	 * `EcuM_MainFunction()` 里 —— 所以紧接着推一次，让 RUN 同步生效，

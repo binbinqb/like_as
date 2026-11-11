@@ -1,0 +1,16 @@
+# ADC 驱动（AUTOSAR MCAL）
+#
+# 与 infras/mcal/Dio/SConscript 逐字同构：只声明 include 路径与源文件，
+# 具体的配置目录由平台的 RegisterConfig("Adc", ...) 注册成 $Adc_Cfg。
+from building import *
+
+CWD = GetCurrentDir()
+objs = Glob("*.c")
+
+
+@register_library
+class LibraryAdc(Library):
+    def config(self):
+        self.include = [CWD]
+        self.CPPPATH = ["$INFRAS", "$Adc_Cfg"]
+        self.source = objs

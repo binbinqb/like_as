@@ -43,6 +43,10 @@ objs = acObjs + sdkObjs
 # ⚠ 一旦登记，模块库会得到 USE_<NAME> 宏。注意 USE_PORT 有额外含义：
 #   Can 驱动会改走 "TrcvPinSTB 用 Dio 通道" 的分支（不再自己维护 CtrlPins 表）。
 cfgs = {
+    # ADC（M15）：key 决定 `USE_ADC` 宏，`Adc.c` 整个文件受它包住。
+    # Adc_Cfg.c 要 include `Adc_Priv.h`（配置结构体 + AdcAc_* 边界），
+    # 所以必须编进 Adc 库，而不是平台库 —— 与 Dio/Port 同一处理方式。
+    "Adc":   Glob("src/config/Adc_Cfg.c"),
     "Can":   Glob("src/config/Can_Cfg.c"),
     "CanIf": Glob("src/config/CanIf_Cfg.c"),
     "CanTp": Glob("src/config/CanTp_Cfg.c"),
