@@ -1,0 +1,47 @@
+# Nm/ —— 通用网络管理（总线类型分发层，as-master 原样）
+#
+# 它本身不实现状态机，只按 `Nm_ChannelConfigType.busType` 把请求分派给
+# CanNm / FrNm / UdpNm / OsekNm，并把各总线 NM 的通知转给 ComM。
+#
+# 本工程只启用 CanNm：
+#   `Nm.c` 里 FrNm / UdpNm / OsekNm / J1939Nm 分支全在 `#ifdef USE_<BUS>NM` 之内，
+#   不定义就编译不进去，不需要额外的空模块。
+#
+# ComM 是桩实现（infras/system/ComM/ComM.c）：只记状态并打串口，
+# 真正的电源模式要等 EcuM（下一步）。见 README 的"中间态"说明。
+from building import *
+
+CWD = GetCurrentDir()
+objs = Glob("*.c")
+
+
+@register_library
+class LibraryNm(Library):
+    def config(self):
+        self.CPPPATH = ["$INFRAS", CWD, "$Nm_Cfg"]
+        # **不声明 ComM**：M11 起 ComM 会调 `Nm_NetworkRequest/Release/
+        # PassiveStartUp/GetState`，于是 Nm ↔ ComM 也成了双向引用。
+        # 一旦在这里写 `LIBS += ["ComM"]`，SCons 会构造出
+        # Nm → ComM → Nm 的环，直接报 `RecursionError` 而不是链接错误。
+        # 解法与 CanNm↔Nm 相同：两边都不声明，靠最终链接的全局符号解析。
+        # Nm.c 整个文件体被 `#ifdef USE_NM` 包住，不定义就是空翻译单元
+        self.Append(CPPDEFINES=["USE_NM"])
+        # **USE_COMM 不是"有 Com 信号层"，而是"有通信管理器 ComM"** ——
+        # 这是 as-master 的命名（`Nm.c:139/149/159/169` 四处 ComM 通知
+        # 全用 `#ifdef USE_COMM` 包住）。全仓搜下来只有这 4 处用它，
+        # 所以定义它不会意外打开别的功能。
+        #
+        # 不定义的后果：`ComM_Nm_*` 一次都不会被调用，
+        # 于是 `!m` 永远显示 `comm=NO_COM_NO_PENDING`，
+        # 而 NM 状态机其实一直在跑 —— 排查时会误判成"ComM 没工作"。
+        self.Append(CPPDEFINES=["USE_COMM"])
+        # **USE_COMM 不是"有 Com 信号层"，而是"有通信管理器 ComM"** ——
+        # 这是 as-master 的命名（`Nm.c:139/149/159/169` 四处 ComM 通知
+        # 全用 `#ifdef USE_COMM` 包住）。全仓搜下来只有这 4 处用它，
+        # 所以定义它不会意外打开别的功能。
+        #
+        # 不定义的后果：`ComM_Nm_*` 一次都不会被调用，
+        # 于是 `!m` 永远显示 `comm=NO_COM_NO_PENDING`，
+        # 而 NM 状态机其实一直在跑 —— 排查时会误判成"ComM 没工作"。
+        self.Append(CPPDEFINES=["USE_COMM"])
+        self.source = objs

@@ -1,0 +1,6 @@
+# communication/ —— 通信栈（CanIf / CanTp / PduR / Com ...）
+#
+# 与 as-master 逐字同构：只做"遍历子目录"，新增模块只要建目录 + 写一个
+# @register_library，本文件不用改。
+for sc in Glob("*/SConscript"):
+    SConscript(sc)

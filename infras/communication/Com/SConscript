@@ -1,0 +1,31 @@
+# Com/ —— 通信层（as-master 原样，一行未改）
+#
+# 依赖说明：
+#   $INFRAS     Com.h / ComStack_Types.h / PduR_Com.h / Std_Bit.h
+#   $Com_Cfg    本工程的信号/报文配置（Com_Cfg.h + Com_Cfg.c）
+#   PduR        Com 发送时调 PduR_ComTransmit()，**必须声明**
+#
+# 为什么这里要声明 LIBS 而 CanNm 不声明：
+#   Com 只依赖 PduR（单向），PduR 库不引用任何 Com 符号
+#   （`PduR_Com.c` 只转发到同库的 PduR_Transmit/RxIndication/TxConfirmation），
+#   所以是干净的 DAG 边。
+#   不声明的话，链接顺序变成 `-lPduR ... -lCom`，Com.o 里的
+#   PduR_ComTransmit 就再也没有库能提供 —— 现象是 `undefined reference`。
+#
+# Com_Cfg.c 编进本库（而不是平台库）：
+#   它要 include `Com_Priv.h`，里面 `Com_GlobalContextType` 在 `USE_DCM` 下
+#   多一个 `dcmComMode` 字段。配置和实现必须看到同一份结构定义，
+#   否则 `Com_Config.context` 指向的对象比 Com.c 以为的小 → 越界写。
+from building import *
+
+CWD = GetCurrentDir()
+objs = Glob("*.c")
+
+
+@register_library
+class LibraryCom(Library):
+    def config(self):
+        self.CPPPATH = ["$INFRAS", CWD, "$Com_Cfg"]
+        # StdBit：信号位流的读写（`Std_BitSetLittleEndian` 等）
+        self.LIBS += ["PduR", "StdBit"]
+        self.source = objs

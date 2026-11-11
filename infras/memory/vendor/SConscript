@@ -1,0 +1,31 @@
+# vendor/ —— 厂商存储中间件，**原样不修改**
+#
+# 来源：CVA_MCU_SDK_M01xx_2/middleware/nvm
+#   fee/   FEE（Flash EEPROM Emulation）—— fee.c / fee_initialization.c
+#   nvm/   NvM（NVRAM Manager）        —— nvm.c / nvm_block.c / nvm_queue.c /
+#                                        nvm_statemachine.c
+#
+# 升级方式：把新版 SDK 的这两个目录整个覆盖进来即可，本工程没有改其中任何一行。
+# 所有与工程的粘合代码都在：
+#   infras/memory/NvM/NvM.c        AUTOSAR 外观（NvM_* → NvM_Port*）
+#   app/platform/cvm0146/src/FeeAc.c           DFlash 五方法
+#   app/platform/cvm0146/src/config/NvM_Cfg.c  块表 + NvM_Port 实现
+#
+# ⚠ 头文件路径只挂到 vendor/，**不要**挂 vendor/nvm 或 vendor/fee：
+#   vendor/nvm/nvm.h 与 infras/include/NvM.h 在 Windows 上是同一个文件名
+#   （大小写不敏感），一旦同时进 -I 列表，`#include "NvM.h"` 可能解析到厂商头，
+#   Dcm 会莫名其妙编译失败。用 "nvm/nvm.h" 这种带目录的形式天然不会撞名。
+from building import *
+
+objs = Glob("fee/*.c") + Glob("nvm/*.c")
+
+
+@register_library
+class LibraryMemEngine(Library):
+    """厂商 NvM + FEE 引擎（不含任何平台代码）"""
+
+    def config(self):
+        # 厂商 .c 之间的 include 是"同目录裸文件名"，靠编译器"同目录优先"规则解析，
+        # 不依赖这里的 CPPPATH；这两个路径是给本工程的胶水代码用的。
+        self.CPPPATH = ["$INFRAS", "$MEMORY_VENDOR", "$MEMORY"]
+        self.source = objs

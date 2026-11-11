@@ -1,0 +1,21 @@
+# ComM/ —— 通信管理器（as-master 原样，688 行）
+#
+# 它是标准通信链路的**总调度**：
+#   EcuM → ComM_RequestComMode → 仲裁 → Nm（网络管理）+ CanSM（控制器）
+#   Nm 的状态回报 → ComM → Com_IpduGroupStart/Stop（信号报文自动开关）
+#
+# 配置在平台侧（`$ComM_Cfg` 的 ComM_Cfg.c），与其它模块一致。
+from building import *
+
+CWD = GetCurrentDir()
+objs = Glob("*.c")
+
+
+@register_library
+class LibraryComM(Library):
+    def config(self):
+        self.CPPPATH = ["$INFRAS", CWD, "$ComM_Cfg", "$Com_Cfg", "$Nm_Cfg"]
+        # Nm：网络请求/释放/查询；CanSM：控制器启停
+        # 两者都只被 ComM 单向调用，可以正常声明
+        self.LIBS += ["Nm", "CanSM", "Com"]
+        self.source = objs

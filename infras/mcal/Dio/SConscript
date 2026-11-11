@@ -1,0 +1,13 @@
+# DIO 驱动（AUTOSAR MCAL）
+from building import *
+
+CWD = GetCurrentDir()
+objs = Glob("*.c")
+
+
+@register_library
+class LibraryDio(Library):
+    def config(self):
+        self.include = [CWD]
+        self.CPPPATH = ["$INFRAS", "$Dio_Cfg"]
+        self.source = objs

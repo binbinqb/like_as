@@ -1,0 +1,25 @@
+# memory/ —— 存储栈
+#
+# 分层（自下而上）：
+#   vendor/    厂商 NvM + FEE 引擎，原样不改（升级 = 整目录覆盖）
+#   NvM/       本工程的 AUTOSAR 外观：NvM_Init / NvM_ReadBlock / NvM_WriteBlock / ...
+#
+# ⚠ 为什么注册两个路径变量
+#   $MEMORY         = infras/memory      → "NvM/NvM_Port.h"
+#   $MEMORY_VENDOR  = infras/memory/vendor → "nvm/nvm.h"、"fee/fee_extra.h"
+#
+#   只挂父目录、不挂叶子目录，是为了避开 Windows 大小写不敏感的坑：
+#   vendor/nvm/nvm.h 与 infras/include/NvM.h 同名（仅大小写不同），
+#   两个目录同时进 -I 列表时，"NvM.h" 可能被解析到厂商头，Dcm 会编译失败。
+#   带目录前缀的写法（"nvm/nvm.h"）天然不可能撞上（"NvM.h"）。
+from building import *
+
+import os
+
+CWD = GetCurrentDir()
+
+RegisterCPPPATH("$MEMORY", CWD)
+RegisterCPPPATH("$MEMORY_VENDOR", os.path.join(CWD, "vendor"))
+
+for sc in Glob("*/SConscript"):
+    SConscript(sc)

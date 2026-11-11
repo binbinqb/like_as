@@ -1,0 +1,15 @@
+from building import *
+
+CWD = GetCurrentDir()
+objs = Glob("*.c")
+
+# 与 as-master 的差异：原版还引 $NvM_Cfg / $Dem_Cfg / $LinTp_Cfg。
+# 那几个模块未移植时 RequireCPPPATH 会打 WARNING 再返回空列表（不报错），
+# 但反复出现的噪音会淹掉真正的告警。接一个补一个。
+
+
+@register_library
+class LibraryDcm(Library):
+    def config(self):
+        self.CPPPATH = ["$INFRAS", CWD, "$CanTp_Cfg", "$PduR_Cfg", "$Dcm_Cfg"]
+        self.source = objs

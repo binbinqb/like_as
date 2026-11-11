@@ -1,0 +1,25 @@
+# NvM/ —— AUTOSAR 外观（本工程写的，厂商引擎在 ../vendor）
+#
+# 只有一个 .c：NvM.c —— 把 NvM_Init/NvM_ReadBlock/NvM_WriteBlock/... 翻译成
+# NvM_Port* 调用。它**不含**任何厂商类型，也不含任何芯片相关代码。
+from building import *
+
+objs = Glob("*.c")
+
+
+@register_library
+class LibraryNvM(Library):
+    def config(self):
+        # $INFRAS：NvM.h / MemIf.h / Det.h / Std_Types.h
+        # $MEMORY：本目录的头（NvM_Port.h）
+        self.CPPPATH = ["$INFRAS", "$MEMORY"]
+        # $MEMORY_VENDOR：**不是**给 NvM.c 用的。
+        # 平台把 NvM_Cfg.c（块表 + NvM_Port 实现）注册进了本库，
+        # 而它必须直接 include 厂商头（nvm/nvm_queue.h、fee/fee.h）。
+        # NvM.c 自己一个厂商头都不 include —— 这条靠代码评审保证，
+        # 不是靠路径隔离。真要彻底隔离，就把 NvM_Cfg.c 挪进另一个库。
+        self.CPPPATH += ["$MEMORY_VENDOR"]
+        # 引擎必须先于本库链接：NvM_Port* 的实现虽然在本工程的平台配置里，
+        # 但它调用的 Nvm_* 全在 MemEngine 里。
+        self.LIBS += ["MemEngine"]
+        self.source = objs

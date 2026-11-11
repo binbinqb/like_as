@@ -1,0 +1,27 @@
+# infras/ —— AUTOSAR BSW/MCAL（与 AS 的 infras 同构）
+#
+# 组织约定（照 as-master）：
+#   include/          各模块的公共头（Std_Types.h / ComStack_Types.h / Can.h / Dio.h ...）
+#                     → 注册成 $INFRAS，模块之间统一用 "$INFRAS" 引用
+#   mcal/             MCAL 层（Port / Dio / Can ...），每个模块一个子目录、一个 SConscript
+#   communication/    CanIf / CanTp / PduR / Com ...
+#   diagnostic/       Dcm / Dem
+#   memory/           NvM / Fee / Fls
+#   system/           EcuM / Os
+#   libraries/        libc / 工具库
+#
+# 每个子目录的 SConscript 只写 "@register_library class LibraryXxx(Library)"，
+# 本文件负责把子目录自动纳入构建（新增模块不需要改这里）。
+#
+# M1 接入顺序：include → mcal/Port → mcal/Dio → mcal/Can → communication/CanIf
+from building import *
+
+import os
+
+CWD = GetCurrentDir()
+
+# $INFRAS 指向 infras/include：M1 起 MCAL/BSW 模块都用它引公共类型头
+RegisterCPPPATH("$INFRAS", os.path.join(CWD, "include"))
+
+for sc in Glob("*/SConscript"):
+    SConscript(sc)

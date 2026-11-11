@@ -1,0 +1,21 @@
+# CanSM/ —— CAN 状态管理器（as-master 原样，703 行）
+#
+# 职责：ComM 请求 ↔ CanIf/Can 控制器模式，外加 **bus-off 两级恢复**。
+#
+# 本工程能启用它，前提是 M10 修掉了 SDK 的 `selected3bitSampling`
+# 未初始化缺陷 —— 在此之前 `STOPPED→STARTED` 会让控制器永久静默，
+# M5 因此放弃了软件恢复（见 README 的「M10 的三个坑」③）。
+from building import *
+
+CWD = GetCurrentDir()
+objs = Glob("*.c")
+
+
+@register_library
+class LibraryCanSM(Library):
+    def config(self):
+        self.CPPPATH = ["$INFRAS", CWD, "$CanSM_Cfg"]
+        # CanIf：控制器/收发器/PDU 模式；ComM：模式回报（ComM_BusSM_ModeIndication）
+        # 注意 ComM 也依赖 CanSM，这里形成双向引用 —— 与 CanNm↔Nm 同理，
+        # 不声明 LIBS，靠最终链接的全局符号解析。
+        self.source = objs

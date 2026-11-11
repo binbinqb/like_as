@@ -1,0 +1,34 @@
+# EcuM/ —— ECU 状态管理器（as-master 原样：标准状态机 + 表格驱动的初始化/主函数）
+#
+# 文件分工：
+# **只放标准状态机**（EcuM.c），所有 `EcuM_AL_*` 集成代码在应用层
+# （`app/app/src/ecum_callout.c`）。
+#
+# 与 as-master 的差异：原版还有 `EcuM_Callout.c` 放通用表格遍历 +
+# NvM_ReadAll。本工程没用它，原因是原版 `EcuM_AL_DriverInitTwo` 会在
+# 列表遍历前做：
+#     EcuM_EnsureMemoryIdle();   // do { MemoryService(); } while (MEMIF_IDLE != NvM_GetStatus())
+# 而 `NvM_GetStatus()` 在 NvM 未初始化时返回 `MEMIF_UNINIT`（不是 IDLE），
+# 于是这个循环**永远不退出**。本工程的存储栈是自己写的（含 5 s 超时
+# 与耗时统计），初始化失败时会打印后返回而不是死等 —— 把这套逻辑
+# 塞进原版 callout 反而丢掉超时保护。
+#
+# 所以：初始化表的遍历函数我们重写了一份（同样按 Zero/One/Two 三阶段），
+# 放在应用侧，配置表也在应用侧（`EcuM_Cfg.c`）。
+from building import *
+
+CWD = GetCurrentDir()
+objs = Glob("*.c")
+
+
+@register_library
+class LibraryEcuM(Library):
+    def config(self):
+        # $INFRAS：EcuM.h / EcuM_Externals.h / Std_Types.h / NvM.h
+        # CWD    ：EcuM_Priv.h（配置结构，应用侧也要用）
+        self.CPPPATH = ["$INFRAS", CWD]
+        # 把本目录注册成 $EcuM，供应用层 include "EcuM_Priv.h"
+        self.include = [CWD]
+        # 依赖 NvM（EcuM_EnsureMemoryIdle），单向
+        self.LIBS += ["NvM"]
+        self.source = objs

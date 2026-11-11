@@ -1,0 +1,15 @@
+from building import *
+
+CWD = GetCurrentDir()
+objs = Glob("*.c")
+
+# 与 as-master 的差异：原版还引 $J1939Tp_Cfg / $SecOC_Cfg（未移植，会产生
+# "CPPPATH not found" 噪音）。接一个补一个。
+
+
+@register_library
+class LibraryCanIf(Library):
+    def config(self):
+        self.CPPPATH = ["$INFRAS", CWD, "$CanTp_Cfg", "$CanIf_Cfg"]
+        self.LIBS += ["MemPool"]
+        self.source = objs

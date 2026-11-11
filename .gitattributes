@@ -1,0 +1,35 @@
+# ============================================================================
+#  换行符策略：**一律 LF 入库、LF 检出**
+#
+#  为什么不用 git 默认的 autocrlf=true：那会让入库是 LF、检出成 CRLF，
+#  于是同一份文件在不同机器上"内容不同但 git 认为没改"，diff 里会周期性地
+#  冒出整文件级别的假改动。本项目的构建链（GCC 10 / SCons / Python 3.12）
+#  在 Windows 上完全接受 LF，没有理由让检出结果和入库内容不一致。
+# ============================================================================
+
+* text=auto eol=lf
+
+# 明确按文本处理（避免 .h/.c 被误判）
+*.c            text eol=lf
+*.h            text eol=lf
+*.S            text eol=lf
+*.py           text eol=lf
+*.md           text eol=lf
+*.txt          text eol=lf
+SConscript     text eol=lf
+SConstruct     text eol=lf
+*.ld           text eol=lf
+*.icf          text eol=lf
+*.json         text eol=lf
+*.bat          text eol=crlf
+
+# 二进制：不做换行转换，也不参与文本 diff
+*.o            binary
+*.a            binary
+*.elf          binary
+*.exe          binary
+*.bin          binary
+*.hex          binary
+*.s19          binary
+*.axf          binary
+*.pdf          binary

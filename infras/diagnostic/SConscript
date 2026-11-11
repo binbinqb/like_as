@@ -1,0 +1,5 @@
+# diagnostic/ —— 诊断栈（Dcm / Dem / Det / Mirror）
+#
+# 与 as-master 同构：只做"遍历子目录"，新增模块只要建目录 + @register_library。
+for sc in Glob("*/SConscript"):
+    SConscript(sc)

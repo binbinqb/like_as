@@ -1,0 +1,30 @@
+# CanNm/ —— CAN 网络管理（as-master 原样，一行未改）
+#
+# 依赖说明：
+#   $INFRAS       CanNm.h / Nm.h / NmStack_Types.h / Std_Timer.h / ComStack_Types.h
+#   $CanNm_Cfg    本工程的 NM 通道配置（周期 / 节点号 / PDU 号）
+#   CanIf         nmSendMessage() 直接调 CanIf_Transmit()（不走 PduR，与 AS 一致）
+#
+# USE_NM 必须在这里显式定义：
+#   CanNm.c 里 20 处 Nm_* 通知（状态变化、TX 超时、总线睡眠…）全在 `#ifdef USE_NM`
+#   之内。漏了不会编译失败，而是**静默丢掉所有向上层汇报的能力** ——
+#   NM 状态机照跑、报文照发，就是没人知道它进了哪个状态。
+from building import *
+
+CWD = GetCurrentDir()
+objs = Glob("*.c")
+
+
+@register_library
+class LibraryCanNm(Library):
+    def config(self):
+        self.CPPPATH = ["$INFRAS", CWD, "$CanNm_Cfg"]
+        # **刻意不声明 LIBS 依赖**：CanNm ↔ Nm 是双向引用
+        # （CanNm 调 Nm_* 上报，Nm 调 CanNm_* 分发），
+        # 而本工程的链接命令不带 `--start-group`，静态库单次扫描
+        # 无论怎么排都会有一边的符号解析不到。
+        # 两个库都进最终链接行，靠全局符号解析解决 —— 与 as-master 一致。
+        self.Append(CPPDEFINES=["USE_CANNM"])
+        # CanNm.c 用 `#ifdef USE_NM` 包住全部 Nm_* 调用
+        self.Append(CPPDEFINES=["USE_NM"])
+        self.source = objs

@@ -1,0 +1,42 @@
+# Boot：A/B 分区的启动管理器（--app=Boot）
+#
+# 只链接平台库，**不链接任何 BSW 模块**（Dcm / CanTp / NvM / Com …）：
+#   - 它不做诊断，不需要协议栈；
+#   - 64 KB 的 boot 区装不下那套东西（CanTp + Dcm + NvM 实测约 40 KB，
+#     加上平台层就顶到边界了）。
+# 平台库的 SConscript 里对 `--app=Boot` 跳过了 cfg 注册，这里才能只拿
+# "SDK + AC 实现 + BootMeta + FlashAc" 这一份最小集合。
+import os
+
+from building import *
+
+CWD = GetCurrentDir()
+
+# boot 的链接脚本：0x00000000 起、64 KB。与 app 的 ld 是同一份文件派生，
+# 只有 MEMORY 段的 ORIGIN/LENGTH 不同（见三份 .ld 头部的说明）。
+LD = os.path.join(CWD, os.pardir, "platform", "cvm0146", "sdk", "linker", "CVM0146_boot.ld")
+LD = os.path.normpath(LD)
+
+# ⚠ 同 app/SConscript：Glob 必须在模块级取，config() 执行时 cwd 已是 variant_dir
+objs = Glob("src/*.c")
+
+
+@register_application
+class ApplicationBoot(Application):
+    """Boot：选槽 → 校验镜像 CRC → 跳转（不带刷写）"""
+
+    def config(self):
+        # Cvm0146 已经隐含了 Crc（BootMeta.c 用它算 CRC32）
+        self.LIBS = ["Cvm0146"]
+        # $Cvm0146 → app/platform/cvm0146/include（boot_flash_map.h / boot_meta.h）
+        # $INFRAS  → infras/include（Std_Types.h / Crc.h）
+        self.CPPPATH = ["$Cvm0146", "$INFRAS"]
+        self.source = objs
+        self.Append(LINKFLAGS=[
+            # 启动由厂商 startup_M014x_gcc.S 提供，不要 newlib 的 crt0
+            "-nostartfiles",
+            "-T", LD,
+            "-Wl,-Map,%s/Boot.map" % BUILD_DIR,
+            # 镜像超 64 KB 时直接链接失败，而不是悄悄覆盖到 app 区
+            "-Wl,--fatal-warnings",
+        ])

@@ -1,0 +1,17 @@
+# CAN 驱动（AUTOSAR MCAL）—— 与 as-master 的 infras/mcal/Can/SConscript 同构
+#
+# 注意：本模块只含状态机与 DET 校验，**不含 Can_Write 的实现**。
+# 收发在平台的 src/CanAc.c 里（AS 这么设计的，见 CanAc.c 的文件头说明）。
+from building import *
+
+CWD = GetCurrentDir()
+objs = Glob("*.c")
+
+
+@register_library
+class LibraryCan(Library):
+    def config(self):
+        self.include = [CWD]
+        # $Dio_Cfg：Can.h/Can_Priv.h 在 USE_PORT 下要用 Dio_ChannelType
+        self.CPPPATH = ["$INFRAS", "$Dio_Cfg"]
+        self.source = objs

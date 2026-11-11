@@ -1,0 +1,13 @@
+# clangd 配置（可选；已经装了 cpptools 的话不用这个）
+#
+# 为什么需要 Compiler：
+#   clangd 用自己的 clang 前端，默认不知道 arm-none-eabi-gcc 的系统头在哪，
+#   会满屏报 "stdint.h file not found"。写上 Compiler 后 clangd 会以
+#   --query-driver 的方式向这个 gcc 查询系统 include 路径，问题消失。
+#
+# 前提：已装 clangd（VSCode 的 clangd 扩展首次使用会提示安装）。
+CompileFlags:
+  Compiler: C:/soft/gcc/10.3.1/bin/arm-none-eabi-gcc
+
+Diagnostics:
+  UnusedIncludes: None

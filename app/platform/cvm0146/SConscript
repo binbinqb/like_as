@@ -1,0 +1,153 @@
+# CVM0146 平台层：厂商 SDK + 启动文件 + 平台初始化 + 各模块的配置表
+#
+# 与 AS 的 app/platform/<mcu> 同构 —— 平台差异只出现在这一层，
+# 上层 infras（MCAL/BSW）不含任何厂商头文件。目录约定照 AS 的 simulator 平台：
+#
+#   sdk/          厂商 SDK 原样（drivers / reg / linker / mcu.c），只读不改
+#   include/      平台对外头文件（应用层只认这里，不直接 include SDK）
+#   src/          平台实现（AC 层，对应 AS 的 CanAc/PortAc/DioAc）
+#   src/config/   各模块的 *_Cfg.c/h，经 RegisterConfig 挂到对应模块库（M1 起填）
+#
+# ⚠ 路径一律用 GetCurrentDir()（= SConscript 源码目录的绝对路径）。
+#   不能用 Dir("...") 或 os.getcwd()：SConscript 在 variant_dir 下执行，
+#   相对路径会被映射到 build/nt/... 导致"头文件找不到"。
+import glob
+import os
+
+from building import *
+
+CWD = GetCurrentDir()
+SDK = os.path.join(CWD, "sdk")
+INC = os.path.join(CWD, "include")
+
+# 厂商驱动全部编入：42 个 .c 实测 GCC 10.3 全部可编译。
+# 要裁剪就缩小这里的 glob（例如只留 drivers/flexcan + drivers/pins）。
+#
+# 分成两组是为了让 boot 只拿平台 AC 的一部分（见 config() 里的裁剪）：
+#   acObjs  = src/*.c（平台 AC，与具体外设/模块绑定）
+#   sdkObjs = 厂商 SDK + 启动文件 + mcu.c（boot 与 app 完全一样）
+acObjs = Glob("src/*.c")
+
+sdkObjs = [File(p) for p in sorted(glob.glob(os.path.join(SDK, "drivers", "**", "*.c"),
+                                             recursive=True))]
+# 启动文件用厂商 CDS(GCC) 版，含 START_FROM_FLASH 下的 SRAM ECC 初始化
+sdkObjs.append(File(os.path.join(SDK, "drivers", "cpu", "startup", "startup_M014x_gcc.S")))
+sdkObjs.append(File(os.path.join(SDK, "mcu.c")))
+
+objs = acObjs + sdkObjs
+
+# 各模块配置表：key = 模块库名，value = 该模块的 *_Cfg.c（也可给 .json 由生成器产 C）
+# 加一个模块就在这里加一行 —— 模块库会自动拿到配置源、配置头路径和 USE_<NAME> 宏。
+# 这是 AS "模块可裁剪" 的实现方式：不用的模块不写进来，就不会被链接。
+#
+# ⚠ 一旦登记，模块库会得到 USE_<NAME> 宏。注意 USE_PORT 有额外含义：
+#   Can 驱动会改走 "TrcvPinSTB 用 Dio 通道" 的分支（不再自己维护 CtrlPins 表）。
+cfgs = {
+    "Can":   Glob("src/config/Can_Cfg.c"),
+    "CanIf": Glob("src/config/CanIf_Cfg.c"),
+    "CanTp": Glob("src/config/CanTp_Cfg.c"),
+    "Dcm":   Glob("src/config/Dcm_Cfg.c"),
+    "Dio":   Glob("src/config/Dio_Cfg.c"),
+    "PduR":  Glob("src/config/PduR_Cfg.c"),
+    "Port":  Glob("src/config/Port_Cfg.c"),
+    # 存储栈：两块配置都要**直接看见厂商类型**（Nvm_BlockItemType / FeeType），
+    # 所以分别编进 MemEngine 与 NvM 两个库，而不是编进平台库。
+    #   Fee_Cfg.c  → 定义 Fee_Driver（扇区表 + 块表 + 方法表）
+    #   NvM_Cfg.c  → 定义 NvM_Driver 与 NvM_Port*（引擎绑定）
+    "MemEngine": Glob("src/config/Fee_Cfg.c"),
+    "NvM":       Glob("src/config/NvM_Cfg.c"),
+    # Dem：本工程是简化实现（infras/diagnostic/Dem），配置只有编译期对账 +
+    # 块 id / 事件号 / DTC 码几个宏，全在 Dem_Cfg.h 里。
+    # Dem_Cfg.c 的存在是为了给 RegisterConfig 一个挂载点（详见该文件头注释）。
+    "Dem":       Glob("src/config/Dem_Cfg.c"),
+    # CanNm / Nm：网络管理的配置表。
+    # 注意 "Nm" 这个 key 同时决定了 `USE_NM` 宏 —— 见下面循环里的
+    # `CPPDEFINES=["USE_%s"]`。所以不要把两个模块合成一个 key，
+    # 否则 `USE_CANNM` 或 `USE_NM` 会缺一个，而缺的那个是**静默失效**：
+    #   - 缺 USE_CANNM：Nm 无法把请求分发到 CanNm
+    #   - 缺 USE_NM   ：CanNm 不向上报状态，NM 照发报文但不进任何状态
+    "CanNm":     Glob("src/config/CanNm_Cfg.c"),
+    "Nm":        Glob("src/config/Nm_Cfg.c"),
+    # Com：信号/报文配置。**编进 Com 库而不是平台库** ——
+    # 它要 include `Com_Priv.h`，而 `Com_GlobalContextType` 的字段随
+    # `USE_DCM` 增减。配置与实现必须在同一个翻译环境里编译，
+    # 否则 `Com_Config.context` 指向的对象比 Com.c 以为的小 → 越界写。
+    "Com":       Glob("src/config/Com_Cfg.c"),
+    # ComM / CanSM：通信管理层。ComM 是"总调度"，CanSM 管控制器启停与
+    # bus-off 恢复。两者互调（ComM→CanSM 请求模式，CanSM→ComM 回报），
+    # 链接期靠全局解析，与 CanNm↔Nm 同理。
+    "ComM":      Glob("src/config/ComM_Cfg.c"),
+    "CanSM":     Glob("src/config/CanSM_Cfg.c"),
+}
+
+
+@register_library
+class LibraryCvm0146(Library):
+    """CVM0146 平台访问层（对应 AS 的 XxxAc + 启动文件 + SDK）"""
+
+    def config(self):
+        # self.include 会被框架注册成 $Cvm0146，凡 LIBS 里有 Cvm0146 的目标自动获得
+        self.include = [INC]
+        self.CPPPATH = [
+            "$Cvm0146",
+            SDK,                              # mcu.h / CVM014x_features.h
+            os.path.join(SDK, "reg"),         # 寄存器定义
+            # AC 实现要 include 各模块的 *_Priv.h。AS 的 simulator 平台靠
+            # "$Can"/"$Dio"/"$Port" 变量引用（由模块库的 self.include 注册），
+            # 这里沿用同样写法；$Xxx_Cfg 由下面的 RegisterConfig 追加。
+            "$INFRAS",
+            # 存储栈：FeeAc.c 要 include 厂商的 "fee/fee_extra.h"（方法表类型）。
+            # 只挂到 vendor 父目录，叶子目录（vendor/fee）不挂 —— 见
+            # infras/memory/SConscript 里关于 Windows 大小写冲突的说明。
+            "$MEMORY",
+            "$MEMORY_VENDOR",
+        ]
+        # $Can / $Dio / $Port 是模块库注册的 include 变量（`self.include`），
+        # 只有那些库参与构建时才存在。boot 不链接它们，直接引用会让
+        # SCons 在解析 CPPPATH 时抛 "CPPPATH $Can not found"。
+        #
+        # 注意 FlashLoader.c 用的 `Dcm.h` 在 $INFRAS 里（`infras/include`），
+        # 不走 $Dcm —— Dcm 库没有注册 self.include，那个变量根本不存在。
+        if appName != "Boot":
+            self.CPPPATH += ["$Can", "$Dio", "$Port"]
+        # MCU_CVM0146FMLQ：选择寄存器定义与 Flash 容量
+        # START_FROM_FLASH：启动走 Flash 分支（含 SRAM ECC 初始化、向量表定位）
+        self.CPPDEFINES = ["MCU_CVM0146FMLQ", "START_FROM_FLASH"]
+
+        # boot 只需要"时钟/串口 + PFlash 擦写 + meta 读写"这三个 AC。
+        # 其余 AC（CanAc / FeeAc / DioAc / PortAc / StdTimerAc）都 include 各自
+        # 模块库的私有头（`Can_Priv.h` 之类），而那些头只有在对应模块库参与
+        # 构建时才注册成 CPPPATH 变量 —— boot 不链接它们，硬编就会报
+        # "Can_Priv.h: No such file or directory"。
+        # 顺带也省掉一堆无用目标文件。
+        if appName == "Boot":
+            # `Platform_Init()` 走精简版驱动初始化：只填 clock/flash/power/reset/uart
+            # 五个句柄，避免 `Mcu_Init()` 把 20 多个外设驱动全部拉进 64 KB 的 boot 区。
+            self.Append(CPPDEFINES=["PLATFORM_BOOT_MINIMAL"])
+            keep = ("platform_cvm0146.c", "FlashAc.c", "BootMeta.c")
+            self.source = [o for o in acObjs if os.path.basename(str(o)) in keep] + sdkObjs
+        else:
+            self.source = objs
+
+        # BootMeta.c 用 `Crc_CalculateCRC32` 算镜像与 meta 的 CRC32。
+        # 放在这里而不是让上层各自声明，是因为平台库自己就引用它了（静态库
+        # 的依赖必须显式写出，SCons 不会替你传递）。
+        self.LIBS += ["Crc"]
+
+        # ------------------------------------------------------------------
+        # 两块东西要分开看：**include 路径/宏** 与 **库链接**。
+        #
+        # boot 也需要 cfg 头（平台 AC 实现里 `CanAc.c` 就 include "Can_Cfg.h"，
+        # 而平台库的 source 是 `src/*.c` 全量，编译期缺头直接报错），
+        # 所以 `RegisterConfig` 与 `USE_xxx` 宏对 boot 照常执行。
+        #
+        # 但 boot **不链接**这些模块库：`self.LIBS` 才是决定"链不链"的地方。
+        # 不链接 → 那些库不会被构建 → 挂在它们名下的 `*_Cfg.c` 一个都不会编译，
+        # 平台库里没被引用的 AC 目标文件也不会进最终镜像。
+        # 这正是 boot 能控制在 64 KB 内的原因（CanTp+Dcm+NvM 实测约 40 KB）。
+        # ------------------------------------------------------------------
+        for libName, cfg in cfgs.items():
+            if appName != "Boot":
+                self.LIBS += [libName]
+            self.RegisterConfig(libName, cfg)
+            self.Append(CPPDEFINES=["USE_%s" % (libName.split(":")[0].upper())])

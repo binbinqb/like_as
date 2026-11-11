@@ -1,0 +1,15 @@
+# Det/ —— Default Error Tracer
+#
+# 目前只有 NvM 会往里报（块 id 越界 / 未初始化 / 空指针）。
+# 加它是为了让这些参数错误有个落点：否则接口只返回 E_NOT_OK，
+# 板上根本看不出是"参数写错了"还是"引擎忙"。
+from building import *
+
+objs = Glob("*.c")
+
+
+@register_library
+class LibraryDet(Library):
+    def config(self):
+        self.CPPPATH = ["$INFRAS"]
+        self.source = objs

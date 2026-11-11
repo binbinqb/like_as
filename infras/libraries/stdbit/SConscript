@@ -1,0 +1,26 @@
+# stdbit/ —— 位流读写（Com 解包信号用）
+#
+# 只拷了 `std_bit.c`（32 位版本），没拷 `std_bit64.c`：
+# 后者是 64 位信号的位流操作，本工程没有 64 位信号，拷进来只是死代码。
+# 将来接 64 位信号（比如里程、时间戳）时再补，并把 `StdBit` 的
+# `CPPDEFINES` 一起检查一遍。
+#
+# **为什么要 NDEBUG**：`std_bit.c:282/311` 里有两句 `assert(nBit >= 0)`，
+# 裸机上 `assert` 会展开成 `__assert_func` → `abort()`，
+# 把 newlib 的一整条错误处理链拉进固件（几百字节，且没有实际用处 ——
+# 这两处断言检查的是"调用者传了负数位宽"，而 `nBit` 是 `uint8_t`，
+# 永远不可能为负，本身就是一句死断言）。
+#
+# 关掉 assert 不影响任何实际检查：Com 的值域约束靠配置表 + 位宽本身保证。
+from building import *
+
+CWD = GetCurrentDir()
+objs = Glob("src/*.c")
+
+
+@register_library
+class LibraryStdBit(Library):
+    def config(self):
+        self.CPPPATH = ["$INFRAS", CWD, CWD + "/src"]
+        self.Append(CPPDEFINES=["NDEBUG"])
+        self.source = objs

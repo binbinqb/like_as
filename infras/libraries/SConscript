@@ -1,0 +1,7 @@
+# libraries/ —— 基础库（MemPool / Crc / RingBuffer / libc ...）
+#
+# 与 as-master 同构：遍历子目录，每个库自己 @register_library。
+# CanIf 依赖 MemPool（mempool.h 里带 <sys/queue.h> 与 STAILQ 宏），
+# 即使包池大小为 0 也需要它来提供头文件与链接符号。
+for sc in Glob("*/SConscript"):
+    SConscript(sc)

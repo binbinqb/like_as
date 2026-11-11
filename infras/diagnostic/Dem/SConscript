@@ -1,0 +1,19 @@
+# Dem/ —— 诊断事件管理器（本工程是简化实现，接口与 AUTOSAR 一致）
+#
+# 只有 Dem.c 一个源文件。配置在平台侧（$Dem_Cfg 的 Dem_Cfg.h），
+# 与 NvM / Fee / Dcm 一样：**改板子只改 config，不动 infras**。
+from building import *
+
+CWD = GetCurrentDir()
+objs = Glob("*.c")
+
+
+@register_library
+class LibraryDem(Library):
+    def config(self):
+        # $INFRAS：Dem.h / NvM.h / MemIf.h / Std_Types.h
+        # $Dem_Cfg：本工程的 Dem 配置（块 id / 事件表 / 扩展接口）
+        self.CPPPATH = ["$INFRAS", CWD, "$Dem_Cfg", "$NvM_Cfg"]
+        # Dem 要把 DTC 表写回 NvM，链接期必须能找到 NvM_WriteBlock
+        self.LIBS += ["NvM"]
+        self.source = objs

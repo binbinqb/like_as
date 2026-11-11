@@ -1,0 +1,18 @@
+{
+  "attachmentFolderPath": "99-附件",
+  "newFileLocation": "current",
+  "newFileFolderPath": "",
+  "alwaysUpdateLinks": true,
+  "useMarkdownLinks": false,
+  "showUnsupportedFiles": true,
+  "promptDelete": true,
+  "trashOption": "local",
+  "defaultViewMode": "preview",
+  "livePreview": true,
+  "showLineNumber": true,
+  "readableLineLength": true,
+  "strictLineBreaks": false,
+  "foldHeading": true,
+  "foldIndent": true,
+  "showFrontmatter": true
+}

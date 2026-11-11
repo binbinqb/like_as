@@ -1,0 +1,85 @@
+# 主应用（AS 的应用目录约定：app/app，命令行 --app=App）
+#
+# 同一份源码出**两个链接变体**：
+#   --app=App    链接到 Slot A（0x00010000，448 KB）
+#   --app=AppB   链接到 Slot B（0x00080000，448 KB）
+#
+# 为什么必须编两次而不是"镜像通用"：Cortex-M4 没有 MMU，代码里的绝对地址
+# （函数指针表、const 数组、字符串字面量）在链接时定死。把 A 的镜像原样写到
+# B 上，第一次解引用全局变量就会跳飞。位置无关编译（-fropi）在 M4 上代价太大，
+# 量产 A/B 方案都是双镜像。
+#
+# 日常只编 App（A 槽）；验证 B 槽升级、或从 B 槽回滚时才需要编 AppB。
+import os
+
+from building import *
+
+CWD = GetCurrentDir()
+
+LINKER_DIR = os.path.normpath(
+    os.path.join(CWD, os.pardir, "platform", "cvm0146", "sdk", "linker"))
+
+# ⚠ Glob 必须在**模块级别**取，不能写在 config() 里：
+# config() 执行时 cwd 已经是 variant_dir（build/nt/...），那里没有源码副本
+# （duplicate=0），Glob 会返回空 → 链接时 "undefined reference to main"。
+objs = Glob("src/*.c")
+
+# 两个变体共用的库清单。
+# CanNm 与 Nm 互相引用，不能靠库自身的 LIBS 排顺序（本工程链接命令无
+# --start-group）。两个都放进来，由链接器做全局符号解析 —— 与 as-master 一致。
+APP_LIBS = ["Cvm0146", "CanIf", "PduR", "CanTp", "Dcm", "NvM", "Dem", "Det",
+            "StdTimer",
+            "CanNm", "Nm",
+            "Com",
+            "EcuM", "ComM", "CanSM"]
+
+# $Cvm0146 由平台库的 self.include 注册；$INFRAS 由 infras/SConscript 注册；
+# $Xxx_Cfg 由平台库的 RegisterConfig 注册（都在构建时解析，与脚本执行顺序无关）。
+APP_CPPPATH = ["$Cvm0146", "$INFRAS", "$Can_Cfg", "$CanIf_Cfg", "$CanTp_Cfg",
+               "$Dcm_Cfg", "$PduR_Cfg", "$Dio_Cfg", "$Port_Cfg", "$NvM_Cfg",
+               "$Dem_Cfg", "$CanNm_Cfg", "$Nm_Cfg", "$Com_Cfg",
+               "$ComM_Cfg", "$CanSM_Cfg",
+               # $EcuM：EcuM_Priv.h（`EcuM_Cfg.c` 要填配置结构）
+               "$EcuM"]
+
+
+class _AppImageBase(Application):
+    """A/B 镜像的公共配置（不注册成应用，只被下面两个子类继承）"""
+
+    SLOT_INDEX = 0
+    LD_FILE = "CVM0146_app_a.ld"
+    MAP_NAME = "App"
+
+    def config(self):
+        self.LIBS = list(APP_LIBS)
+        self.CPPPATH = list(APP_CPPPATH)
+        # APP_SLOT_INDEX：`boot_app.c` 用来判断"我是哪个槽的镜像"，
+        # 并与链接地址做运行时对账 —— 对不上说明烧错了文件（比如把 AppB
+        # 的镜像刷进了 A 槽），这时宁可在启动时报错也不要带着错地址跑。
+        self.Append(CPPDEFINES=["APP_SLOT_INDEX=%d" % self.SLOT_INDEX])
+        self.source = objs
+        self.Append(LINKFLAGS=[
+            # 启动由厂商 startup_M014x_gcc.S 提供，不要 newlib 的 crt0
+            # （crt0 假设有 _start/_sbrk，会把整套 syscall 桩拉进来）
+            "-nostartfiles",
+            "-T", os.path.join(LINKER_DIR, self.LD_FILE),
+            "-Wl,-Map,%s/%s.map" % (BUILD_DIR, self.MAP_NAME),
+        ])
+
+
+@register_application
+class ApplicationApp(_AppImageBase):
+    """Slot A 镜像（0x00010000，448 KB）—— 日常构建的默认目标"""
+
+    SLOT_INDEX = 0
+    LD_FILE = "CVM0146_app_a.ld"
+    MAP_NAME = "App"
+
+
+@register_application
+class ApplicationAppB(_AppImageBase):
+    """Slot B 镜像（0x00080000，448 KB）—— 验证 B 槽升级时用"""
+
+    SLOT_INDEX = 1
+    LD_FILE = "CVM0146_app_b.ld"
+    MAP_NAME = "AppB"

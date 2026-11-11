@@ -1,0 +1,18 @@
+# PDU Router
+#
+# 与 as-master 的差异：只保留本项目实际接上的配置头路径。
+# as-master 原版还引用了 $Com_Cfg / $LinTp_Cfg / $J1939Tp_Cfg / $SecOC_Cfg /
+# $Mirror_Cfg / $DoIP_Cfg —— 这些模块还没移植，RequireCPPPATH 会逐个打 WARNING
+# 并返回空列表（不报错），但会淹没真正的告警。接一个补一个。
+from building import *
+
+CWD = GetCurrentDir()
+objs = Glob("*.c")
+
+
+@register_library
+class LibraryPduR(Library):
+    def config(self):
+        self.CPPPATH = ["$INFRAS", CWD, "$CanIf_Cfg", "$CanTp_Cfg", "$Dcm_Cfg"]
+        self.LIBS = ["MemPool"]
+        self.source = objs

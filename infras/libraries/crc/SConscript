@@ -1,0 +1,39 @@
+# CRC 库（AUTOSAR SWS_CRCLibrary 的 5 个标准例程）
+#
+# 来源：as-master `infras/libraries/crc`，**src 目录原样拷贝**，未做任何修改。
+# 唯一改动是把上游 SConscript 里的 `gen()` 去掉 —— 上游在那里调用 pycrc
+# 现场生成表驱动实现（`Package(url="https://pycrc.org/...")` 会下载 zip），
+# 生成的 .c/.h 其实已经在仓库里了，构建时再下载一遍纯属给离线构建挖坑。
+# 需要重新生成时看本目录 `REGENERATE.md` 里的命令行（抄自上游 gen()）。
+#
+# 为什么现在才加：刷写要用 CRC32 校验镜像（`BL_USE_CRC_32` / 0x31 例程），
+# `Crc.h` 的声明早就在 `infras/include` 里，但一直没人实现 —— 之前没人调用，
+# 所以链接不会报错。boot 一用上就必须有实体。
+from building import *
+
+CWD = GetCurrentDir()
+
+objs = Glob("src/*.c")
+
+
+@register_library
+class LibraryCrc(Library):
+    """CRC8 / CRC8H2F / CRC16 / CRC32 / CRC32P4（表驱动，pycrc 生成）"""
+
+    # object 库：直接把 .o 交给上层，不额外打一次 .a。
+    # CRC 只有 5 个文件、体积极小，打 .a 反而多一层间接。
+    object = True
+
+    def config(self):
+        # 生成的 .c 用 `#include "crc32/crc32.h"` 这种带子目录的写法，
+        # 所以 include 根要指到 src/，同时各子目录也挂上（头文件互引）。
+        self.include = [
+            "%s/src" % (CWD),
+            "%s/src/crc8" % (CWD),
+            "%s/src/crc8h2f" % (CWD),
+            "%s/src/crc16" % (CWD),
+            "%s/src/crc32" % (CWD),
+            "%s/src/crc32p4" % (CWD),
+        ]
+        self.CPPPATH = ["$INFRAS"]
+        self.source = objs
