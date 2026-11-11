@@ -1,0 +1,16 @@
+{
+  "class": "CanIf",
+  "RxPacketPoolSize": 0,
+  "TxPacketPoolSize": 0,
+  "RxPacketDataSize": 64,
+  "TxPacketDataSize": 64,
+  "networks": [
+    {
+      "name": "CAN1",
+      "me": "BCM",
+      "dbc": "../dbc/can1.dbc",
+      "RxPdus": [],
+      "TxPdus": []
+    }
+  ]
+}

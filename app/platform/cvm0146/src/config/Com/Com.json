@@ -1,0 +1,16 @@
+{
+  "class": "Com",
+  "networks": [
+    {
+      "name": "CAN1",
+      "network": "CAN",
+      "device": "cvm0146",
+      "port": 0,
+      "baudrate": 250000,
+      "me": "BCM",
+      "use_dbc": true,
+      "dbc": "../dbc/can1.dbc",
+      "messages": []
+    }
+  ]
+}

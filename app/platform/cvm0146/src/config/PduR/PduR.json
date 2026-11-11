@@ -1,0 +1,23 @@
+{
+  "class": "PduR",
+  "routines": [
+    {
+      "name": "P2P_RX",
+      "from": "CanTp",
+      "to": "Dcm"
+    },
+    {
+      "name": "P2P_TX",
+      "from": "Dcm",
+      "to": "CanTp"
+    }
+  ],
+  "networks": [
+    {
+      "name": "CAN1",
+      "me": "BCM",
+      "network": "CAN",
+      "dbc": "../dbc/can1.dbc"
+    }
+  ]
+}

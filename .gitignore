@@ -35,6 +35,29 @@ compile_commands.json
 .sconf_temp/
 config.log
 
+# ── 配置生成器（tools/generator）的产物 ──────────────────────────────────
+# 每个 config/<模块>/GEN/ 下的 Xxx_Cfg.c/h 都是 JSON 生成的，不入库。
+# 入库的是**配置源**（<模块>.json）和生成器本身 —— 这样"改了 JSON 却没提交
+# 生成的 .c"这种不一致不可能发生，因为生成物根本不在版本库里。
+**/GEN/
+
+# 生成器的缓存与 PLY 解析表缓存（parsetab 由 PLY 在首次解析 DBC 时自动重建）
+#
+# `.gendb.pkl` 落在**仓库根目录**而不是 tools/generator/ 下 —— 因为
+# generator/__init__.py 里 `RootDir = dirname(__file__) + "/../.."`，
+# 对外是"配置变更检测缓存"（记 JSON 的 md5），换机器就该重建。
+/.gendb.pkl
+tools/generator/.gendb.pkl
+tools/generator/dbc/parsetab.py
+tools/generator/dbc/parser.out
+tools/generator/dbc/*.out
+tools/generator/ldf/parsetab.py
+tools/generator/ldf/parser.out
+tools/generator/oil/parsetab.py
+tools/generator/oil/parser.out
+__pycache__/
+*.pyc
+
 # ── 参考资料：体积大，不进版本库 ─────────────────────────────────────────
 # AUTOSAR 官方规范 PDF（约 356 MB）—— 从 AUTOSAR 官网获取，不随代码分发。
 # 注意只排除这一个子目录：doc/AUTOSAR 学习文档/ 是自己写的东西，必须入库。
