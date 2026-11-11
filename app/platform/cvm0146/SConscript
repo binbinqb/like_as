@@ -47,6 +47,9 @@ cfgs = {
     # Adc_Cfg.c 要 include `Adc_Priv.h`（配置结构体 + AdcAc_* 边界），
     # 所以必须编进 Adc 库，而不是平台库 —— 与 Dio/Port 同一处理方式。
     "Adc":   Glob("src/config/Adc_Cfg.c"),
+    # PWM（M18）：与 ADC 同样的处理 —— `Pwm_Cfg.c` 要 include `Pwm_Priv.h`
+    # （配置结构体 + PwmAc_* 边界），所以编进 Pwm 库而不是平台库。
+    "Pwm":   Glob("src/config/Pwm_Cfg.c"),
     "Can":   Glob("src/config/Can_Cfg.c"),
     "CanIf": Glob("src/config/CanIf_Cfg.c"),
     "CanTp": Glob("src/config/CanTp_Cfg.c"),

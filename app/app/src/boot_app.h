@@ -35,7 +35,7 @@
  *        这里改漏了不会报错，只是升级后诊断仪读到的还是旧版本，很难发现。
  */
 #define APP_VERSION_MAJOR       (2u)
-#define APP_VERSION_MINOR       (6u)
+#define APP_VERSION_MINOR       (7u)
 #define APP_VERSION_PATCH       (0u)
 
 /**

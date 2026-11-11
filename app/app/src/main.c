@@ -34,7 +34,7 @@
  *          打印放主循环。
  *
  * @author  binbina
- * @version V2.6.0
+ * @version V2.7.0
  *
  * @par 修改记录
  * | 版本   | 日期       | 作者    | 变更说明 |
@@ -56,6 +56,7 @@
  * | V2.4.0 | 2026-11-11 | binbina | M13：A/B 分区（双镜像 + 槽尾 meta + UDS 刷非活动槽） |
  * | V2.5.0 | 2026-11-11 | binbina | M14：通信矩阵承载能力（段掩码邮箱 + 硬件/软件双层过滤压测） |
  * | V2.6.0 | 2026-11-11 | binbina | M15：ADC 模块（as-master 无，按三段式补；双单元 + 多通道 + PDB/TRGMUX） |
+ * | V2.7.0 | 2026-11-11 | binbina | M18：PWM 模块（PwmLite 4 路、0%/100% 静态电平、同实例同频约束） |
  */
 
 #include "platform_cvm0146.h"
@@ -69,6 +70,8 @@
 #include "Dcm.h"
 #include "Dio.h"
 #include "Dio_Cfg.h"
+#include "Pwm.h"          /* M18：PWM 验收命令 !l/!L */
+#include "Pwm_Cfg.h"
 #include "Adc.h"         /* M15：ADC 标准接口 */
 #include "Adc_Cfg.h"     /* ADC_CFG_GROUP_PROBE 等组号 */
 #include "Port.h"
@@ -470,6 +473,126 @@ static void AdcCmd_Probe(void)
 	}
 }
 
+/* ============================ [ PWM 验收（M18） ] ============================ */
+
+/**
+ * @brief 忙等若干毫秒（基于 SysTick 的 1 ms 计数）
+ * @param[in] ms 毫秒数
+ * @note  只用于验收命令，不用于业务逻辑 —— 忙等会占满 CPU。
+ * @warning 若 `Platform_StopTick()` 被调用过，`Platform_NowMs()` 不再前进，
+ *          这里会**死循环**。`!z`（STOP 模式）之后不要再发 `!l`。
+ */
+static void PwmCmd_DelayMs(uint32_t ms)
+{
+	uint32_t t0 = Platform_NowMs();
+
+	while ((Platform_NowMs() - t0) < ms) {
+		/* 空转等待 */
+	}
+}
+
+/**
+ * @brief 百分比 → 0x8000 满量程的占空比
+ * @param[in] pct 0~100（超过 100 按 100 处理）
+ * @return 占空比
+ * @note  用百分比是因为**功能规范和人对频率/亮度的直觉都是百分比**
+ *        （"占空比 20% → 90%"），而 `Pwm_SetDutyCycle()` 要的是 0~0x8000。
+ *        换算只在这一个地方做，避免每个调用点各写一遍。
+ */
+static Pwm_DutyCycleType PwmCmd_Pct(uint32_t pct)
+{
+	if (pct > 100u) {
+		pct = 100u;
+	}
+
+	return (Pwm_DutyCycleType)((pct * 0x8000u) / 100u);
+}
+
+/**
+ * @brief PWM 验收命令（`!l` 演示 / `!L` 复位）
+ *
+ * @details 为什么需要这个命令：`Pwm` 模块像 `Adc` 一样，**编译通过不等于
+ *          代码在跑** —— 没有任何调用点时整个模块会被 `--gc-sections` 丢弃，
+ *          镜像里一个 `Pwm_*` 符号都不会有。
+ *
+ *          演示序列刻意做成**肉眼可见**：官方 `pwm_lite_output` 例程里
+ *          `PTD0` / `PTE15` / `PTE16` 分别接 RGB 灯的三个颜色通道，所以
+ *          改占空比能直接看到颜色/亮度的变化，不需要示波器。
+ *
+ *          | 步骤 | 内容 | 验什么 |
+ *          |------|------|--------|
+ *          | 1 | 全通道 0% | 0% 必须静态低（规范禁止尖峰） |
+ *          | 2 | ch0 0→100% 分 10 步 | 顶灯渐亮的时序（IL001 是 20%→90%/2.5s） |
+ *          | 3 | ch2 0→100% | 第二路独立输出 |
+ *          | 4 | ch3 0→100% | 第三路独立输出 |
+ *          | 5 | RGB 同时 50% | 多通道并发 |
+ *          | 6 | 恢复配置表初值 | `Pwm_SetDutyCycle` 反复调用的稳定性 |
+ */
+static void PwmCmd_Exec(char c)
+{
+	uint16_t i;
+
+	if (c == 'L') {
+		/* 恢复配置表里的初值：顶灯灭、三路验证通道各回自己的固定占空比 */
+		Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_DOME_LAMP, PwmCmd_Pct(0u));
+		Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST1, PwmCmd_Pct(50u));
+		Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST2, PwmCmd_Pct(25u));
+		Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST3, PwmCmd_Pct(75u));
+		Platform_Puts("  pwm restored: ch0=0% ch1=50% ch2=25% ch3=75%\n");
+		return;
+	}
+
+	Platform_Printf("  pwm: %u ch @ 100Hz on PwmLite0  init=%s\n",
+	                (unsigned)PWM_CFG_NUM_CHANNELS,
+	                Pwm_IsInitialized() ? "OK" : "**FAILED**");
+	Platform_Puts("   pad0=PTD0(RED) pad1=PTD1 pad2=PTE15(GREEN) pad3=PTE16(BLUE)\n");
+
+	/* 1) 全灭：0% 走静态电平分支，波形上应是恒低而不是极窄脉冲 */
+	for (i = 0u; i < (uint16_t)PWM_CFG_NUM_CHANNELS; i++) {
+		Pwm_SetDutyCycle((Pwm_ChannelType)i, PwmCmd_Pct(0u));
+	}
+	Platform_Puts("   [1/6] all 0%\n");
+	PwmCmd_DelayMs(200u);
+
+	/* 2) 顶灯渐亮：0→100% 分 10 步，每步 150 ms（真实 IL001 是 20%→90% 用 2.5 s） */
+	Platform_Puts("   [2/6] ch0 ramp 0->100%\n");
+	for (i = 0u; i <= 10u; i++) {
+		Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_DOME_LAMP,
+		                 PwmCmd_Pct((uint32_t)i * 10u));
+		PwmCmd_DelayMs(150u);
+	}
+
+	/* 3) 绿（PTE15）渐亮 */
+	Platform_Puts("   [3/6] ch2 (GREEN) ramp\n");
+	for (i = 0u; i <= 5u; i++) {
+		Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST2,
+		                 PwmCmd_Pct((uint32_t)i * 20u));
+		PwmCmd_DelayMs(150u);
+	}
+
+	/* 4) 蓝（PTE16）渐亮 */
+	Platform_Puts("   [4/6] ch3 (BLUE) ramp\n");
+	for (i = 0u; i <= 5u; i++) {
+		Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST3,
+		                 PwmCmd_Pct((uint32_t)i * 20u));
+		PwmCmd_DelayMs(150u);
+	}
+
+	/* 5) 三色同时 50%：多通道并发，肉眼看到接近白 */
+	Platform_Puts("   [5/6] RGB all 50%\n");
+	Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_DOME_LAMP, PwmCmd_Pct(50u));
+	Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST2, PwmCmd_Pct(50u));
+	Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST3, PwmCmd_Pct(50u));
+	PwmCmd_DelayMs(600u);
+
+	/* 6) 恢复初值 */
+	Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_DOME_LAMP, PwmCmd_Pct(0u));
+	Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST1, PwmCmd_Pct(50u));
+	Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST2, PwmCmd_Pct(25u));
+	Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST3, PwmCmd_Pct(75u));
+	Platform_Puts("   [6/6] done, restored\n");
+}
+
 static void CmdExec(char c)
 {
 	Std_ReturnType rc = E_OK;
@@ -565,6 +688,12 @@ static void CmdExec(char c)
 	case 'z':
 		/* EcuM：u=释放 RUN / U=回 RUN / q=模式查询（M11）/ z=睡一次（M12） */
 		EcuM_CmdExec(c);
+		return;
+	case 'l':
+	case 'L':
+		/* PWM 验收（M18）：l=演示扫描 / L=恢复初值。
+		 * 开发板 PTD0/PTE15/PTE16 接 RGB 灯，改占空比肉眼可见。 */
+		PwmCmd_Exec(c);
 		return;
 	case 'j':
 		/* ADC 探针（M15）：读一次探针组，打印原始值与换算电压。

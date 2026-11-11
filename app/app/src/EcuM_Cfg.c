@@ -71,6 +71,8 @@
 #include "Can.h"
 #include "Adc.h"        /* M15：ADC 属于 MCAL，排在 Port 之后 */
 #include "Adc_Cfg.h"    /* Adc_Config：表项的 config 字段要用 */
+#include "Pwm.h"        /* M18：PWM 同属 MCAL，排在 ADC 之后 */
+#include "Pwm_Cfg.h"    /* Pwm_Config：同上 */
 
 /* ---- 阶段 One ---- */
 #include "CanIf.h"
@@ -108,6 +110,16 @@ static const EcuM_DriverInitItemType EcuM_DriverInitListZero[] = {
 	 *          保持一致。若将来过 MISRA 认证，需在外面包一层适配函数。
 	 */
 	{ (EcuM_DriverInitFncType)Adc_Init,  &Adc_Config },
+	/**
+	 * @brief PWM 初始化（M18）
+	 * @note  与 `Adc_Init` 同构：标准 `Pwm_Init()` 也要求传入配置指针。
+	 * @note  放在 `Adc_Init` 之后：两者都依赖 PORT 的时钟门控（`Clock_Config`
+	 *        里已开 A~E），彼此无依赖，顺序只是为了"先输入后输出"的阅读顺序。
+	 * @note  `Pwm_Init()` 内部会校验"同一 PwmLite 实例内频率是否一致"，
+	 *        不一致时**拒绝初始化并打印** —— 见 `Pwm.c` 的
+	 *        `Pwm_CheckPeriodConsistency()`。
+	 */
+	{ (EcuM_DriverInitFncType)Pwm_Init,  &Pwm_Config },
 };
 
 /* ============================ [ 初始化表：One ] ============================ */

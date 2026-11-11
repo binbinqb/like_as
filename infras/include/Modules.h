@@ -24,6 +24,9 @@
 /* ADC 驱动。AUTOSAR 标准模块号 123（DIO=120、PORT=124，它正好夹在中间）。
  * as-master 未移植 ADC，所以这里没有现成值可抄，按标准补。 */
 #define MODULE_ID_ADC ((uint16_t)123)
+/* PWM 驱动。AUTOSAR 标准模块号 121（DIO=120、ICU=122、ADC=123、PORT=124）。
+ * 与 ADC 同理，as-master 没有这个模块，按标准补。 */
+#define MODULE_ID_PWM ((uint16_t)121)
 #define MODULE_ID_ECUM ((uint16_t)10)
 #define MODULE_ID_EA ((uint16_t)40)
 #define MODULE_ID_EEP ((uint16_t)90)

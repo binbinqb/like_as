@@ -1,0 +1,16 @@
+# PWM 驱动（AUTOSAR MCAL）
+#
+# 与 infras/mcal/Adc/SConscript 逐字同构：只声明 include 路径与源文件，
+# 具体的配置目录由平台的 RegisterConfig("Pwm", ...) 注册成 $Pwm_Cfg。
+from building import *
+
+CWD = GetCurrentDir()
+objs = Glob("*.c")
+
+
+@register_library
+class LibraryPwm(Library):
+    def config(self):
+        self.include = [CWD]
+        self.CPPPATH = ["$INFRAS", "$Pwm_Cfg"]
+        self.source = objs
