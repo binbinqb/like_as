@@ -37,7 +37,14 @@ from isotp_lite import Isotp
 # 与 app/platform/cvm0146/include/boot_flash_map.h 保持一致。
 # 改分区时两边都要改；这里的数字只用于"算地址和校验范围"，
 # 真正的权威永远是固件里的那份宏。
-SLOT_BASE = {0: 0x00010000, 1: 0x00080000}
+#
+# ⚠ D1 起 boot 扩到 128 KB，两个槽整体后移 64 KB：
+#   boot   0x00000 - 0x1FFFF（128 KB）
+#   Slot A 0x20000 - 0x8FFFF（448 KB，尾部 4 KB = meta）
+#   Slot B 0x90000 - 0xFFFFF（448 KB，尾部 4 KB = meta）
+# 用旧地址（0x10000/0x80000）发 0x34 会被固件的 FlashLoader_MatchSlotBase()
+# 拒绝（要求地址精确等于槽基址），表现是"34 请求收到 NRC 0x31"。
+SLOT_BASE = {0: 0x00020000, 1: 0x00090000}
 SLOT_SIZE = 0x00070000
 SLOT_META_SIZE = 0x00001000
 SLOT_IMAGE_MAX = SLOT_SIZE - SLOT_META_SIZE

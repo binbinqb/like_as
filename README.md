@@ -2119,6 +2119,68 @@ Dcm 10022 + CanTp 5348 + PduR 2444 + CanIf 1106 = 18,920 B，
 验收：`--boot` 同烧后 boot 正常跳转（s19 首记录 `0002 0000`）、`board` 报 slot A、
 M2 39/39。**注意**：旧固件的 meta 全部失效（槽基址变了），两侧都要重烧。
 
+
+## D1 第二步前置：boot 集成 NvM 栈（已上板）
+
+决策：boot 也带存储栈。直接用途是**编程会话下诊断仪读 VIN**（`22 F1 90`）——
+app 不在时只有 boot 能回答；顺带每次启动都做一次 DFlash 自检。
+
+### 尺寸（实测）
+
+| 项 | text |
+|---|---|
+| boot（原） | 56,644 |
+| **boot（含 NvM 栈）** | **83,016** |
+| 增量 | **+26,372**（NvM 2,680 + Fee 1,186 + FeeAc 1,074 + 厂商引擎其余） |
+
+128 KB 区还剩 **48 KB**，够 D1 第二步的 CanIf+CanTp+PduR+Dcm（实测 18,920 B）。
+
+### 上板输出
+
+```
+  slot A : 0x020000  CONFIRMED  rc=2    size=202548  crc=A259F1D1  v2.8.0
+  slot B : 0x090000  EMPTY      (no meta)
+[boot] nvm: DFlash ok, bootCnt = 601
+[boot] nvm: VIN = CVM0146M4NVM00001
+[boot] active slot : A (rolling counter)
+```
+
+`bootCnt` 与 app 侧的启动计数连续、VIN 完整 17 字节 —— 证明 boot 与 app
+读写的是同一块 DFlash、同一份块表。
+
+### 四个坑（都只有上板才暴露）
+
+1. **`self.LIBS` 加库名不够，必须真的调用**。第一次只在 boot 的 SConscript 里
+   加了 `NvM/MemEngine/Det`，编译链接全过、尺寸纹丝不动（56,636）——
+   因为没有任何代码引用 `NvM_Init`，静态库里被引用的目标文件才进镜像，
+   `--gc-sections` 把整条链当垃圾回收了。
+2. **`NvM_Init` 之后必须等 idle，且单块 `ReadBlock` 会拿到 `NOT_OK`**。
+   `NvM_MapBlockState()` 把 `NVM_PORT_BLK_UNINIT`（从未读写过）映射成
+   `NVM_REQ_NOT_OK`。所以 boot 也要走 `NvM_ReadAll()`，与 app 的启动路径一致；
+   只读一个块时块状态还是 UNINIT，看起来像"boot 读不了 DFlash"。
+3. **目标缓冲必须用 `NVM_CFG_BYTES()` 对齐后的大小**。引擎读路径最后一步是
+   `memcpy(userBuff, cpyBuff, readJob->datasize)`（`nvm_statemachine.c:117`），
+   而 `datasize` 是 FEE 块长对齐后的值：BOOTCNT 8 字节 → `NVM_CFG_BYTES(8)=16`，
+   VIN 17 → 24。给 8/17 字节的栈数组会被多写 8/7 字节 —— 第一版就是这么写的，
+   栈上恰好有余量才没崩，属于"看起来能跑"的未定义行为。
+4. **块内容是小端**。`Storage_GetU32` 是 `p[0] | p[1]<<8 | ...`，按大端解析
+   会把 `bootCnt=601` 读成 `1426194432`。
+
+### 串口抓 boot 输出的技巧
+
+`flash.py --boot --run` 之后 boot 只跑几十毫秒就跳 app，用 `subprocess.run` +
+`serial.read()` 会整段错过（等它返回时 boot 早跑完了）。正确做法是
+`Popen` 异步启动 JLink，同时用 `ser.in_waiting` 轮询而不是 `read(timeout)`：
+
+```python
+p = subprocess.Popen([JLINK, "-CommanderScript", script], ...)
+while time.time() - t0 < 5.0:
+    n = ser.in_waiting
+    if n:
+        buf += ser.read(n)
+    time.sleep(0.005)
+```
+
 ### 尚未完成（下一步）
 
 1. **D1 第二步**：boot 内接 CanIf+CanTp+PduR+Dcm（boot 专用 cfg：只留 UDS 与刷写服务），

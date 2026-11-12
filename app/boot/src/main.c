@@ -48,7 +48,190 @@
 #include "boot_flash_map.h"
 #include "Crc.h"
 
+#include "NvM.h"        /* boot 也带存储栈：编程会话下读 VIN 用 */
+#include "NvM_Cfg.h"    /* NVM_CFG_ID_VIN / NVM_CFG_BLK_VIN_SIZE */
+
+#include <string.h>     /* memset */
+
 /* ============================ [ 内部 ] ============================ */
+
+/**
+ * @brief 存储自检的等待上限（ms）
+ *
+ * @details 与 app 侧 `STORAGE_TIMEOUT_MS` 同量级。为什么需要这么长：
+ *          `NvM_Init` 里 FEE 要做扇区扫描，**新片/掉电恢复时**要擦扇区
+ *          并重写扇区头，实测 app 侧首次上电这一步要几百 ms。
+ *          超时不等于失败 —— 只表示这次没等到，启动照常继续。
+ */
+#define BOOT_NVM_TIMEOUT_MS     (2000u)
+
+/**
+ * @brief 等到存储栈空闲（`NvM_Init` / 读请求完成）
+ * @param[in] timeoutMs 超时（ms）
+ * @retval true  已空闲
+ * @retval false 超时
+ *
+ * @warning **`NvM_Init()` 之后必须等这一步，不能直接 `NvM_ReadBlock`。**
+ *          这是本次集成踩到的坑：`NvM_Init` 只是把 FEE 的扇区扫描排进队列，
+ *          队列还没跑完时发读请求，会拿到 `NVM_REQ_NOT_OK`（rc=1）——
+ *          看起来像"boot 读不了 DFlash"，实际是初始化没完成。
+ *          app 侧一直是 `NvM_Init` → 等 idle → `NvM_ReadAll` 才没暴露这个问题。
+ */
+static bool Boot_NvmWaitIdle(uint32_t timeoutMs)
+{
+	uint32_t t0 = Platform_NowMs();
+	MemIf_StatusType st;
+
+	for (;;) {
+		st = NvM_GetStatus();
+		if (st == MEMIF_IDLE) {
+			return true;
+		}
+
+		NvM_MainFunction();
+
+		if ((uint32_t)(Platform_NowMs() - t0) >= timeoutMs) {
+			return false;
+		}
+	}
+}
+
+/**
+ * @brief 读一个 NvM 块并等结果（带超时）
+ * @param[in]  id  块 id
+ * @param[out] dst 目标缓冲（长度必须等于该块的配置长度）
+ * @return `NVM_REQ_*`；超时返回 `NVM_REQ_PENDING`
+ *
+ * @note  `NvM_ReadBlock` 只是入队，真实读由 `NvM_MainFunction` 推进。
+ *        这里自旋等待 —— boot 是单线程启动路径，没有别的活要干。
+ */
+static NvM_RequestResultType Boot_NvmRead(NvM_BlockIdType id, void *dst)
+{
+	NvM_RequestResultType st = NVM_REQ_PENDING;
+	uint32_t t0;
+
+	if (NvM_ReadBlock(id, dst) != E_OK) {
+		/* 入队就被拒 —— 打印下层状态，否则只剩一个 rc=1 什么也看不出 */
+		Platform_Printf("[boot] nvm: enqueue FAIL id=%u fee=%u nvm=%u jobs=0x%02x\n",
+		                (unsigned)id,
+		                (unsigned)NvM_PortDbgFeeState(),
+		                (unsigned)NvM_PortDbgNvmState(),
+		                (unsigned)NvM_PortDbgJobs());
+		return NVM_REQ_NOT_OK;
+	}
+
+	t0 = Platform_NowMs();
+	while ((Platform_NowMs() - t0) < BOOT_NVM_TIMEOUT_MS) {
+		NvM_MainFunction();
+		if ((NvM_GetErrorStatus(id, &st) == E_OK) && (st != NVM_REQ_PENDING)) {
+			break;
+		}
+	}
+
+	return st;
+}
+
+/**
+ * @brief 存储栈自检：初始化 NvM，再读两个块验证 DFlash 通路
+ *
+ * @details boot 集成 NvM 的目的（D1 决策）：编程会话下诊断仪可能要读
+ *          VIN（`22 F1 90`），而 app 不在时只有 boot 能回答。
+ *
+ *          自检读两个块，含义完全不同：
+ *
+ *          | 块 | 谁写 | 预期结果 | 失败意味着 |
+ *          |---|---|---|---|
+ *          | BOOTCNT | app 每次启动写 | `NVM_REQ_OK` | **DFlash 通路断了** |
+ *          | VIN | 诊断仪 `2E F1 90` | OK 或 NOT_OK 都正常 | — |
+ *
+ * @warning 第一版只读 VIN，实测返回 `NVM_REQ_NOT_OK`，差点被当成"boot 读不了
+ *          DFlash"。实际原因是 `NvM_MapBlockState()` 把 `NVM_PORT_BLK_UNINIT`
+ *          （从未写过）映射成 NOT_OK —— VIN 从来没被 `2E` 写过，是"未配置"
+ *          不是"故障"。**验证通路要用一定有数据的块**，这就是 BOOTCNT 存在的意义。
+ *
+ * @warning **失败绝不阻止启动**。存储坏了仍然要能刷写、能跳 app ——
+ *          否则一块 DFlash 故障会让 ECU 变砖，那比读不到 VIN 严重得多。
+ */
+static void Boot_StorageSelfTest(void)
+{
+	/* ⚠ 缓冲必须按 `NVM_CFG_BYTES()` 对齐后的大小开，不能直接用块的数据长度。
+	 *
+	 * 引擎的读路径最后一步是
+	 *   `memcpy(userBuff, cpyBuff, readJob->datasize)`  （nvm_statemachine.c:117）
+	 * 而 `datasize` 是 **FEE 块长对齐后**的值：BOOTCNT 8 字节数据 → FEE 侧 9 字节
+	 * （数据 + CRC8）→ `NVM_CFG_BYTES(8)` = 16。给 8 字节的栈数组会被多写 8 字节。
+	 * 第一版就是这么写的，栈上恰好有余量才没崩 —— 属于"看起来能跑"的未定义行为。
+	 */
+	uint8_t bootCnt[NVM_CFG_BYTES(NVM_CFG_BLK_BOOTCNT_SIZE)];
+	uint8_t vin[NVM_CFG_BYTES(NVM_CFG_BLK_VIN_SIZE)];
+	NvM_RequestResultType stCnt;
+	NvM_RequestResultType stVin;
+	uint8_t i;
+
+	NvM_Init(NULL);
+
+	/* 等 FEE 扇区扫描跑完 —— 少了这一步，下面的读请求会拿到 NOT_OK */
+	if (!Boot_NvmWaitIdle(BOOT_NVM_TIMEOUT_MS)) {
+		Platform_Puts("[boot] nvm: init TIMEOUT, skip storage check\n");
+		return;
+	}
+
+	/* ---- ⓪ 先把全部块读进 RAM（与 app 侧的启动路径一致）----
+	 *
+	 * 为什么 boot 也要 ReadAll，而不是直接 ReadBlock 一个块：
+	 * 实测直接 ReadBlock 会拿到 NOT_OK —— 块状态在"读完一次"之前是
+	 * NVM_PORT_BLK_UNINIT，而 NvM_MapBlockState 把 UNINIT 映射成 NOT_OK。
+	 * ReadAll 才是把"每个块都读到 RAM"这件事做完的那一步。
+	 */
+	NvM_ReadAll();
+	if (!Boot_NvmWaitIdle(BOOT_NVM_TIMEOUT_MS)) {
+		Platform_Printf("[boot] nvm: ReadAll TIMEOUT fee=%u nvm=%u jobs=0x%02x\n",
+		                (unsigned)NvM_PortDbgFeeState(),
+		                (unsigned)NvM_PortDbgNvmState(),
+		                (unsigned)NvM_PortDbgJobs());
+		return;
+	}
+
+	/* ---- ① BOOTCNT：app 每次启动写，一定有数据 → 验证 DFlash 通路 ---- */
+	(void)memset(bootCnt, 0, sizeof(bootCnt));
+	stCnt = Boot_NvmRead((NvM_BlockIdType)NVM_CFG_ID_BOOTCNT, bootCnt);
+
+	if (stCnt == NVM_REQ_OK) {
+		/* 块格式（见 app 侧 Storage_InitData）：[0..3] 小端计数，[4..7] magic。
+		 * 字节序是**小端** —— 与 app 的 Storage_GetU32 一致，别按大端解析。
+		 * magic 不对说明这辆车从没写过这个块（新片），不是故障。 */
+		Platform_Printf("[boot] nvm: DFlash ok, bootCnt = %u\n",
+		                (unsigned)((uint32_t)bootCnt[0] |
+		                           ((uint32_t)bootCnt[1] << 8) |
+		                           ((uint32_t)bootCnt[2] << 16) |
+		                           ((uint32_t)bootCnt[3] << 24)));
+	} else {
+		Platform_Printf("[boot] nvm: DFlash FAIL rc=%u fee=%u nvm=%u rjob=%u jr=%u jobs=0x%02x\n",
+		                (unsigned)stCnt,
+		                (unsigned)NvM_PortDbgFeeState(),
+		                (unsigned)NvM_PortDbgNvmState(),
+		                (unsigned)NvM_PortDbgReadJob(),
+		                (unsigned)NvM_PortDbgJobResult(),
+		                (unsigned)NvM_PortDbgJobs());
+	}
+
+	/* ---- ② VIN：可能从未被写过，NOT_OK 属正常（未配置） ---- */
+	(void)memset(vin, 0, sizeof(vin));
+	stVin = Boot_NvmRead((NvM_BlockIdType)NVM_CFG_ID_VIN, vin);
+
+	if (stVin == NVM_REQ_OK) {
+		Platform_Puts("[boot] nvm: VIN = ");
+		/* 只打有效载荷 17 字节，不含对齐 padding */
+		for (i = 0u; i < (uint8_t)NVM_CFG_BLK_VIN_SIZE; i++) {
+			Platform_PutChar((vin[i] != 0u) ? (char)vin[i] : '.');
+		}
+		Platform_Puts("\n");
+	} else {
+		/* UNINIT 也走这里：不是故障，只是这辆车还没写过 VIN */
+		Platform_Printf("[boot] nvm: VIN not programmed (rc=%u)\n",
+		                (unsigned)stVin);
+	}
+}
 
 /**
  * @brief 打印镜像校验的中间量（排查 CRC 不一致时用）
@@ -177,13 +360,17 @@ int main(void)
 	Platform_Puts("========================================\n");
 	Platform_Puts("  AS / CVM0146  boot  (A/B)\n");
 	Platform_Puts("  build : " __DATE__ " " __TIME__ "\n");
-	Platform_Puts("  map   : boot 64K | A 448K | B 448K | rsv 64K\n");
+	Platform_Puts("  map   : boot 128K | A 448K | B 448K\n");
 	Platform_Puts("========================================\n");
 
 	BootMeta_Init();
 
 	Boot_PrintSlot(BOOT_SLOT_INDEX_A);
 	Boot_PrintSlot(BOOT_SLOT_INDEX_B);
+
+	/* 存储自检（DFlash / NvM）：为"编程会话下读 VIN"预留通路。
+	 * 失败只打印，不影响下面的选槽与跳转 —— 存储坏了也要能刷能跳。 */
+	Boot_StorageSelfTest();
 
 	/* ---- 第一步：按 meta 选活动槽 ---- */
 	slot = BootMeta_GetActiveSlot();

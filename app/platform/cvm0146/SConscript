@@ -144,17 +144,21 @@ class LibraryCvm0146(Library):
         # START_FROM_FLASH：启动走 Flash 分支（含 SRAM ECC 初始化、向量表定位）
         self.CPPDEFINES = ["MCU_CVM0146FMLQ", "START_FROM_FLASH"]
 
-        # boot 只需要"时钟/串口 + PFlash 擦写 + meta 读写"这三个 AC。
-        # 其余 AC（CanAc / FeeAc / DioAc / PortAc / StdTimerAc）都 include 各自
+        # boot 只需要"时钟/串口 + PFlash 擦写 + meta 读写 + DFlash 访问"这几个 AC。
+        # 其余 AC（CanAc / DioAc / PortAc / StdTimerAc）都 include 各自
         # 模块库的私有头（`Can_Priv.h` 之类），而那些头只有在对应模块库参与
         # 构建时才注册成 CPPPATH 变量 —— boot 不链接它们，硬编就会报
         # "Can_Priv.h: No such file or directory"。
         # 顺带也省掉一堆无用目标文件。
         if appName == "Boot":
             # `Platform_Init()` 走精简版驱动初始化：只填 clock/flash/power/reset/uart
-            # 五个句柄，避免 `Mcu_Init()` 把 20 多个外设驱动全部拉进 64 KB 的 boot 区。
+            # 五个句柄，避免 `Mcu_Init()` 把 20 多个外设驱动全部拉进 boot 区。
             self.Append(CPPDEFINES=["PLATFORM_BOOT_MINIMAL"])
-            keep = ("platform_cvm0146.c", "FlashAc.c", "BootMeta.c")
+            # FeeAc.c 为什么进 boot：boot 集成 NvM 栈（读 VIN / 配置字，
+            # 为"编程会话下诊断仪查 VIN"留通道）。NvM → MemEngine(FEE) →
+            # FeeAc_FlsMethod 这条链断一环就链接失败。FeeAc 只碰 DFlash，
+            # 与 FlashAc 管的 PFlash 区域完全独立，不会互相踩。
+            keep = ("platform_cvm0146.c", "FlashAc.c", "BootMeta.c", "FeeAc.c")
             self.source = [o for o in acObjs if os.path.basename(str(o)) in keep] + sdkObjs
         else:
             self.source = list(objs) + _board_srcs

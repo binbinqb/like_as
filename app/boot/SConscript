@@ -27,10 +27,20 @@ class ApplicationBoot(Application):
 
     def config(self):
         # Cvm0146 已经隐含了 Crc（BootMeta.c 用它算 CRC32）
-        self.LIBS = ["Cvm0146"]
+        #
+        # NvM / MemEngine / Det：boot 也带存储栈（D1 决策）。
+        #   用途 1：编程会话下诊断仪查 VIN（0x22 F1 90）—— 福田规范若要求，
+        #            boot 必须能读 DFlash，否则只能回 NRC。
+        #   用途 2：将来记刷写历史/审计日志。
+        # 这条链是 NvM → MemEngine(FEE) → FeeAc_FlsMethod，三个库缺一不可。
+        # Det 是 NvM.c 的唯一 BSW 依赖（`Det_ReportError`），不能省。
+        self.LIBS = ["Cvm0146", "NvM", "MemEngine", "Det"]
         # $Cvm0146 → app/platform/cvm0146/include（boot_flash_map.h / boot_meta.h）
-        # $INFRAS  → infras/include（Std_Types.h / Crc.h）
-        self.CPPPATH = ["$Cvm0146", "$INFRAS"]
+        # $INFRAS  → infras/include（Std_Types.h / Crc.h / NvM.h / Det.h）
+        # $MEMORY  → infras/memory（NvM_Port.h）
+        # $MEMORY_VENDOR → 厂商 fee/nvm 头（由 NvM_Cfg.c 间接拉取）
+        # $NvM_Cfg → NvM_Cfg.h（块 id 与块长度：boot 读 VIN 要用）
+        self.CPPPATH = ["$Cvm0146", "$INFRAS", "$MEMORY", "$MEMORY_VENDOR", "$NvM_Cfg"]
         self.source = objs
         self.Append(LINKFLAGS=[
             # 启动由厂商 startup_M014x_gcc.S 提供，不要 newlib 的 crt0
