@@ -13,7 +13,9 @@
  * @version V1.0.0
  */
 
-#include "sh.h"
+#if !defined(SH_DISABLE_CMD_ADC)
+
+#include "sh_cfg.h"   /* 含生成头：SH_DISABLE_CMD_* 与 SH_VERSION_STR */
 #include "platform_cvm0146.h"
 #include "Adc.h"
 #include "Adc_Cfg.h"
@@ -93,3 +95,5 @@ static int sh_cmd_adc(int argc, char *argv[])
 }
 
 SH_EXPORT_CMD(adc, sh_cmd_adc, "adc [group] -- read ADC probe group(s)");
+
+#endif /* !SH_DISABLE_CMD_ADC */

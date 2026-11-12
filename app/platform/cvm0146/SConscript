@@ -73,6 +73,7 @@ cfgs = {
     # 否则 `USE_CANNM` 或 `USE_NM` 会缺一个，而缺的那个是**静默失效**：
     #   - 缺 USE_CANNM：Nm 无法把请求分发到 CanNm
     #   - 缺 USE_NM   ：CanNm 不向上报状态，NM 照发报文但不进任何状态
+    "Shell":     Glob("src/config/Shell/Shell.json"),
     "CanNm":     Glob("src/config/CanNm_Cfg.c"),
     "Nm":        Glob("src/config/Nm_Cfg.c"),
     # Com：信号/报文配置。**编进 Com 库而不是平台库** ——

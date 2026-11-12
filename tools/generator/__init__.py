@@ -36,6 +36,7 @@ from .E2E import Gen as E2EGen
 from .TLS import Gen as TLSGen
 from .Mirror import Gen as MirrorGen
 from .BL import Gen as BLGen
+from .Shell import Gen as ShellGen
 
 def DummyGen(cfg):
     pass
@@ -73,6 +74,7 @@ __GEN__ = {
     "TLS": TLSGen,
     "Mirror": MirrorGen,
     "BL": BLGen,
+    "Shell": ShellGen,
 }
 
 RootDir = os.path.abspath(os.path.dirname(__file__) + "/../..")

@@ -16,7 +16,9 @@
  * @version V1.0.0
  */
 
-#include "sh.h"
+#if !defined(SH_DISABLE_CMD_DTC)
+
+#include "sh_cfg.h"   /* 含生成头：SH_DISABLE_CMD_* 与 SH_VERSION_STR */
 #include "can_test.h"
 
 #include <string.h>
@@ -48,3 +50,5 @@ static int sh_cmd_dtc(int argc, char *argv[])
 }
 
 SH_EXPORT_CMD(dtc, sh_cmd_dtc, "dtc [dump|clear|inject] -- DTC snapshot / clear / inject");
+
+#endif /* !SH_DISABLE_CMD_DTC */

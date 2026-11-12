@@ -2034,9 +2034,29 @@ tools/shell.py           上位机标准客户端（提示符切帧 / 自动找�
 迁移方式：逻辑搬进 `cmd/xxx_cmd.c`，旧 `!x` 分支改为调用 `cmd_api.h` 里声明的包装函数
 （脚本零改动）；脚本切到新命令后再删旧分支。
 
+### JSON 配置化（2026-11-12 第三批）
+
+`config/Shell/Shell.json` → `tools/generator/Shell.py` → `GEN/Shell_Cfg.h`：
+
+| 字段 | 作用 |
+|---|---|
+| `boardName` / `version` | `*IDN?` 与横幅 |
+| `prompt` / `defaultMode` | 提示符、上电模式（manual/auto） |
+| `lineMax` / `maxArgs` / `txRing` / `printBuf` / `historyDepth` / `ctxPool` | 容量（`sh_cfg.h` 里每项都有 `#ifndef` 守卫，生成值优先） |
+| **`disabledCmds`** | 不参与编译的命令名（如 `["pwm"]`） |
+
+`disabledCmds` 的实现：app SConscript 读 JSON → 追加 `-DSH_DISABLE_CMD_<NAME>`，
+命令文件整体 `#if !defined(...)` —— 关掉的命令**零 flash 残留**，`help` 里自然消失。
+实测：`["pwm"]` 时 `pwm` 返回 `<-1, cmd not exist`、`help` 不列出；改回 `[]` 恢复。
+
+⚠️ **不要用生成头定义这个开关**：SCons 在 variant_dir 下对生成头的依赖追踪不可靠
+（实测改 JSON 不触发重编，需要手删 `.o`）；`CPPDEFINES` 变化一定会重编。
+
+JSON 编辑器：`schema.json` 已增加 `Shell` 条目（15 个模块），`Shell.json` 通过
+schema 校验，可直接在编辑器里改参数与命令开关。
+
 ### 尚未完成（下一步）
 
-1. 剩余命令迁移：`nm` / `com` / `nvm` / `can` / `dtc`，完成后删兼容桥；
-   `m*_check.py` 逐步改用 `tools/shell.py` 的 `cmd()`。
-2. `sh_cfg.h` 的参数（提示符/环深/历史）进 JSON 配置 + 生成器 `Shell.py`。
-3. 模块级 `cmd/` 目录的 glob 约定（Adc/Pwm/CanIf 各自 SConscript 里加）。
+1. 删兼容桥：`m*_check.py` 改用 `tools/shell.py` 的 `cmd()` 后，
+   删除 `sh_app.c` 的 `!x` 桥与 `CanTest_CmdExec`。
+2. 模块级 `cmd/` 目录约定（Adc/Pwm/CanIf 各自 SConscript 里加）。

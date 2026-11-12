@@ -12,7 +12,9 @@
  * @version V1.0.0
  */
 
-#include "sh.h"
+#if !defined(SH_DISABLE_CMD_NVM)
+
+#include "sh_cfg.h"   /* 含生成头：SH_DISABLE_CMD_* 与 SH_VERSION_STR */
 #include "cmd_api.h"
 
 #include <string.h>
@@ -56,3 +58,5 @@ static int sh_cmd_nvm(int argc, char *argv[])
 }
 
 SH_EXPORT_CMD(nvm, sh_cmd_nvm, "nvm [dump|writeall|touch|stress|illegal] -- NvM checks");
+
+#endif /* !SH_DISABLE_CMD_NVM */

@@ -23,7 +23,9 @@
  * @version V1.0.0
  */
 
-#include "sh.h"
+#if !defined(SH_DISABLE_CMD_PWM)
+
+#include "sh_cfg.h"   /* 含生成头：SH_DISABLE_CMD_* 与 SH_VERSION_STR */
 #include "platform_cvm0146.h"
 #include "Pwm.h"
 #include "Pwm_Cfg.h"
@@ -145,3 +147,5 @@ static int sh_cmd_pwm(int argc, char *argv[])
 }
 
 SH_EXPORT_CMD(pwm, sh_cmd_pwm, "pwm [reset | <ch> <pct>] -- demo / restore / set duty");
+
+#endif /* !SH_DISABLE_CMD_PWM */

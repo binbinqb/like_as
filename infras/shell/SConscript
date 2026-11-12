@@ -11,6 +11,6 @@ RegisterCPPPATH("$Shell", CWD)
 @register_library
 class LibraryShell(Library):
     def config(self):
-        self.CPPPATH = ["$INFRAS", "$Lwrb"]
+        self.CPPPATH = ["$INFRAS", "$Lwrb", "$Shell_Cfg"]
         self.LIBS += ["Lwrb"]
         self.source = objs

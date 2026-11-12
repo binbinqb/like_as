@@ -12,7 +12,9 @@
  * @version V1.0.0
  */
 
-#include "sh.h"
+#if !defined(SH_DISABLE_CMD_ECUM)
+
+#include "sh_cfg.h"   /* 含生成头：SH_DISABLE_CMD_* 与 SH_VERSION_STR */
 #include "platform_cvm0146.h"
 #include "EcuM.h"
 #include "EcuM_Externals.h"
@@ -137,3 +139,5 @@ static int sh_cmd_ecum(int argc, char *argv[])
 }
 
 SH_EXPORT_CMD(ecum, sh_cmd_ecum, "ecum [run|postrun|sleep] -- mode / sleep once");
+
+#endif /* !SH_DISABLE_CMD_ECUM */

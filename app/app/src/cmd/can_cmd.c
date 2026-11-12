@@ -19,7 +19,9 @@
  * @version V1.0.0
  */
 
-#include "sh.h"
+#if !defined(SH_DISABLE_CMD_CAN)
+
+#include "sh_cfg.h"   /* 含生成头：SH_DISABLE_CMD_* 与 SH_VERSION_STR */
 #include "can_test.h"
 
 #include "Can.h"
@@ -147,3 +149,5 @@ static int sh_cmd_can(int argc, char *argv[])
 }
 
 SH_EXPORT_CMD(can, sh_cmd_can, "can [pdu|ctrl|trcv|counters|regs|burst|matrix] -- CAN control");
+
+#endif /* !SH_DISABLE_CMD_CAN */

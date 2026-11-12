@@ -1,0 +1,14 @@
+{
+    "class": "Shell",
+    "boardName": "CVM014x-BCM",
+    "version": "1.0.0",
+    "prompt": "CVM014x >> ",
+    "lineMax": 128,
+    "maxArgs": 16,
+    "txRing": 1024,
+    "printBuf": 256,
+    "historyDepth": 8,
+    "ctxPool": 2,
+    "defaultMode": "manual",
+    "disabledCmds": []
+}

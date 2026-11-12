@@ -14,7 +14,9 @@
  * @version V1.0.0
  */
 
-#include "sh.h"
+#if !defined(SH_DISABLE_CMD_NM)
+
+#include "sh_cfg.h"   /* 含生成头：SH_DISABLE_CMD_* 与 SH_VERSION_STR */
 #include "platform_cvm0146.h"
 #include "Nm.h"
 #include "NmStack_Types.h"
@@ -175,3 +177,5 @@ static int sh_cmd_nm(int argc, char *argv[])
 }
 
 SH_EXPORT_CMD(nm, sh_cmd_nm, "nm [req|rel|passive] -- network management");
+
+#endif /* !SH_DISABLE_CMD_NM */

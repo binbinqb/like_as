@@ -14,6 +14,8 @@
  * @version V1.0.0
  */
 
+#if !defined(SH_DISABLE_CMD_BOARD)
+
 #include "sh_cfg.h"   /* SH_VERSION_STR / SH_BOARD_NAME（内部已 include sh.h） */
 #include "platform_cvm0146.h"
 
@@ -41,3 +43,5 @@ static int sh_cmd_board(int argc, char *argv[])
 }
 
 SH_EXPORT_CMD(board, sh_cmd_board, "board info: slot / build / console");
+
+#endif /* !SH_DISABLE_CMD_BOARD */

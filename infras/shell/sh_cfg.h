@@ -35,6 +35,10 @@
 
 #include "sh.h"
 
+/* 由 config/Shell/Shell.json 生成（tools/generator/Shell.py）。
+ * 生成头里定义的值覆盖下面的默认值 —— 每项都有 #ifndef 守卫。 */
+#include "Shell_Cfg.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -48,10 +52,14 @@ extern "C" {
 
 /* ── 版本 ───────────────────────────────────────────────────────── */
 /** @brief 版本字符串（`ver` 命令与横幅打印） */
+#ifndef SH_VERSION_STR
 #define SH_VERSION_STR              "1.0.0"
+#endif /* SH_VERSION_STR */
 
 /** @brief 板卡标识（`*IDN?` 命令首字段；由应用层按实际产品改写） */
+#ifndef SH_BOARD_NAME
 #define SH_BOARD_NAME               "CVM014x-BCM"
+#endif /* SH_BOARD_NAME */
 
 /* ── 行编辑容量 ─────────────────────────────────────────────────── */
 /**
@@ -59,27 +67,35 @@ extern "C" {
  * @note  实际可输入字符数为 `SH_CMD_LINE_MAX - 1`。超长输入被**静默丢弃**
  *        （不覆盖已有内容），避免半行命令被误执行。
  */
+#ifndef SH_CMD_LINE_MAX
 #define SH_CMD_LINE_MAX             (128U)
+#endif /* SH_CMD_LINE_MAX */
 
 /**
  * @brief 单条命令最多参数个数（`argv` 数组容量，含 argv[0]）
  * @note  超出部分被丢弃，命令只看到前 N-1 个实参。
  */
+#ifndef SH_MAX_ARGS
 #define SH_MAX_ARGS                 (16U)
+#endif /* SH_MAX_ARGS */
 
 /** @brief ESC 序列补齐超时（ms）：超时未补齐则丢弃 ESC，绝不阻塞主循环 */
 #define SH_ESC_TIMEOUT_MS           (200U)
 
 /* ── 提示符与模式 ───────────────────────────────────────────────── */
 /** @brief 手动模式提示符（尾部含空格） */
+#ifndef SH_PROMPT
 #define SH_PROMPT                   "CVM014x >> "
+#endif /* SH_PROMPT */
 
 /**
  * @brief 上电默认模式
  * @note  手动模式：有提示符 + 回显，供人工 bring-up；`Alt+M` 或
  *        `mode auto` 切到自动模式供上位机脚本使用。
  */
+#ifndef SH_DEFAULT_MODE
 #define SH_DEFAULT_MODE             (SH_MODE_MANUAL)
+#endif /* SH_DEFAULT_MODE */
 
 /* ── 输出 ───────────────────────────────────────────────────────── */
 /**
@@ -95,14 +111,20 @@ extern "C" {
  * @warning 溢出字节被丢弃并计入 @ref sh_tx_dropped；`ver` 命令会显示该计数，
  *          持续非 0 说明需要上调本值。
  */
+#ifndef SH_TX_RING
 #define SH_TX_RING                  (1024U)
+#endif /* SH_TX_RING */
 
 /** @brief @ref sh_print 内部格式化缓冲大小（字节） */
+#ifndef SH_PRINT_BUF
 #define SH_PRINT_BUF                (256U)
+#endif /* SH_PRINT_BUF */
 
 /* ── 历史 ───────────────────────────────────────────────────────── */
 /** @brief 历史环形缓冲深度（最多回滚 N 条） */
+#ifndef SH_HISTORY_DEPTH
 #define SH_HISTORY_DEPTH            (8U)
+#endif /* SH_HISTORY_DEPTH */
 
 /** @brief 单条历史最大长度（含 `\0`），超出截断 */
 #define SH_HISTORY_LINE_MAX         (64U)
@@ -115,7 +137,9 @@ extern "C" {
  * @note  按需求定为 2：可同时跑两条周期命令（如 `adc read&200` 与
  *        `dio list&500` 并存）。每加一个约 +184 字节 RAM。
  */
+#ifndef SH_CTX_POOL
 #define SH_CTX_POOL                 (2U)
+#endif /* SH_CTX_POOL */
 
 /** @brief 单个 context 可保存的命令行长度（含 `\0`），超出截断 */
 #define SH_CTX_LINE_MAX             (96U)

@@ -10,6 +10,7 @@
 # 量产 A/B 方案都是双镜像。
 #
 # 日常只编 App（A 槽）；验证 B 槽升级、或从 B 槽回滚时才需要编 AppB。
+import json
 import os
 
 from building import *
@@ -22,8 +23,19 @@ LINKER_DIR = os.path.normpath(
 # ⚠ Glob 必须在**模块级别**取，不能写在 config() 里：
 # config() 执行时 cwd 已经是 variant_dir（build/nt/...），那里没有源码副本
 # （duplicate=0），Glob 会返回空 → 链接时 "undefined reference to main"。
-# cmd/ 子目录：每个命令文件一条 `SH_EXPORT_CMD`，模块裁剪时不 glob 即消失
+# cmd/ 子目录：每个命令文件一条 `SH_EXPORT_CMD`。
+# 命令开关在 config/Shell/Shell.json 的 disabledCmds：本文件把它转成
+# `-DSH_DISABLE_CMD_<NAME>`，命令文件整体条件编译。
+# **为什么在 SConscript 而不是生成头里**：SCons 对 CPPDEFINES 变化一定会重编，
+# 而生成头的依赖追踪在 variant_dir 下不可靠（实测改 JSON 不触发重编）。
 objs = Glob("src/*.c") + Glob("src/cmd/*.c")
+
+SHELL_CFG_JSON = os.path.join(CWD, os.pardir, "platform", "cvm0146",
+                              "src", "config", "Shell", "Shell.json")
+DISABLED_CMDS = []
+if os.path.exists(SHELL_CFG_JSON):
+    with open(SHELL_CFG_JSON, encoding="utf-8") as _f:
+        DISABLED_CMDS = json.load(_f).get("disabledCmds", [])
 
 # 两个变体共用的库清单。
 # CanNm 与 Nm 互相引用，不能靠库自身的 LIBS 排顺序（本工程链接命令无
@@ -36,7 +48,7 @@ APP_LIBS = ["Cvm0146", "Shell", "CanIf", "PduR", "CanTp", "Dcm", "NvM", "Dem", "
 
 # $Cvm0146 由平台库的 self.include 注册；$INFRAS 由 infras/SConscript 注册；
 # $Xxx_Cfg 由平台库的 RegisterConfig 注册（都在构建时解析，与脚本执行顺序无关）。
-APP_CPPPATH = ["$Cvm0146", "$INFRAS", "$Shell", "$Can_Cfg", "$CanIf_Cfg", "$CanTp_Cfg",
+APP_CPPPATH = ["$Cvm0146", "$INFRAS", "$Shell", "$Shell_Cfg", "$Shell_Cfg", "$Can_Cfg", "$CanIf_Cfg", "$CanTp_Cfg",
                "$Dcm_Cfg", "$PduR_Cfg", "$Dio_Cfg", "$Port_Cfg", "$NvM_Cfg",
                "$Dem_Cfg", "$CanNm_Cfg", "$Nm_Cfg", "$Com_Cfg",
                "$ComM_Cfg", "$CanSM_Cfg",
@@ -61,6 +73,12 @@ class _AppImageBase(Application):
         # 并与链接地址做运行时对账 —— 对不上说明烧错了文件（比如把 AppB
         # 的镜像刷进了 A 槽），这时宁可在启动时报错也不要带着错地址跑。
         self.Append(CPPDEFINES=["APP_SLOT_INDEX=%d" % self.SLOT_INDEX])
+        # 命令裁剪：Shell.json 的 disabledCmds → SH_DISABLE_CMD_<NAME>
+        for _n in DISABLED_CMDS:
+            self.Append(CPPDEFINES=["SH_DISABLE_CMD_%s" % str(_n).upper()])
+        # 命令裁剪：Shell.json 的 disabledCmds → SH_DISABLE_CMD_<NAME>
+        for _n in DISABLED_CMDS:
+            self.Append(CPPDEFINES=["SH_DISABLE_CMD_%s" % str(_n).upper()])
         self.source = objs
         self.Append(LINKFLAGS=[
             # 启动由厂商 startup_M014x_gcc.S 提供，不要 newlib 的 crt0
