@@ -1096,6 +1096,11 @@ void CanAc_DbgDump(uint8_t controller)
 	Platform_Printf("[canreg] ch%u mcr=%08x ctrl1=%08x ecr=%08x esr1=%08x\n",
 	                (unsigned)controller, (unsigned)mcr, (unsigned)ctrl1,
 	                (unsigned)ecr, (unsigned)esr1);
+	/* 中断使能与标志：排查"收不到帧"的第一现场。
+	 * mb5（0x7E0）对应 IMASK1 的 bit5 —— 若这里是 0，说明
+	 * `FlexCanDrv_EnableMsgObjInterrupt()` 没生效，帧收进来也不会进中断。 */
+	Platform_Printf("[canreg]  IMASK1=%08x IFLAG1=%08x IMASK2=%08x\n",
+	                (unsigned)r->IMASK1, (unsigned)r->IFLAG1, (unsigned)r->IMASK2);
 	Platform_Printf("[canreg]  waitFailed=%u \n", (unsigned)(obj->waitFailed ? 1u : 0u));
 	Platform_Printf("[canreg]  TEC=%u REC=%u FLTCONF=%u BOFFINT=%u BOFFMSK=%u ERRMSK=%u\n",
 	                (unsigned)((ecr >> FLEXCAN_ECR_TXERRCNT_SHIFT) & 0xFFu),

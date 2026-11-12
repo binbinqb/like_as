@@ -370,6 +370,27 @@ static Std_ReturnType Boot_UdsInit(void)
 	if (CanIf_SetControllerMode(CANIF_CHL_CAN0, CAN_CS_STARTED) != E_OK) {
 		return E_NOT_OK;
 	}
+
+	/**
+	 * @warning **`CanIf_SetTrcvMode(NORMAL)` 不能省，它才是拉低 STB 的那一步。**
+	 *
+	 *          这是本次集成踩得最久的一个坑：以为 `SetControllerMode(STARTED)`
+	 *          就把 CAN 拉起来了，实际它只管控制器（清 HALT、配邮箱），
+	 *          **收发器仍然停在 Standby**（STB 引脚为高，收发器不把总线差分
+	 *          信号转给控制器）。
+	 *
+	 *          症状极具迷惑性：`Can_Init` 全部成功、`MCR` 的 MDIS/HALT 都是 0、
+	 *          `IMASK1` 的邮箱中断已使能、`ECR=0` 无错误 —— 但 `IFLAG1=0`，
+	 *          总线上发多少帧都收不到。
+	 *
+	 *          app 里这一步由 **CanSM** 在 FULLCOM 时调
+	 *          （见 `main.c` 的初始化注释：`CanIf_SetTrcvMode(ch, NORMAL) STB 拉低`）。
+	 *          boot 没有 CanSM，必须自己补。
+	 */
+	if (CanIf_SetTrcvMode(CANIF_CHL_CAN0, CANTRCV_TRCVMODE_NORMAL) != E_OK) {
+		return E_NOT_OK;
+	}
+
 	if (CanIf_SetPduMode(CANIF_CHL_CAN0, CANIF_ONLINE) != E_OK) {
 		return E_NOT_OK;
 	}

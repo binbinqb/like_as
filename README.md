@@ -2213,14 +2213,39 @@ while time.time() - t0 < 5.0:
 `MCR` bit28（HALT）=0、bit31（MDIS）=0 → 控制器已使能；ECR=0 → 无任何收发活动。
 说明**邮箱中断没触发**，而不是总线错误。
 
-### 下一步排查方向（按可能性排序）
+### 已修复：STB 拉低漏了 `CanIf_SetTrcvMode`
 
-1. **CAN0 的 IMR（中断掩码）**是否真被 `FlexCanDrv_EnableMsgObjInterrupt()` 写进去
-   —— 读 `CAN0_BASE + IMR`，若为 0 说明使能没生效
-2. **0x7E0 邮箱（mb5）的 `intEnable`** 在 `Can_Cfg.c` 里是否为 true
-3. **NVIC ISER**：`CAN0_ORed_0_15_MB_IRQn` 是否置位
-4. **收发器 STB（PC1）**：`Dio_WriteChannel(DIO_CHANNEL_CAN0_STB, STD_LOW)` 是否真执行
-   —— 用万用表量 PC1，低电平才是 Normal 模式
+`Can_SetControllerMode(STARTED)` **只启动控制器，不管收发器**。STB 拉低在
+`CanIf_SetTrcvMode(ch, NORMAL)` 里（`Can.c:126`），app 由 **CanSM** 调，
+boot 没有 CanSM 所以漏了 —— 收发器一直停在 Standby，总线上什么都收不到。
+
+已在 `Boot_UdsInit` 补上（顺序：STARTED → SetTrcvMode(NORMAL) → SetPduMode(ONLINE)）。
+
+### 逐项排除记录（都有寄存器证据）
+
+| 假设 | 实测 | 结论 |
+|---|---|---|
+| mb5 没开中断 | `IMASK1 = 0x000053FF`，bit5=1 | ❌ 排除 |
+| NVIC 没使能 | `ISER3` 的 bit7（IRQ103）= ON | ❌ 排除 |
+| STB 还在待机 | `GPIOC PDOR = 0` → PC1 输出低 | ❌ 排除 |
+| CAN 引脚 MUX 错 | `PE4/PE5 PCR = 0x500` → MUX=5 | ❌ 排除 |
+| 控制器没启动 | `MCR=0x00830060`（MDIS=0/HALT=0）、`CTRL1=0x052CA007` | ❌ 排除 |
+
+**且 MCR / CTRL1 / IMASK1 与 app 运行时逐位相同**（唯一差异是 ECR：
+app 有 TX 错误累积因为它在发心跳，boot 从不发帧）。
+
+### 当前剩余疑点
+
+`ECR = 0` + `IFLAG1 = 0` —— 控制器**完全没看到总线活动**，而 app 在同一块板上
+工作正常。软件侧能查的都已排除，下一步要靠硬件观测：
+
+1. **让 boot 主动发一帧**（最简单的二分）：在 `Boot_UdsLoop` 前调
+   `Can_Write(3, ...)` 发 0x7E8，Kvaser 若能收到 → TX 通路 OK、问题在 RX；
+   收不到 → 收发器/引脚/供电
+2. **示波器看 PE5（CAN0_TX）** 在 boot 里有无波形 —— 直接区分"控制器没发"
+   还是"收发器没转"
+3. 对比 app 运行时 PC1 的 PCR 值（app 是否配了 boot 没有的位，如 DSE/ODE）
+4. 检查 CAN0 收发器供电（VDDA/待机电路的 EN 引脚是否还有第三根控制线）
 
 ### ⚠ 尺寸告警
 
