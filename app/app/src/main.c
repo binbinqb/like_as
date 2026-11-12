@@ -397,7 +397,6 @@ void Dcm_SessionChangeIndication(Dcm_SesCtrlType sesActive, Dcm_SesCtrlType sesN
 
 /* 存储侧的 `!` 命令（d/c/w/x）实现在文件后半段，这里先声明。
  * 两侧共用 `!` 前缀但命令字符不重叠，改一边不会踩到另一边。 */
-static void Storage_CmdExec(char c);
 
 /* 故障表打印同理：实现在总线故障区，早于 main 但晚于 CmdExec */
 static void Fault_Dump(void);
@@ -409,7 +408,6 @@ static void CanTest_SendRealMatrix(void);
 
 
 /* 信号层（M10）实现在"信号层"区，晚于 CmdExec */
-static void Com_CmdExec(char c);
 
 
 static void CmdExec(char c)
@@ -520,9 +518,11 @@ static void CmdExec(char c)
 		CanTest_SendRealMatrix();
 		return;
 	case 'v':
+		/* 旧入口（m10 脚本仍用）：信号 dump */
+		ComCmd_DumpSignals();
+		return;
 	case 'y':
-		/* 信号层：v=信号 dump / y=分组启停（M10） */
-		Com_CmdExec(c);
+		ComCmd_GroupToggle();
 		return;
 	case 'a':
 		/* 旧入口（m9 脚本仍用）：请求网络 */
@@ -545,13 +545,20 @@ static void CmdExec(char c)
 		CanTest_Burst(100u);
 		return;
 	case 'd':
+		/* 旧入口（m4 脚本仍用）：块状态 dump */
+		StorageCmd_Dump();
+		return;
 	case 'c':
+		StorageCmd_WriteAll();
+		return;
 	case 'w':
+		StorageCmd_Touch();
+		return;
 	case 'x':
+		StorageCmd_Illegal();
+		return;
 	case 'p':
-		/* 存储命令：不涉及 CAN 控制面，转交后直接返回，
-		 * 避免下面那段"回读 pduMode/ctrlMode"打出无关信息 */
-		Storage_CmdExec(c);
+		StorageCmd_Stress();
 		return;
 	default:
 		Platform_Printf("[cmd] unknown '%c'\n", c);
@@ -1032,504 +1039,6 @@ static void Fault_Dump(void)
 	}
 }
 
-/* ============================ [ 信号层（M10） ] ============================ */
-
-/**
- * @brief TX 滚动计数（应用侧的真实值）
- * @note  这是"应用变量"，和报文缓冲里的那个字节不是同一个东西。
- *        `Com_SendSignal()` 负责把它搬进报文缓冲。
- *        之所以要在应用侧留一份，是因为缓冲随时会被发送覆盖/初始化，
- *        应用不能拿它当自己的状态存储。
- */
-static uint8_t s_comTxCounter;
-
-/** @brief TX 状态位：固定 1，用于验证 **1 位信号**的位打包 */
-static uint8_t s_comTxFlag = 1u;
-
-/** @brief TX 模拟量：固定 0xABC，用于验证 **12 位跨字节**打包 */
-static uint16_t s_comTxLevel = 0x0ABCu;
-
-/** @brief 10 ms 拍计数：满 10 拍（100 ms）更新一次 TX 信号 */
-static uint16_t s_comTick = COM_CONVERT_MS_TO_MAIN_CYCLES(100u);
-
-/** @brief IPdu 分组当前是否运行（`!y` 用） */
-static bool s_comGroupOn = true;
-
-/**
- * @brief 应用侧的信号更新（在主循环里按 10 ms 节拍调用）
- *
- * @details @section COMAPP_TICK 为什么更新周期要和 CycleTime 对齐
- *
- *          `Com_MainFunctionTx()` 到点就把**当前缓冲**整帧发出去。
- *          如果应用更新比发送慢，同一帧值会被重复发好几次；
- *          如果比发送快，中间的若干次更新会被"跳过"，总线上只能看到
- *          其中一部分值。
- *
- *          两者都用同一个 10 ms 节拍、同一个周期（100 ms），
- *          并且**先更新、后调用 `Com_MainFunction()`**，
- *          于是每一帧恰好对应一个新值，脚本可以断言"每帧 +1"。
- *
- *          随机相位（比如应用用 `Platform_NowMs()` 自己判周期）会让
- *          偶发的跳过变得无法解释 —— 那不是 bug，是两个不同节拍的
- *          正常交错，但会让验收脚本时而过时而不时不过。
- */
-static void Com_AppTick(void)
-{
-	uint8_t  c;
-	uint8_t  f;
-	uint16_t l;
-
-	if (s_comTick > 0u) {
-		s_comTick--;
-	}
-	if (s_comTick > 0u) {
-		return;
-	}
-	s_comTick = COM_CONVERT_MS_TO_MAIN_CYCLES(100u);
-
-	c = (uint8_t)(s_comTxCounter + 1u);
-	f = s_comTxFlag;
-	l = s_comTxLevel;
-
-	/* 三个信号都发一遍，而不是只发变化的那个：
-	 * 单发 counter 时，flag/level 只在 `Com_IpduGroupStart()` 那一次
-	 * 被写进缓冲，之后一旦有人（比如 GC 之外的误写）改了缓冲，
-	 * 就没有修复路径。每次全量刷新，代价是三次几字节的位操作。 */
-	(void)Com_SendSignal((Com_SignalIdType)COM_SIG_TX_COUNTER, &c);
-	(void)Com_SendSignal((Com_SignalIdType)COM_SIG_TX_FLAG, &f);
-	(void)Com_SendSignal((Com_SignalIdType)COM_SIG_TX_LEVEL, &l);
-
-	s_comTxCounter = c;
-}
-
-/**
- * @brief 打印信号值（`!v`）
- *
- * @details 打印的是**两条不同路径的结果**，这正是一条命令同时看两件事的价值：
- *
- *          | 侧 | 数据来源 | 证明了什么 |
- *          |----|----------|------------|
- *          | tx | 应用自己的变量 | 应用想发什么 |
- *          | rx | `Com_ReceiveSignal()` | Com 从总线上解出了什么 |
- *
- *          tx 与 rx 之间隔着"打包 → 总线 → 解包"，两者一致说明整条链路通。
- *          验收脚本还会用 Kvaser 抓实际帧，三者对齐才算真的对。
- *
- * @note  rx 侧读不到（返回 E_NOT_OK）时打 `NG`。读不到的原因通常是
- *        Com 未初始化或信号 ID 越界 —— 不是"对端没发"，
- *        对端没发会读到超时替换值（0xEE），两者含义完全不同。
- */
-static void Com_DumpSignals(void)
-{
-	uint8_t  rxCnt  = 0u;
-	uint16_t rxTemp = 0u;
-	Std_ReturnType r1;
-	Std_ReturnType r2;
-
-	r1 = Com_ReceiveSignal((Com_SignalIdType)COM_SIG_RX_COUNTER, &rxCnt);
-	r2 = Com_ReceiveSignal((Com_SignalIdType)COM_SIG_RX_TEMP, &rxTemp);
-
-	Platform_Printf("[com] tx cnt=%u flag=%u level=0x%03X | rx cnt=%u(%s) temp=%u(%s) | grp=%u\n",
-	                (unsigned)s_comTxCounter, (unsigned)s_comTxFlag,
-	                (unsigned)s_comTxLevel,
-	                (unsigned)rxCnt, (r1 == E_OK) ? "ok" : "NG",
-	                (unsigned)rxTemp, (r2 == E_OK) ? "ok" : "NG",
-	                (unsigned)(s_comGroupOn ? 1u : 0u));
-}
-
-/**
- * @brief 信号层的串口命令（`!v` / `!y`）
- *
- * @param[in] c 命令字符
- *
- * @note  `!y` 停的是 **IPdu 分组**，不是 Com 本身。区别很重要：
- *        分组停了之后 `Com_SendSignal()` 照常成功（只是改缓冲），
- *        `Com_MainFunctionTx()` 跳过这个组不发 —— 恢复时不需要
- *        重新初始化 Com，一帧都不会丢配置。
- *
- * @note  停组时把 `s_comTxCounter` 一起清零：`Com_IpduGroupStart(TRUE)`
- *        会用初值重刷报文缓冲，如果应用侧计数器不清零，
- *        恢复后的第一帧会和缓冲里的初值不一致，看起来像"丢了几帧"。
- */
-static void Com_CmdExec(char c)
-{
-	switch (c) {
-	case 'v':
-		Com_DumpSignals();
-		break;
-
-	case 'y':
-		if (s_comGroupOn) {
-			Com_IpduGroupStop((Com_IpduGroupIdType)COM_GROUP_TEST);
-			s_comGroupOn = false;
-			Platform_Puts("[com] group 0 STOPPED (TX/RX suspended)\n");
-		} else {
-			Com_IpduGroupStart((Com_IpduGroupIdType)COM_GROUP_TEST, TRUE);
-			s_comTxCounter = 0u;
-			s_comTick = COM_CONVERT_MS_TO_MAIN_CYCLES(100u);
-			s_comGroupOn = true;
-			Platform_Puts("[com] group 0 STARTED (100 ms)\n");
-		}
-		break;
-
-	default:
-		Platform_Printf("[com] unknown '%c'\n", c);
-		break;
-	}
-}
-
-/* ============================ [ 存储（M4） ] ============================ */
-
-/**
- * @brief 启动计数块里"魔数"的偏移
- * @details 块内容 = `uint32 计数 + uint32 魔数`。
- *          魔数的用途是区分"新片（数据区全 0xFF → ReadAll 装的是 ROM 默认值）"
- *          和"真的数到了 0"。没有它的话，一块从没写过的芯片和一个计数为 0 的
- *          芯片无法区分，掉电测试会得出错误结论。
- */
-#define BOOTCNT_MAGIC_OFF       (4u)
-
-/** @brief 魔数取值：ASCII "BCM1" 按小端拼成 u32 */
-#define BOOTCNT_MAGIC           (0x314D4342u)
-
-/**
- * @brief 等待存储栈作业完成的超时（ms）
- * @note  上电首次（扇区全擦）需要：擦 12 个 1 KB 扇区 + 写扇区头 + 扫描 2×12 KB，
- *        实测在百毫秒量级；给 5 s 是留足余量并在超时时能明确报出来。
- */
-#define STORAGE_TIMEOUT_MS      (5000u)
-
-/**
- * @brief 压力测试的写入次数（`!p`）
- * @details FEE 的扇区是 12 KB，每次写一个 CONFIG 块消耗
- *          `ALIGN8(32+1)=40` 字节数据 + 16 字节块头 = 56 字节。
- *          12288 / 56 ≈ 219 次把活动扇区写满，第 220 次起触发 GC
- *          （搬备份扇区 + 擦活动扇区）。取 400 次可以跑过 **1~2 次 GC**，
- *          而 GC 是这套存储栈里唯一"平时看不出来、坏起来丢全部数据"的路径。
- */
-#define STORAGE_STRESS_CNT      (400u)
-
-/** @brief 本机启动次数（ReadAll 之后 +1 再写回） */
-static uint32_t s_bootCount;
-
-/** @brief 存储栈是否初始化成功（失败时后面的命令直接跳过，不去踩未初始化的引擎） */
-static bool s_storageReady;
-
-/**
- * @brief 等存储栈完全空闲（含初始化、扇区扫描、写作业）
- * @param[in] timeoutMs 超时
- * @retval true  空闲
- * @retval false 超时
- * @note  必须**在同一处**同时驱动 `NvM_MainFunction()`，因为引擎的状态推进
- *        完全靠这只函数。光等不驱动 = 永远等不到。
- */
-static bool Storage_WaitIdle(uint32_t timeoutMs)
-{
-	uint32_t t0 = Platform_NowMs();
-	MemIf_StatusType st;
-
-	for (;;) {
-		st = NvM_GetStatus();     /* 先取一次快照，循环判断和打印用同一个值 */
-		if (st == MEMIF_IDLE) {
-			return true;
-		}
-
-		NvM_MainFunction();
-
-		if ((uint32_t)(Platform_NowMs() - t0) >= timeoutMs) {
-			/* 超时才打现场：正常路径一行都不打，不干扰验收脚本的逐行断言。 */
-			Platform_Printf("[nvm] TIMEOUT %u ms: memif=%u fee=%u nvm=%u rjob=%u jr=%u jobs=0x%02x w=%u\n",
-			                (unsigned)(Platform_NowMs() - t0), (unsigned)st,
-			                (unsigned)NvM_PortDbgFeeState(),
-			                (unsigned)NvM_PortDbgNvmState(), (unsigned)NvM_PortDbgReadJob(),
-			                (unsigned)NvM_PortDbgJobResult(), (unsigned)NvM_PortDbgJobs(),
-			                (unsigned)NvM_Cfg_WriteCount);
-			return false;
-		}
-	}
-}
-
-/** @brief 小端取 u32（不依赖对齐，也不依赖编译器的大小端设置） */
-static uint32_t Storage_GetU32(const uint8_t *p)
-{
-	return (uint32_t)p[0]
-	     | ((uint32_t)p[1] << 8)
-	     | ((uint32_t)p[2] << 16)
-	     | ((uint32_t)p[3] << 24);
-}
-
-/** @brief 小端写 u32 */
-static void Storage_PutU32(uint8_t *p, uint32_t v)
-{
-	p[0] = (uint8_t)(v & 0xFFu);
-	p[1] = (uint8_t)((v >> 8) & 0xFFu);
-	p[2] = (uint8_t)((v >> 16) & 0xFFu);
-	p[3] = (uint8_t)((v >> 24) & 0xFFu);
-}
-
-/**
- * @brief 存储栈初始化 + 启动计数
- *
- * @details 顺序（每一步都必须等上一步真完成，引擎是异步的）：
- *          @code
- *          NvM_Init()        配置引擎，此后引擎开始扇区扫描
- *          Storage_WaitIdle() 等扫描结束（新片会先擦扇区 + 写扇区头）
- *          NvM_ReadAll()     全部块读进 RAM（读不消耗寿命）
- *          Storage_WaitIdle() 等读完
- *          改 BOOTCNT 的 RAM 映像 → NvM_WriteBlock(id, NULL)
- *          @endcode
- *
- *          @note `NvM_WriteBlock(id, NULL)` 用块**自己的 RAM 映像**作数据源，
- *          这是 AUTOSAR 的标准用法 —— Dcm 的 0x27 安全访问计数
- *          （`NvM_WriteBlock(SecurityNvMBlkId, NULL)`）走的就是这条路。
- *          这里先用启动计数把这条路径验证通，将来开 0x27 就不用再怀疑接口。
- */
-/** @brief 阶段一（`NvM_Init`）耗时（ms），供阶段二打横幅用 */
-static uint32_t s_storageInitMs;
-
-/**
- * @brief 存储栈初始化 · 阶段一：`NvM_Init`（EcuM DriverInitOne）
- *
- * @note  为什么拆成两段：AUTOSAR 把初始化分成 Zero / One / Two，
- *        `NvM_ReadAll` 属于 Two（"OS 启动后读回非易失数据"），
- *        而 `NvM_Init` 属于 One（"模块可用"）。EcuM 的配置表
- *        需要这两个入口分开，才能把读回放到正确时机。
- *
- * @note  `NvM_Init` 内部会完成 `FeeAc_Init()` 与 `Fee_Configure()`
- *        （见 `NvM_Cfg.c` 的 `NvM_PortInit`），所以 EcuM 的 Zero 阶段
- *        不需要单独列 Fee 的初始化。
- */
-void Storage_InitStack(void)
-{
-	uint32_t t0 = Platform_NowMs();
-
-	NvM_Init(NULL);
-	if (!Storage_WaitIdle(STORAGE_TIMEOUT_MS)) {
-		Platform_Printf("  nvm   : init TIMEOUT (%u ms)\n",
-		                (unsigned)(Platform_NowMs() - t0));
-		return;
-	}
-
-	s_storageInitMs = Platform_NowMs() - t0;
-}
-
-/**
- * @brief 存储栈初始化 · 阶段二：读回 + 启动计数 + Dem 绑定（EcuM DriverInitTwo）
- *
- * @warning **超时保护必须保留。** as-master 的 `EcuM_AL_DriverInitTwo`
- *          用一个不带超时的 `while (MEMIF_IDLE != NvM_GetStatus())` 等读回，
- *          一旦存储栈异常就永久卡死、连串口都进不去。这里每个等待都有
- *          `STORAGE_TIMEOUT_MS`，超时打印后返回，至少还能打诊断。
- */
-void Storage_InitData(void)
-{
-	uint8_t *ram = NULL;
-	uint16_t len = 0u;
-	uint32_t t0;
-	uint32_t tRead;
-
-	t0 = Platform_NowMs();
-	NvM_ReadAll();
-	if (!Storage_WaitIdle(STORAGE_TIMEOUT_MS)) {
-		Platform_Printf("  nvm   : ReadAll TIMEOUT (%u ms)\n",
-		                (unsigned)(Platform_NowMs() - t0));
-		return;
-	}
-	tRead = Platform_NowMs() - t0;
-
-	if ((NvM_GetBlockDataPtrAndLength((NvM_BlockIdType)NVM_CFG_ID_BOOTCNT,
-	                                  (void **)&ram, &len) != E_OK) ||
-	    (ram == NULL) || (len < NVM_CFG_BLK_BOOTCNT_SIZE)) {
-		Platform_Puts("  nvm   : bootcnt block unavailable\n");
-		return;
-	}
-
-	if (Storage_GetU32(&ram[BOOTCNT_MAGIC_OFF]) != BOOTCNT_MAGIC) {
-		s_bootCount = 0u;       /* 新片或被擦过 */
-	} else {
-		s_bootCount = Storage_GetU32(&ram[0]);
-	}
-
-	s_bootCount++;
-	Storage_PutU32(&ram[0], s_bootCount);
-	Storage_PutU32(&ram[BOOTCNT_MAGIC_OFF], BOOTCNT_MAGIC);
-
-	if (NvM_WriteBlock((NvM_BlockIdType)NVM_CFG_ID_BOOTCNT, NULL) != E_OK) {
-		Platform_Puts("  nvm   : bootcnt write REJECTED\n");
-		return;
-	}
-	if (!Storage_WaitIdle(STORAGE_TIMEOUT_MS)) {
-		Platform_Puts("  nvm   : bootcnt write TIMEOUT\n");
-		return;
-	}
-
-	s_storageReady = true;
-
-	/* Dem 也挂在 DTC 块的 RAM 映像上，同样必须在 ReadAll 之后。
-	 * 顺序：先 Dem_Init 拿到表指针，再告诉它本次启动序号（写进 firstBoot/lastBoot）。 */
-	Dem_Init(NULL);
-	Dem_SetBootSequence(s_bootCount);
-
-	Platform_Printf("  nvm   : DFlash 2x12 KB, %u blocks, boot #%u (init %u ms, read %u ms)\n",
-	                (unsigned)NVM_CFG_BLOCK_NUM, (unsigned)s_bootCount,
-	                (unsigned)s_storageInitMs, (unsigned)tRead);
-}
-
-/**
- * @brief 连续写 CONFIG 块 N 次，强制触发 FEE 的 GC（`!p`）
- *
- * @details 为什么必须专门测 GC：
- *          FEE 是日志式存储，平时只往活动扇区尾部追加；写满后要把每个块的
- *          **最新版本**搬到备份扇区、再把活动扇区擦掉。这条路径平时一次都走不到，
- *          出错的表现是"跑了几个星期之后数据突然全没了"。
- *          它的正确性无法靠读代码保证 —— 只能真写满一遍看数据还在不在。
- *
- * @note 阻塞式实现（每写一次等引擎空闲）。测试命令不需要并发，
- *       循环里等清楚比"发一堆请求再看结果"容易定位得多。
- */
-static void Storage_Stress(void)
-{
-	uint8_t *ram = NULL;
-	uint16_t len = 0u;
-	uint16_t i;
-	uint32_t t0 = Platform_NowMs();
-
-	if (NvM_GetBlockDataPtrAndLength((NvM_BlockIdType)NVM_CFG_ID_CONFIG,
-	                                 (void **)&ram, &len) != E_OK) {
-		Platform_Puts("[nvm] stress: config block unavailable\n");
-		return;
-	}
-
-	for (i = 0u; i < (uint16_t)STORAGE_STRESS_CNT; i++) {
-		ram[2]++;       /* 第 3 字节当写计数（与 !w 用的 [1] 分开，互不干扰） */
-
-		if (NvM_WriteBlock((NvM_BlockIdType)NVM_CFG_ID_CONFIG, NULL) != E_OK) {
-			Platform_Printf("[nvm] stress REJECTED at #%u\n", (unsigned)i);
-			return;
-		}
-		if (!Storage_WaitIdle(STORAGE_TIMEOUT_MS)) {
-			Platform_Printf("[nvm] stress TIMEOUT at #%u\n", (unsigned)i);
-			return;
-		}
-	}
-
-	Platform_Printf("[nvm] stress done: %u writes in %u ms, config[2]=%u\n",
-	                (unsigned)STORAGE_STRESS_CNT,
-	                (unsigned)(Platform_NowMs() - t0), (unsigned)ram[2]);
-}
-
-/**
- * @brief 打印所有块的状态与前 8 字节
- * @note  `st` 是 AUTOSAR 的 `NvM_RequestResultType`：
- *        0=OK 1=NOT_OK 2=PENDING 3=INTEGRITY_FAILED。
- *        掉电测试就靠它 —— **拔电重启后 `st` 仍然是 0** 才算数据保住了。
- */
-static void Storage_Dump(void)
-{
-	static const char *const names[NVM_CFG_BLOCK_NUM] = { "BOOTCNT", "CONFIG", "VIN", "DTC" };
-	uint8_t *ram;
-	uint16_t len;
-	uint16_t i;
-	uint16_t j;
-	NvM_RequestResultType st;
-
-	Platform_Printf("[nvm] status=%u dump:\n", (unsigned)NvM_GetStatus());
-
-	for (i = 0u; i < (uint16_t)NVM_CFG_BLOCK_NUM; i++) {
-		ram = NULL;
-		len = 0u;
-		st  = NVM_REQ_NOT_OK;
-
-		(void)NvM_GetBlockDataPtrAndLength((NvM_BlockIdType)i, (void **)&ram, &len);
-		(void)NvM_GetErrorStatus((NvM_BlockIdType)i, &st);
-
-		Platform_Printf("  %u %-8s len=%u st=%u data=",
-		                (unsigned)i, names[i], (unsigned)len, (unsigned)st);
-
-		if (ram != NULL) {
-			for (j = 0u; (j < 8u) && (j < len); j++) {
-				Platform_Printf("%02x ", (unsigned)ram[j]);
-			}
-		}
-		Platform_Puts("\n");
-	}
-}
-
-/**
- * @brief 存储相关的串口命令（`!` 前缀）
- * @param[in] c 命令字符
- * @note  与 CAN 的控制命令共用 `!` 前缀，命令字符不重复：
- *        CAN 用 o/n/s/g/t/r，存储用 d/c/w/x。
- */
-static void Storage_CmdExec(char c)
-{
-	uint8_t *ram;
-	uint16_t len;
-	uint8_t tmp[8];
-
-	if (!s_storageReady) {
-		Platform_Puts("[nvm] storage not ready\n");
-		return;
-	}
-
-	switch (c) {
-	case 'd':
-		Storage_Dump();
-		break;
-
-	case 'c':
-		/* 把"已修改"的块全部落盘（脏块掩码，不是全写） */
-		NvM_WriteAll();
-		Platform_Puts("[nvm] WriteAll started (dirty blocks only)\n");
-		break;
-
-	case 'w':
-		/* 验证 AUTOSAR 的延迟落盘路径：改 RAM → 标脏 → WriteAll */
-		ram = NULL;
-		len = 0u;
-		if (NvM_GetBlockDataPtrAndLength((NvM_BlockIdType)NVM_CFG_ID_CONFIG,
-		                                 (void **)&ram, &len) != E_OK) {
-			Platform_Puts("[nvm] config block unavailable\n");
-			break;
-		}
-		ram[1]++;
-		(void)NvM_SetRamBlockStatus((NvM_BlockIdType)NVM_CFG_ID_CONFIG, TRUE);
-		NvM_WriteAll();
-		Platform_Printf("[nvm] config[1]=%u marked dirty, WriteAll started\n",
-		                (unsigned)ram[1]);
-		break;
-
-	case 'p':
-		/* 连续写 400 次，强制触发 GC —— 验证"写满一个扇区后数据不丢" */
-		Storage_Stress();
-		break;
-
-	case 'x':
-		/* 故意用非法块 id，验证 DET 上报（应该看到 [det] mod=20 ...） */
-		Platform_Printf("[nvm] illegal block id test: rc=%u\n",
-		                (unsigned)NvM_ReadBlock((NvM_BlockIdType)(NVM_CFG_BLOCK_NUM + 5u),
-		                                        tmp));
-		break;
-
-	default:
-		Platform_Printf("[nvm] unknown '%c'\n", c);
-		break;
-	}
-}
-
-/**
- * @brief DET 日志钩子（覆盖 `infras/system/Det/Det.c` 里的弱符号）
- * @note  参数错误的唯一可见出口。没有它的话，`NvM_ReadBlock()` 只返回
- *        `E_NOT_OK`，"块 id 写错了"和"引擎忙"在板上没有任何区别。
- */
-void Det_Log(uint16_t ModuleId, uint8_t ApiId, uint8_t ErrorId);
-
-void Det_Log(uint16_t ModuleId, uint8_t ApiId, uint8_t ErrorId)
-{
-	Platform_Printf("[det] mod=%u api=0x%02x err=0x%02x\n",
-	                (unsigned)ModuleId, (unsigned)ApiId, (unsigned)ErrorId);
-}
-
 /* ============================ [ 入口 ] ============================ */
 
 /**
@@ -1728,7 +1237,7 @@ int main(void)
 			 * 它要抢在 `Com_MainFunction()` 前面把新值写进报文缓冲，
 			 * 否则第一帧发出去的是上一拍的旧值（差一帧）。
 			 * 这一步是应用逻辑，不属于 BSW 调度表。 */
-			Com_AppTick();
+			ComApp_Tick();
 
 			/* BSW 调度交给 EcuM：按 `EcuM_DriverMainList` 的顺序跑一遍
 			 * （CanSM → ComM → Com → CanNm → Nm → CanTp → Dcm → NvM → Dem）。
