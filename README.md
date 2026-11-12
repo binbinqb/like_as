@@ -2018,7 +2018,18 @@ tools/shell.py           上位机标准客户端（提示符切帧 / 自动找�
 | NM（M9） | `nm [req\|rel\|passive]` | `!a/!R/!A/!m` 保留（转调 cmd 实现） | ✅ 逻辑已迁移，M9 26/26 |
 | 存储（M4） | `nvm [dump\|writeall\|touch\|stress\|illegal]` | `!d/!c/!w/!x/!p` 保留（转调） | ✅ 逻辑迁入 `storage_app.c`，M4 23/23 |
 | Com（M10） | `com [sig\|group]` | `!v/!y` 保留（转调） | ✅ 信号层整体迁入 `com_app.c`，M10 22/22 |
-| CAN 控制/计数、DTC | `can` / `dtc` | 全部保留 | ⏳ 待迁移（`CanTest_*` 与主循环共用状态，需先拆测试模块） |
+| CAN 控制/计数（M2/M14/M19） | `can [pdu\|ctrl\|trcv\|counters\|regs\|burst\|matrix]` | `!o…!M` 保留（转调 `CanTest_CmdExec`） | ✅ 整块迁入 `can_test.c`，M2 39/39、M14 全过、M19 34/34 |
+| DTC（M5） | `dtc [dump\|clear\|inject]` | `!b/!B/!i` 保留（同路径） | ✅ 复用 `CanTest_CmdExec`，M5 24/24 |
+
+**main.c 从 2215 行降到 435 行**（命令、CAN 测试、存储、信号层全部迁出）。
+
+| 文件 | 行数 | 职责 |
+|---|---|---|
+| `main.c` | 435 | 启动序列 + 主循环调度 + Det 钩子 |
+| `can_test.c` | 884 | CAN 周期发送/接收统计/总线故障/旧命令分发 |
+| `storage_app.c` | 390 | 存储初始化（EcuM 表）+ 验收实现 |
+| `com_app.c` | 174 | 信号层状态 + ComApp_Tick |
+| `cmd/*.c` | 900 | 8 个命令文件（adc/board/can/com/dtc/ecum/nm/nvm/pwm） |
 
 迁移方式：逻辑搬进 `cmd/xxx_cmd.c`，旧 `!x` 分支改为调用 `cmd_api.h` 里声明的包装函数
 （脚本零改动）；脚本切到新命令后再删旧分支。
