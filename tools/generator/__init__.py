@@ -37,6 +37,7 @@ from .TLS import Gen as TLSGen
 from .Mirror import Gen as MirrorGen
 from .BL import Gen as BLGen
 from .Shell import Gen as ShellGen
+from .Board import Gen as BoardGen
 
 def DummyGen(cfg):
     pass
@@ -75,6 +76,7 @@ __GEN__ = {
     "Mirror": MirrorGen,
     "BL": BLGen,
     "Shell": ShellGen,
+    "Board": BoardGen,
 }
 
 RootDir = os.path.abspath(os.path.dirname(__file__) + "/../..")

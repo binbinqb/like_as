@@ -48,7 +48,7 @@ APP_LIBS = ["Cvm0146", "Shell", "CanIf", "PduR", "CanTp", "Dcm", "NvM", "Dem", "
 
 # $Cvm0146 由平台库的 self.include 注册；$INFRAS 由 infras/SConscript 注册；
 # $Xxx_Cfg 由平台库的 RegisterConfig 注册（都在构建时解析，与脚本执行顺序无关）。
-APP_CPPPATH = ["$Cvm0146", "$INFRAS", "$Shell", "$Shell_Cfg", "$Shell_Cfg", "$Can_Cfg", "$CanIf_Cfg", "$CanTp_Cfg",
+APP_CPPPATH = ["$Cvm0146", "$INFRAS", "$Shell", "$Shell_Cfg", "$Board_Cfg", "$Shell_Cfg", "$Can_Cfg", "$CanIf_Cfg", "$CanTp_Cfg",
                "$Dcm_Cfg", "$PduR_Cfg", "$Dio_Cfg", "$Port_Cfg", "$NvM_Cfg",
                "$Dem_Cfg", "$CanNm_Cfg", "$Nm_Cfg", "$Com_Cfg",
                "$ComM_Cfg", "$CanSM_Cfg",

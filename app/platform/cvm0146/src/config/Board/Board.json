@@ -1,0 +1,27 @@
+{
+    "class": "Board",
+    "boardName": "CVM0146-EVK",
+    "mcu": "CVM0146FMLQ",
+    "coreClockHz": 120000000,
+    "console": {
+        "uart": 2,
+        "baud": 115200
+    },
+    "can": [
+        { "instance": 0, "bitrate": 500000 },
+        { "instance": 1, "bitrate": 500000 }
+    ],
+    "adc": {
+        "groups": 2
+    },
+    "pwm": {
+        "frequencyHz": 100,
+        "channels": 4
+    },
+    "io": {
+        "hsd": [],
+        "lsd": [],
+        "hbridge": [],
+        "expanders": []
+    }
+}

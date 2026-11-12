@@ -20,6 +20,9 @@ CWD = GetCurrentDir()
 SDK = os.path.join(CWD, "sdk")
 INC = os.path.join(CWD, "include")
 
+# 板级配置生成目录（Board.json → Board_Cfg.h）：app 层命令也要 include
+RegisterCPPPATH("$Board_Cfg", os.path.join(CWD, "src", "config", "Board", "GEN"))
+
 # 厂商驱动全部编入：42 个 .c 实测 GCC 10.3 全部可编译。
 # 要裁剪就缩小这里的 glob（例如只留 drivers/flexcan + drivers/pins）。
 #
@@ -122,6 +125,21 @@ class LibraryCvm0146(Library):
             self.CPPPATH += ["$Can", "$Dio", "$Port"]
         # Lwrb：platform_cvm0146.c 的控制台 RX 环用它（lwrb.h）
         self.LIBS += ["Lwrb"]
+
+        # ------------------------------------------------------------------
+        # Board 配置：板级身份/资源表（Board.json → Board_Cfg.c/h）
+        #
+        # **不走 cfgs 字典**：那个循环假定 key 是"库名"，而没有一个叫 Board
+        # 的库 —— 走它会在链接期变成 -lBoard。这里直接把生成物编进平台库，
+        # GEN 目录挂到 include 路径。
+        # ------------------------------------------------------------------
+        _board_json = os.path.join(CWD, "src", "config", "Board", "Board.json")
+        _board_srcs = []
+        if os.path.exists(_board_json):
+            _gen = self.Generate(_board_json)
+            _board_srcs = _gen.get("Board", [])
+            self.CPPPATH += [os.path.join(CWD, "src", "config", "Board", "GEN")]
+            self.Append(CPPDEFINES=["USE_BOARD"])
         # MCU_CVM0146FMLQ：选择寄存器定义与 Flash 容量
         # START_FROM_FLASH：启动走 Flash 分支（含 SRAM ECC 初始化、向量表定位）
         self.CPPDEFINES = ["MCU_CVM0146FMLQ", "START_FROM_FLASH"]
@@ -139,7 +157,7 @@ class LibraryCvm0146(Library):
             keep = ("platform_cvm0146.c", "FlashAc.c", "BootMeta.c")
             self.source = [o for o in acObjs if os.path.basename(str(o)) in keep] + sdkObjs
         else:
-            self.source = objs
+            self.source = list(objs) + _board_srcs
 
         # BootMeta.c 用 `Crc_CalculateCRC32` 算镜像与 meta 的 CRC32。
         # 放在这里而不是让上层各自声明，是因为平台库自己就引用它了（静态库

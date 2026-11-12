@@ -2066,7 +2066,27 @@ schema 校验，可直接在编辑器里改参数与命令开关。
 全量回归：M0 26/26、M2 39/39、M4 23/23、M5 24/24、M6 23/23、M9 26/26、
 M10 22/22、M11 18/18、M12 15/15、M14 全过、M19 34/34。
 
+## M20 板级抽象层（第一步：板级身份/资源表）
+
+`config/Board/Board.json` → `tools/generator/Board.py` → `GEN/Board_Cfg.h/.c`：
+板名、MCU、内核时钟、控制台、CAN 实例数与速率、ADC 组数、PWM 频率/通道数，
+外加 `io`（HSD/LSD/H 桥/扩展芯片，板子定型后填）。
+
+`board` 命令实测输出：
+
+```
+<+0, board=CVM0146-EVK (CVM0146FMLQ) slot=A build=Nov 12 2026 13:10:23
+     core=120MHz console=UART2/115200 can=2 pwm=4ch@100Hz adcGroups=2 shell=sh-1.0.0
+```
+
+**实车板到来时**：新建一份 Board.json（改值即可），驱动与命令零改动。
+JSON 编辑器 `schema.json` 已加 `Board` 条目（共 16 个模块）。
+
+⚠️ **不走 cfgs 字典**：那个循环假定 key 是"库名"，没有 `Board` 库 → 会变成 `-lBoard`。
+Board 的生成物直接编进平台库，`$Board_Cfg` 单独注册 include 路径。
+
 ### 尚未完成（下一步）
 
 1. 模块级 `cmd/` 目录约定（Adc/Pwm/CanIf 各自 SConscript 里加）。
-2. M20 板级抽象层：引脚/资源收敛成 `Board.json` → `Board_Cfg.h`。
+2. 引脚级映射逐步收进 Board.json（Port/Dio 的引脚表现在还是手写表）。
+3. M22 CAN1 进生成器 / D1 刷写进 boot。

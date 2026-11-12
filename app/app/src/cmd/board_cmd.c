@@ -18,6 +18,7 @@
 
 #include "sh_cfg.h"   /* SH_VERSION_STR / SH_BOARD_NAME（内部已 include sh.h） */
 #include "platform_cvm0146.h"
+#include "Board_Cfg.h"   /* 板级身份表（Board.json 生成） */
 
 #ifndef APP_SLOT_INDEX
 #define APP_SLOT_INDEX 0
@@ -34,11 +35,19 @@ static int sh_cmd_board(int argc, char *argv[])
 	(void)argc;
 	(void)argv;
 
-	sh_print("<+0, board=%s slot=%c build=%s %s\r\n",
-	         SH_BOARD_NAME,
+	sh_print("<+0, board=%s (%s) slot=%c build=%s %s\r\n",
+	         Board_Cfg_Info.name, Board_Cfg_Info.mcu,
 	         (APP_SLOT_INDEX == 0) ? 'A' : 'B',
 	         __DATE__, __TIME__);
-	sh_print("     console=UART2 115200 8N1  shell=sh-%s\r\n", SH_VERSION_STR);
+	sh_print("     core=%uMHz console=UART%u/%u can=%u pwm=%uch@%uHz adcGroups=%u shell=sh-%s\r\n",
+	         (unsigned)(Board_Cfg_Info.coreClockHz / 1000000u),
+	         (unsigned)Board_Cfg_Info.consoleUart,
+	         (unsigned)Board_Cfg_Info.consoleBaud,
+	         (unsigned)Board_Cfg_Info.canCount,
+	         (unsigned)Board_Cfg_Info.pwmChannels,
+	         (unsigned)Board_Cfg_Info.pwmFreqHz,
+	         (unsigned)Board_Cfg_Info.adcGroups,
+	         SH_VERSION_STR);
 	return SH_OK;
 }
 
