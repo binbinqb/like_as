@@ -91,6 +91,15 @@ SECTIONS
     *(.text*)                /* .text* sections (code) */
     *(.rodata)               /* .rodata sections (constants, strings, etc.) */
     *(.rodata*)              /* .rodata* sections (constants, strings, etc.) */
+    /* ── Shell 命令表（段注册）──
+     * 命令文件用 __attribute__((used, section("hal_sh_cmd"))) 落入本段，
+     * 不参与编译的模块自然没有命令。必须显式 KEEP：--gc-sections 会把它
+     * 当成无人引用的 orphan 回收（实测会被塞进 m_interrupts 直接链接报错）。
+     * 段边界符号手工给出，因为常规段 ld 不再自动生成 __start_/__stop_。 */
+    . = ALIGN(4);
+    __start_hal_sh_cmd = .;
+    KEEP(*(hal_sh_cmd))
+    __stop_hal_sh_cmd = .;
     *(.glue_7)               /* glue arm to thumb code */
     *(.glue_7t)              /* glue thumb to arm code */
     *(.eh_frame)

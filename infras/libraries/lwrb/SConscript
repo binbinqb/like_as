@@ -1,0 +1,16 @@
+from building import *
+
+CWD = GetCurrentDir()
+
+objs = Glob("*.c")
+
+# $Lwrb：shell 的 TX 环形缓冲用它（sh_io.c）
+RegisterCPPPATH("$Lwrb", CWD)
+
+
+@register_library
+class LibraryLwrb(Library):
+    def config(self):
+        self.include = [CWD]
+        self.CPPPATH = ["$INFRAS"]
+        self.source = objs

@@ -22,12 +22,13 @@ LINKER_DIR = os.path.normpath(
 # ⚠ Glob 必须在**模块级别**取，不能写在 config() 里：
 # config() 执行时 cwd 已经是 variant_dir（build/nt/...），那里没有源码副本
 # （duplicate=0），Glob 会返回空 → 链接时 "undefined reference to main"。
-objs = Glob("src/*.c")
+# cmd/ 子目录：每个命令文件一条 `SH_EXPORT_CMD`，模块裁剪时不 glob 即消失
+objs = Glob("src/*.c") + Glob("src/cmd/*.c")
 
 # 两个变体共用的库清单。
 # CanNm 与 Nm 互相引用，不能靠库自身的 LIBS 排顺序（本工程链接命令无
 # --start-group）。两个都放进来，由链接器做全局符号解析 —— 与 as-master 一致。
-APP_LIBS = ["Cvm0146", "CanIf", "PduR", "CanTp", "Dcm", "NvM", "Dem", "Det",
+APP_LIBS = ["Cvm0146", "Shell", "CanIf", "PduR", "CanTp", "Dcm", "NvM", "Dem", "Det",
             "StdTimer",
             "CanNm", "Nm",
             "Com",
@@ -35,7 +36,7 @@ APP_LIBS = ["Cvm0146", "CanIf", "PduR", "CanTp", "Dcm", "NvM", "Dem", "Det",
 
 # $Cvm0146 由平台库的 self.include 注册；$INFRAS 由 infras/SConscript 注册；
 # $Xxx_Cfg 由平台库的 RegisterConfig 注册（都在构建时解析，与脚本执行顺序无关）。
-APP_CPPPATH = ["$Cvm0146", "$INFRAS", "$Can_Cfg", "$CanIf_Cfg", "$CanTp_Cfg",
+APP_CPPPATH = ["$Cvm0146", "$INFRAS", "$Shell", "$Can_Cfg", "$CanIf_Cfg", "$CanTp_Cfg",
                "$Dcm_Cfg", "$PduR_Cfg", "$Dio_Cfg", "$Port_Cfg", "$NvM_Cfg",
                "$Dem_Cfg", "$CanNm_Cfg", "$Nm_Cfg", "$Com_Cfg",
                "$ComM_Cfg", "$CanSM_Cfg",

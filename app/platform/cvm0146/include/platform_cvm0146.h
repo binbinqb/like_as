@@ -61,6 +61,18 @@ void Platform_PutChar(char c);
 void Platform_Puts(const char *s);
 
 /**
+ * @brief 绑定控制台输出汇（字符串级输出的统一出口）
+ * @param[in] fn 每字符回调；NULL = 恢复直写 UART
+ *
+ * @details 绑定后 `Platform_Puts` / `Platform_Printf` 的每个字符都交给 @p fn，
+ *          由 shell 的 TX 环排队发送 —— **保证命令输出与后台日志不互相插入**
+ *          同一行。`Platform_PutChar`（单字符直写）**不经过汇**，它是 shell
+ *          排空 TX 环时用的原始通道，再过滤会形成递归。
+ * @note 回调在任务上下文（含 `Platform_Printf` 调用处）执行，不得阻塞。
+ */
+void Platform_SetConsoleSink(void (*fn)(char c));
+
+/**
  * @brief 嵌入式格式化输出（不依赖 newlib）
  *
  * @details 支持的转换符：`%d %i %u %x %X %c %s %p %%`。

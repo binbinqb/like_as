@@ -1,0 +1,16 @@
+from building import *
+
+CWD = GetCurrentDir()
+
+objs = Glob("*.c")
+
+# $Shell：命令文件（xxx_cmd.c）写 #include "sh.h" 时用
+RegisterCPPPATH("$Shell", CWD)
+
+
+@register_library
+class LibraryShell(Library):
+    def config(self):
+        self.CPPPATH = ["$INFRAS", "$Lwrb"]
+        self.LIBS += ["Lwrb"]
+        self.source = objs

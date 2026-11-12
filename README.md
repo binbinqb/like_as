@@ -1956,3 +1956,61 @@ python tools/sync_canif.py --dry-run  # 只看不写
    `CANIF_OFFLINE`，`CanIf_Transmit()` 里 `if (CANIF_ONLINE == context->PduMode)`
    不成立就直接返回 `E_NOT_OK`。漏了这一句的症状是"初始化全成功，一帧都发不出去"。
 
+
+## M-Shell：命令行解释器引入（Bcm_Frame `sh` → 本项目）
+
+目标：把命令从 `main.c` 的巨型单字符 switch 里拆出来，做成**按模块独立编译**的
+`xxx_cmd.c`，并给上位机一个统一的串口交互层。
+
+### 结构
+
+```
+infras/shell/            sh 中间件（4,054 行，Bcm_Frame 原样移植 + 三处适配）
+  sh_port.h              替代 Bcm_Frame 的 hal_comm.h（只保留 3 个状态码 + 错误结构）
+  sh_compat.c            hal_error_count/assert_count/get_last 的弱默认实现
+app/app/src/sh_app.c     UART2 绑定 + `!x` 旧命令兼容桥
+app/app/src/cmd/         应用侧命令文件（board_cmd.c 为样板）
+infras/libraries/lwrb/   TX/RX 环形缓冲（sh_io.c 与平台 RX 中断共用）
+tools/shell.py           上位机标准客户端（提示符切帧 / 自动找口 / ANSI 清洗）
+```
+
+命令注册用**链接器段**：`SH_EXPORT_CMD` 把描述符放进 `hal_sh_cmd` 段，
+`sh_task` 遍历 `__start_hal_sh_cmd..__stop_hal_sh_cmd`。不参与编译的模块
+自然没有命令，`help` 里看不到、编译链接都不报错 —— 这就是"不用就不编译"。
+
+### 五条实测踩出来的坑
+
+1. **GCC 下段会被 `--gc-sections` 回收，且 orphan 放置会撞 m_interrupts**。
+   首次链接报 `section 'hal_sh_cmd' will not fit in region 'm_interrupts'`。
+   解决：在 `CVM0146_app_a/b.ld` 的 `.text` 里显式 `KEEP(*(hal_sh_cmd))`，
+   并**手写** `__start_/__stop_hal_sh_cmd` 两个符号（收进 .text 后 ld 不再自动生成）。
+2. **轮询式 `Platform_GetChar` 会丢字节**。主循环里 NvM 擦除/突发接收占用几毫秒，
+   期间到 UART 的字节直接丢；症状是"连续发 `*IDN?\n`，板上只收到 `*IDN`，
+   命令不执行也不报错"。改为 `UART2_RxTx_Handler` 中断 + 512 字节 lwrb 环。
+3. **多个输出者会互相插进同一行**（心跳 `alive #N` 插在命令输出中间）。
+   改为控制台汇：`Platform_Puts/Platform_Printf` 逐字符交给 `sh_putch` 入 TX 环；
+   `Platform_PutChar` 保持**原始直写**，它是 shell 排空环的通道，再过滤会递归。
+4. **旧验收脚本发的是不带回车的 `!k`**，而 shell 按行分发（需回车）。
+   `sh_app.c` 加兼容桥：读到 `!` 吞掉、把紧随一个字符交给旧 `CmdExec`。
+   ⇒ 旧脚本零改动，新命令并行可用；迁完后桥与 `CmdExec` 一起删。
+5. **`__weak` 是 IAR/ARMCC 语法**，GCC 报 `expected ';' before 'int'`；
+   改 `__attribute__((weak))`。
+
+### 验收记录（2026-11-12）
+
+| 项 | 结果 |
+|---|---|
+| `help` | 列出 13 条内建 + 1 条应用命令（`board`） |
+| `board` / `*IDN?` / `*SYST?` / `echo a b` | 正常，输出带 `<+0,` SCPI 应答头 |
+| 整行快速发送（模拟脚本） | 不丢字节 |
+| 旧命令 `!k`（不带回车）连发 | 正常，走兼容桥 |
+| 回归 M2 | 39/39 |
+| 回归 M19 | 34/34 |
+| 镜像体积 | App 200,684 B（+17 KB）· Boot 56,640 B（+1.8 KB，64K 区仍余 8.8K） |
+
+### 尚未完成（下一步）
+
+1. 旧命令迁移：`main.c` 的 ~30 个 `case` 逐个变成模块 `cmd/xxx_cmd.c`，
+   完成后删兼容桥；`m*_check.py` 同步改为 `tools/shell.py` 的 `cmd()`。
+2. `sh_cfg.h` 的参数（提示符/环深/历史）进 JSON 配置 + 生成器 `Shell.py`。
+3. 模块级 `cmd/` 目录的 glob 约定（Adc/Pwm/CanIf 各自 SConscript 里加）。

@@ -61,6 +61,7 @@
  */
 
 #include "platform_cvm0146.h"
+#include "sh_app.h"      /* M-Shell：命令行解释器接入（sh_bind_io + sh_task） */
 
 #include "Can.h"
 #include "Can_Cfg.h"     /* CAN_CFG_NUM_CHANNELS：通道数由平台配置决定，应用不写死 */
@@ -167,9 +168,6 @@ static uint32_t s_rxPerPdu[CANIF_RX_PDU_NUM];
 
 /** @brief 发送完成计数（CanIf 回调里累加） */
 static volatile uint32_t s_txConfirmCount;
-
-/** @brief 已收到 `!`，下一个字符是命令 */
-static bool s_cmdPending;
 
 /* ============================ [ CanIf 回调 ] ============================ */
 
@@ -1995,6 +1993,18 @@ void Det_Log(uint16_t ModuleId, uint8_t ApiId, uint8_t ErrorId)
 
 /* ============================ [ 入口 ] ============================ */
 
+/**
+ * @brief 旧命令兼容入口（M-Shell 迁移期）
+ * @details sh_app.c 的兼容桥把 `!` 之后的单字符送到这里。
+ *          命令逐个迁成 `xxx_cmd.c` 的 shell 命令后，删掉对应的 `case`
+ *          即可；全部迁完后本函数与桥一起删除。
+ * @param[in] c 命令字符（如 `k`）
+ */
+void App_LegacyCmdExec(char c)
+{
+	CmdExec(c);
+}
+
 int main(void)
 {
 	uint32_t nextBeat = 0u;
@@ -2002,7 +2012,6 @@ int main(void)
 	uint32_t nextExt  = 0u;
 	uint32_t nextBsw  = 0u;
 	uint32_t beat     = 0u;
-	int ch;
 
 	Platform_Init();
 	Platform_InitTick();
@@ -2106,7 +2115,11 @@ int main(void)
 
 	PrintfSelfTest();
 
-	Platform_Puts("type anything, it will be echoed back\n");
+	/* Shell 接入：绑定 UART2 控制台、打印横幅。
+	 * 放在自检之后 —— 命令要访问的 BSW 已全部初始化完毕。 */
+	ShApp_Init();
+
+	Platform_Puts("  !x 旧单字符命令仍可用（兼容桥），新命令见 `help`\n");
 	Platform_Puts("  !o !n = CAN0 PDU offline/online\n");
 	Platform_Puts("  !s !g = CAN0 controller stop/start\n");
 	Platform_Puts("  !t !r = CAN0 transceiver sleep/normal\n");
@@ -2128,18 +2141,10 @@ int main(void)
 	Platform_Puts("  !M    = CAN1 real matrix TX (6 msgs, tag A1~A6)\n\n");
 
 	for (;;) {
-		/* 1) 串口输入：`!x` 是控制命令，其余原样回显
-		 *    （回显是 M0 的验收项，不能被命令解析破坏，所以用 `!` 前缀区分） */
-		ch = Platform_GetChar();
-		if (ch >= 0) {
-			Platform_PutChar((char)ch);
-			if (s_cmdPending) {
-				s_cmdPending = false;
-				CmdExec((char)ch);
-			} else if (ch == '!') {
-				s_cmdPending = true;
-			}
-		}
+		/* 1) 串口输入：交给 shell（行编辑 + 回显 + 命令分发）
+		 *    `!x` 旧单字符命令由 sh_app.c 的兼容桥转给 App_LegacyCmdExec，
+		 *    迁移期旧验收脚本零改动；迁完后桥与 CmdExec 一起删除。 */
+		ShApp_Task();
 
 		/* 2) CAN 标准帧周期发送（500 ms，两个通道各一帧） */
 		if ((uint32_t)(Platform_NowMs() - nextTx) >= CAN_TX_PERIOD_MS) {

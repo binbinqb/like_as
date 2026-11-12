@@ -108,6 +108,8 @@ class LibraryCvm0146(Library):
             # infras/memory/SConscript 里关于 Windows 大小写冲突的说明。
             "$MEMORY",
             "$MEMORY_VENDOR",
+            # 控制台 RX 环形缓冲（UART2 中断 → 主循环，防丢字节）
+            "$Lwrb",
         ]
         # $Can / $Dio / $Port 是模块库注册的 include 变量（`self.include`），
         # 只有那些库参与构建时才存在。boot 不链接它们，直接引用会让
@@ -117,6 +119,8 @@ class LibraryCvm0146(Library):
         # 不走 $Dcm —— Dcm 库没有注册 self.include，那个变量根本不存在。
         if appName != "Boot":
             self.CPPPATH += ["$Can", "$Dio", "$Port"]
+        # Lwrb：platform_cvm0146.c 的控制台 RX 环用它（lwrb.h）
+        self.LIBS += ["Lwrb"]
         # MCU_CVM0146FMLQ：选择寄存器定义与 Flash 容量
         # START_FROM_FLASH：启动走 Flash 分支（含 SRAM ECC 初始化、向量表定位）
         self.CPPDEFINES = ["MCU_CVM0146FMLQ", "START_FROM_FLASH"]

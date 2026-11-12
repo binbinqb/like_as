@@ -27,6 +27,7 @@
 
 #include "platform_cvm0146.h"
 #include "platform_priv.h"
+#include "lwrb.h"            /* 控制台 RX 环形缓冲（UART 中断 → 主循环） */
 #include "Std_Critical.h"   /* imask_t + EnterCritical/ExitCritical 宏的底层类型 */
 
 #include <stdarg.h>
@@ -62,6 +63,24 @@ McuType g_mcu;
 /** @brief 毫秒计数（SysTick 中断累加） */
 static volatile uint32_t s_ms;
 
+/* ── 控制台接收：UART2 中断 → 环形缓冲 → Platform_GetChar ──────────────
+ *
+ * 为什么必须走中断：
+ *   轮询版 `Platform_GetChar` 直接读硬件 FIFO，而主循环里 NvM 擦除、
+ *   CAN 突发接收等任务动辄占用几毫秒 —— 期间到达的字节**直接丢失**。
+ *   实测症状：上位机连续发 `*IDN?\n`，板上收到 `*IDN` 或更少，
+ *   命令既不执行也不报错（行编辑永远等不到回车）。
+ *   改为中断收 + 512 字节环（远大于一次命令行的 128），主循环再慢也不丢。
+ */
+static uint8_t s_rxStorage[512];
+static lwrb_t  s_rxRb;
+
+/** @brief 控制台输出汇（NULL = 直写 UART；shell 绑定后指向 TX 环） */
+static void (*s_consoleSink)(char c);
+
+/** @brief 控制台输出一个字符（有汇走汇，无汇直写） */
+static void Console_PutChar(char c);
+
 /* ============================ [ 中断处理 ] ============================ */
 
 /**
@@ -71,6 +90,28 @@ static volatile uint32_t s_ms;
 void SysTick_Handler(void)
 {
 	s_ms++;
+}
+
+/**
+ * @brief UART2 收发中断：把收到的字节搬进环形缓冲
+ * @details 只做"搬字节"这一件事（ISR 里不解析、不打印）：
+ *          ① 一次搬空 FIFO（`GetRxCounter` 为 0 即止），避免下次中断前溢出；
+ *          ② 环满时新字节丢弃（`lwrb_write` 返回值忽略）—— 环 512 字节，
+ *             正常命令行 ≤128，只有异常流量才会满；
+ *          ③ 不动 TDRE：发送仍是阻塞轮询（见 `Platform_PutChar`），
+ *             这样 ISR 里不需要维护 TX 状态机。
+ * @note  厂商启动文件的向量表把 `UART2_RxTx_Handler` 声明为 weak，这里定义即覆盖。
+ */
+void UART2_RxTx_Handler(void)
+{
+	uint8_t b;
+
+	while (UartDrv_GetRxCounter(&g_mcu.uartDrv2) > 0u) {
+		b = (uint8_t)UartDrv_RxData(&g_mcu.uartDrv2);
+		(void)lwrb_write(&s_rxRb, &b, 1u);
+	}
+	/* 清 RX 标志，防止电平未变时反复进出中断 */
+	UartDrv_ClearStatus(&g_mcu.uartDrv2, UARTDRV_STATUS_RDRF);
 }
 
 /* ============================ [ 内部函数 ] ============================ */
@@ -139,6 +180,11 @@ static void Uart2_Init(void)
 	ClockDrv_GetFreq(&g_mcu.clockDrv, CLOCKDRV_UART2,
 	                 &uartInitCfg.basicParameters.busClockFreq);
 	UartDrv_SetConfig(&g_mcu.uartDrv2, &uartInitCfg);
+
+	/* 接收改中断 + 环形缓冲（理由见文件头 `s_rxStorage` 的注释） */
+	(void)lwrb_init(&s_rxRb, s_rxStorage, (lwrb_sz_t)sizeof(s_rxStorage));
+	UartDrv_SetInterruptReq(&g_mcu.uartDrv2, UARTDRV_ISR_SRC_RX_FULL, true);
+	NVIC_EnableIRQ(UART2_RxTx_IRQn);
 }
 
 /**
@@ -163,7 +209,7 @@ static int EmitRepeat(char c, int n)
 	int i;
 
 	for (i = 0; i < n; i++) {
-		Platform_PutChar(c);
+		Console_PutChar(c);
 	}
 	return (n > 0) ? n : 0;
 }
@@ -174,7 +220,7 @@ static int EmitChars(const char *s, int n)
 	int i;
 
 	for (i = 0; i < n; i++) {
-		Platform_PutChar(s[i]);
+		Console_PutChar(s[i]);
 	}
 	return n;
 }
@@ -188,12 +234,12 @@ static int EmitLead(char sign, char prefix)
 	int n = 0;
 
 	if (sign != '\0') {
-		Platform_PutChar(sign);
+		Console_PutChar(sign);
 		n++;
 	}
 	if (prefix != '\0') {
-		Platform_PutChar('0');
-		Platform_PutChar(prefix);
+		Console_PutChar('0');
+		Console_PutChar(prefix);
 		n += 2;
 	}
 	return n;
@@ -356,13 +402,34 @@ void Platform_PutChar(char c)
 	UartDrv_TxData(&g_mcu.uartDrv2, (uint16_t)(uint8_t)c);
 }
 
+/**
+ * @brief 控制台输出一个字符：有汇走汇（shell TX 环），无汇直写 UART
+ * @details 直写路径（`Platform_PutChar`）**只给 shell 的 TX 排空用**：
+ *          排空本身已在 shell 上下文，再经汇会形成递归。
+ *          其余所有输出（`Platform_Puts` / `Platform_Printf`）都经本函数，
+ *          保证与命令输出同一条队列、不会互相插进行中间。
+ */
+static void Console_PutChar(char c)
+{
+	if (s_consoleSink != NULL) {
+		s_consoleSink(c);
+	} else {
+		Platform_PutChar(c);
+	}
+}
+
+void Platform_SetConsoleSink(void (*fn)(char c))
+{
+	s_consoleSink = fn;
+}
+
 void Platform_Puts(const char *s)
 {
 	if (s == NULL) {
 		return;
 	}
 	while (*s != '\0') {
-		Platform_PutChar(*s++);
+		Console_PutChar(*s++);
 	}
 }
 
@@ -382,7 +449,7 @@ int Platform_Printf(const char *fmt, ...)
 		FmtSpec sp;
 
 		if (*p != '%') {
-			Platform_PutChar(*p);
+			Console_PutChar(*p);
 			p++;
 			count++;
 			continue;
@@ -543,12 +610,12 @@ int Platform_Printf(const char *fmt, ...)
 			break;
 		}
 		case '%':
-			Platform_PutChar('%');
+			Console_PutChar('%');
 			count++;
 			break;
 		case '\0':
 			/* 末尾孤立的 '%'：原样输出，不吞掉也不读参数 */
-			Platform_PutChar('%');
+			Console_PutChar('%');
 			count++;
 			p--;
 			break;
@@ -557,7 +624,7 @@ int Platform_Printf(const char *fmt, ...)
 			 * 不能"原样输出后继续"——那会让 va_arg 的位置与后续格式符错配，
 			 * 把整数当指针解引用，直接 HardFault（比少打一行日志严重得多）。 */
 			Platform_Puts("<bad fmt %");
-			Platform_PutChar(*p);
+			Console_PutChar(*p);
 			Platform_Puts(">");
 			count += 12;
 			va_end(ap);
@@ -571,10 +638,12 @@ int Platform_Printf(const char *fmt, ...)
 
 int Platform_GetChar(void)
 {
-	if (UartDrv_GetRxCounter(&g_mcu.uartDrv2) == 0u) {
+	uint8_t b;
+
+	if (lwrb_read(&s_rxRb, &b, 1u) != 1u) {
 		return -1;
 	}
-	return (int)(UartDrv_RxData(&g_mcu.uartDrv2) & 0xFFu);
+	return (int)b;
 }
 
 void Platform_InitTick(void)
