@@ -36,6 +36,26 @@ import sys
 import tempfile
 import time
 
+# ── 旧 `!x` → 新 shell 命令（M-Shell 迁移；旧兼容桥已删）─────────────
+CMD_MAP = {
+	'!o': 'can pdu offline',
+	'!n': 'can pdu online',
+	'!s': 'can ctrl stop',
+	'!g': 'can ctrl start',
+	'!t': 'can trcv sleep',
+	'!r': 'can trcv normal',
+}
+
+
+def xlate(cmd):
+	"""旧单字符命令翻译成新命令；其它原样透传。保证以换行结尾。"""
+	c = CMD_MAP.get(cmd.strip(), cmd.strip())
+	if not c.endswith("\n"):
+		c += "\n"
+	return c
+
+
+
 try:
 	import can
 except ImportError:
@@ -265,7 +285,7 @@ def main():
 		return len(collect(bus, CAN0_TX_STD, False, seconds)) > 0
 
 	def cmd(letter):
-		ser.write(("!" + letter).encode())
+		ser.write(xlate("!" + letter).encode())
 		ser.flush()
 		time.sleep(0.35)
 		return ser.read(4096).decode("utf-8", "replace")
@@ -289,7 +309,7 @@ def main():
 	results.append(("控制面: STARTED 后恢复发送", tx_alive(bus0)))
 
 	r = cmd("t")
-	results.append(("控制面: !t 回读 rc=0", "rc=0" in r))
+	results.append(("控制面: can trcv sleep 受理", "<+0" in r))
 	results.append(("控制面: TRCV SLEEP 后总线上无 0x123", not tx_alive(bus0)))
 
 	r = cmd("r")

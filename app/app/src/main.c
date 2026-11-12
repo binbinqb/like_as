@@ -208,18 +208,6 @@ static void TimerSelfTest(void)
 
 /* ============================ [ 入口 ] ============================ */
 
-/**
- * @brief 旧命令兼容入口（M-Shell 迁移期）
- * @details sh_app.c 的兼容桥把 `!` 之后的单字符送到这里。
- *          命令逐个迁成 `xxx_cmd.c` 的 shell 命令后，删掉对应的 `case`
- *          即可；全部迁完后本函数与桥一起删除。
- * @param[in] c 命令字符（如 `k`）
- */
-void App_LegacyCmdExec(char c)
-{
-	CanTest_CmdExec(c);
-}
-
 int main(void)
 {
 	uint32_t nextBeat = 0u;
@@ -334,31 +322,12 @@ int main(void)
 	 * 放在自检之后 —— 命令要访问的 BSW 已全部初始化完毕。 */
 	ShApp_Init();
 
-	Platform_Puts("  !x 旧单字符命令仍可用（兼容桥），新命令见 `help`\n");
-	Platform_Puts("  !o !n = CAN0 PDU offline/online\n");
-	Platform_Puts("  !s !g = CAN0 controller stop/start\n");
-	Platform_Puts("  !t !r = CAN0 transceiver sleep/normal\n");
-	Platform_Puts("  !d !c = nvm dump / WriteAll\n");
-	Platform_Puts("  !w !x = nvm touch CONFIG / illegal block id\n");
-	Platform_Puts("  !p    = nvm stress 400 writes (force GC)\n");
-	Platform_Puts("  !a !R = nm network request / release\n");
-	Platform_Puts("  !A    = nm passive startup (woken by network)\n");
-	Platform_Puts("  !m    = nm state (comm / cannm / mode)\n");
-	Platform_Puts("  !v    = com signals (tx / rx)\n");
-	Platform_Puts("  !y    = com ipdu group stop / start\n");
-	Platform_Puts("  !u !U = ecum release RUN (POST_RUN) / back to RUN\n");
-	Platform_Puts("  !q    = ecum mode\n");
-	Platform_Puts("  !z    = sleep once (STOP mode, 100 ms fallback wake)\n");
-	Platform_Puts("  !b !B = dtc dump / clear (CAN bus-off snapshot)\n");
-	Platform_Puts("  !i    = inject one bus-off record (fault injection)\n");
-	Platform_Puts("  !e !f = CAN0 registers / burst 100 frames\n");
-	Platform_Puts("  !k !K = can rx counters / clear (stress)\n");
-	Platform_Puts("  !M    = CAN1 real matrix TX (6 msgs, tag A1~A6)\n\n");
+	Platform_Puts("  commands: type `help`  (can / dtc / nm / com / nvm / ecum / adc / pwm / board)\n\n");
 
 	for (;;) {
 		/* 1) 串口输入：交给 shell（行编辑 + 回显 + 命令分发）
-		 *    `!x` 旧单字符命令由 sh_app.c 的兼容桥转给 App_LegacyCmdExec，
-		 *    迁移期旧验收脚本零改动；迁完后桥与 CmdExec 一起删除。 */
+		 *    验收脚本已全部切到新命令（见 tools 下各 xxx_check.py 的 CMD_MAP），
+		 *    旧 `!x` 兼容桥与单字符分发已删除。 */
 		ShApp_Task();
 
 		/* 2) CAN 标准帧周期发送（500 ms，两个通道各一帧） */
@@ -432,4 +401,22 @@ int main(void)
 			                (unsigned)CanTest_GetTxOk());
 		}
 	}
+}
+
+/* ============================ [ DET 钩子 ] ============================ */
+
+/**
+ * @brief DET 日志钩子（覆盖 `infras/system/Det/Det.c` 里的弱符号）
+ *
+ * @details 参数错误的唯一可见出口。没有它的话，`NvM_ReadBlock()` 只返回
+ *          `E_NOT_OK`，"块 id 写错了"和"引擎忙"在板上没有任何区别。
+ *
+ * @note 弱符号覆盖依赖“有且只有一份强定义”。本函数原先随存储区一起放在
+ *       `main.c`，M-Shell 迁移存储代码时被误删，导致 `[det]` 行消失、
+ *       m4 的 DET 用例失败 —— 现在固定在文件末尾，不再跟着业务代码搬。
+ */
+void Det_Log(uint16_t ModuleId, uint8_t ApiId, uint8_t ErrorId)
+{
+	Platform_Printf("[det] mod=%u api=0x%02x err=0x%02x\n",
+	                (unsigned)ModuleId, (unsigned)ApiId, (unsigned)ErrorId);
 }

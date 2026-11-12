@@ -3,9 +3,8 @@
  * @brief   `dtc` 命令：故障快照 dump / 清除 / 注入
  *
  * @details 从 `main.c` 的旧 `!b/!B/!i` 迁出（M-Shell 命令迁移）。
- *          清除与注入**复用 `CanTest_CmdExec` 的实现**（`'B'`/`'i'`）：
- *          旧入口与新命令必须走同一条后端路径，不能各写一份，
- *          否则会出现"串口清掉了、诊断仪还读得到"这类两套行为。
+ *          清除与注入直接调 `Fault_ClearDtc()` / `Fault_InjectBusOff()`：
+ *          与 UDS 0x14 / 故障注入走同一条后端路径，不各写一份。
  *
  * @note    用法：
  *          - `dtc`          故障快照表（同 `dtc dump`）
@@ -36,10 +35,9 @@ static int sh_cmd_dtc(int argc, char *argv[])
 	if (strcmp(sub, "dump") == 0) {
 		Fault_Dump();
 	} else if (strcmp(sub, "clear") == 0) {
-		/* 复用旧分支：Dem_SelectDTC + Dem_ClearDTC（与 UDS 0x14 同一条后端） */
-		CanTest_CmdExec('B');
+		Fault_ClearDtc();
 	} else if (strcmp(sub, "inject") == 0) {
-		CanTest_CmdExec('i');
+		Fault_InjectBusOff();
 	} else {
 		sh_puts(SH_RET_PARA);
 		return SH_ERR_PARAM;

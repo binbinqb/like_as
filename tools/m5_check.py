@@ -59,6 +59,24 @@ import sys
 import tempfile
 import time
 
+# ── 旧 `!x` → 新 shell 命令（M-Shell 迁移；旧兼容桥已删）─────────────
+CMD_MAP = {
+	'!b': 'dtc dump',
+	'!B': 'dtc clear',
+	'!i': 'dtc inject',
+	'!e': 'can regs',
+}
+
+
+def xlate(cmd):
+	"""旧单字符命令翻译成新命令；其它原样透传。保证以换行结尾。"""
+	c = CMD_MAP.get(cmd.strip(), cmd.strip())
+	if not c.endswith("\n"):
+		c += "\n"
+	return c
+
+
+
 try:
 	import serial
 except ImportError:
@@ -115,7 +133,7 @@ def boot_and_read(ser, seconds=1.6):
 
 def send_cmd(ser, cmd, seconds=0.8):
 	ser.reset_input_buffer()
-	ser.write(cmd.encode())
+	ser.write(xlate(cmd).encode())
 	return read_for(ser, seconds)
 
 

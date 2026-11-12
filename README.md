@@ -2055,8 +2055,18 @@ tools/shell.py           上位机标准客户端（提示符切帧 / 自动找�
 JSON 编辑器：`schema.json` 已增加 `Shell` 条目（15 个模块），`Shell.json` 通过
 schema 校验，可直接在编辑器里改参数与命令开关。
 
+### 兼容桥已删除（2026-11-12 第四批）
+
+- 11 个验收脚本统一加 `CMD_MAP` + `xlate()`：旧 `!x` 字符串翻译成新命令并补换行，
+  调用点零改动；`!k` 现在直接回 `<-1, cmd not exist`
+- `sh_app.c` 的 `!` 拦截、`App_LegacyCmdExec`、`CanTest_CmdExec` 全部删除
+- DTC 清/注入拆成 `Fault_ClearDtc()` / `Fault_InjectBusOff()`（与 UDS 同路径）
+- M0 回显断言修正：shell 行编辑会插 ANSI 重绘序列，比对前先剥掉
+
+全量回归：M0 26/26、M2 39/39、M4 23/23、M5 24/24、M6 23/23、M9 26/26、
+M10 22/22、M11 18/18、M12 15/15、M14 全过、M19 34/34。
+
 ### 尚未完成（下一步）
 
-1. 删兼容桥：`m*_check.py` 改用 `tools/shell.py` 的 `cmd()` 后，
-   删除 `sh_app.c` 的 `!x` 桥与 `CanTest_CmdExec`。
-2. 模块级 `cmd/` 目录约定（Adc/Pwm/CanIf 各自 SConscript 里加）。
+1. 模块级 `cmd/` 目录约定（Adc/Pwm/CanIf 各自 SConscript 里加）。
+2. M20 板级抽象层：引脚/资源收敛成 `Board.json` → `Board_Cfg.h`。

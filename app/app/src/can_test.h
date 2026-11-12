@@ -4,7 +4,7 @@
  *
  * @details 实现在 `can_test.c`。主循环按周期调用 `CanTest_SendOne/SendCan1/
  *          SendExt/DrainRx` 与 `Fault_PollBusOff`；命令层（`cmd/can_cmd.c`
- *          与旧 `!x` 桥）调用 `CanTest_CmdExec` 或具体函数。
+ *          与 `cmd/can_cmd.c`、`cmd/dtc_cmd.c`）调用具体函数。
  *
  * @note    头文件只依赖 `Std_Types.h` 的基础类型；实现文件才 include 各模块。
  *
@@ -58,14 +58,14 @@ void CanTest_SendRealMatrix(void);
 /** @brief 打印故障快照表 */
 void Fault_Dump(void);
 
+/** @brief 清除 DTC（与 UDS 0x14 同一条后端） */
+void Fault_ClearDtc(void);
+
+/** @brief 注入一条 bus-off 记录（单节点造不出真 bus-off 时用） */
+void Fault_InjectBusOff(void);
+
 /** @brief 发送完成累计数（心跳打印用） */
 uint32_t CanTest_GetTxOk(void);
-
-/**
- * @brief 旧 `!x` 单字符命令分发（迁移期）
- * @param[in] c 命令字符（o/n/s/g/t/r/b/B/i/e/k/K/M/f）
- */
-void CanTest_CmdExec(char c);
 
 #ifdef __cplusplus
 }

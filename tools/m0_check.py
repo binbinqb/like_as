@@ -163,10 +163,13 @@ def main():
 		results.append(("心跳: 序号连续递增", not bad_s))
 
 	# 4) 回显（在原始字节流里找，不按行切分）
+	# shell 的行编辑每敲一个字符会发 `ESC[s ESC[K ESC[u` 重绘序列，
+	# 字符之间夹着控制码 —— 比对前先把 ANSI 去掉，否则 "hello" 永远匹配不上。
+	ANSI_RE = re.compile(rb"\x1b\[[0-9;?]*[A-Za-z]")
 	for case in ECHO_CASES:
 		ser.write(case.encode())
 		time.sleep(0.4)
-		got = read_for(ser, 0.3)
+		got = ANSI_RE.sub(b"", read_for(ser, 0.3))
 		results.append(("回显: %s" % (case[:28] + ("..." if len(case) > 28 else "")),
 						case.encode() in got))
 

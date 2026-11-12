@@ -24,33 +24,15 @@
 
 #include <stdbool.h>
 
-/* main.c 提供的旧命令分发（M-Shell 迁移期临时存在） */
-void App_LegacyCmdExec(char c);
-
-/** @brief 兼容桥状态：已见到 `!`，等待命令字符 */
-static bool s_legacyPending;
-
 /**
- * @brief 读一个字节（含兼容桥过滤）
- * @return 0~255 送 shell；-1 无数据或被桥吞掉
+ * @brief 读一个字节
+ * @return 0~255 送 shell；-1 无数据
+ * @note  旧 `!x` 兼容桥已删除（验收脚本已全部切到新命令）。
+ *        现在串口收到的每个字节都进 shell 行编辑。
  */
 static int sh_app_getc(void)
 {
-	int c = Platform_GetChar();
-
-	if (c < 0) {
-		return -1;
-	}
-	if (s_legacyPending) {
-		s_legacyPending = false;
-		App_LegacyCmdExec((char)c);
-		return -1;              /* 不再进 shell 行编辑 */
-	}
-	if (c == '!') {
-		s_legacyPending = true; /* 吞掉 `!`，下一个字符是旧命令码 */
-		return -1;
-	}
-	return c;
+	return Platform_GetChar();
 }
 
 /** @brief 阻塞写一段（Platform_PutChar 是原始直写通道，不再经过控制台汇） */

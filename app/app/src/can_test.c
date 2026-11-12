@@ -5,7 +5,6 @@
  * @details 从 `main.c` 整体迁出（M-Shell 命令迁移）：
  *          - `CanTest_*`：周期帧发送、接收排空、按 PDU 计数、突发/矩阵发送
  *          - `Fault_*`：bus-off 检测与故障快照
- *          - `CanTest_CmdExec`：旧 `!x` 单字符命令的完整分发（迁移期保留）
  *          - `App_CanIfRxIndication/App_CanIfTxConfirmation`：CanIf 回调
  *
  * @warning 回调运行在**中断上下文**：只拷贝与置标志，不得打印。
@@ -27,7 +26,6 @@
 #include "Dem_Cfg.h"
 #include "PduR.h"
 #include "NvM.h"        /* CanTest_Burst 里推进存储 */
-#include "cmd/cmd_api.h"  /* 旧 !u/!v/!a/!d 等转调入口 */
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -732,153 +730,42 @@ uint32_t CanTest_GetTxOk(void)
 }
 
 /**
- * @brief 旧 `!x` 单字符命令分发（迁移期，与 cmd/can_cmd.c 共用同一批实现）
- * @param[in] c 命令字符
+ * @brief 清除 DTC（`dtc clear`）
+ *
+ * @details 走 0x14 的同一条后端路径（`Dem_SelectDTC` + `Dem_ClearDTC`），
+ *          不是绕过协议直接抹表 —— 这样串口命令和 UDS 命令的结果必然一致，
+ *          不会出现"串口清掉了、诊断仪还读得到"这种两套行为。
  */
-void CanTest_CmdExec(char c)
+void Fault_ClearDtc(void)
 {
-	Std_ReturnType rc = E_OK;
-	Can_ControllerStateType ctrlMode = CAN_CS_UNINIT;
-	CanIf_PduModeType pduMode = CANIF_OFFLINE;
-
-	switch (c) {
-	case 'o':
-		rc = CanIf_SetPduMode(0u, CANIF_OFFLINE);
-		break;
-	case 'n':
-		rc = CanIf_SetPduMode(0u, CANIF_ONLINE);
-		break;
-	case 's':
-		rc = CanIf_SetControllerMode(0u, CAN_CS_STOPPED);
-		break;
-	case 'g':
-		rc = CanIf_SetControllerMode(0u, CAN_CS_STARTED);
-		break;
-	case 't':
-		rc = CanIf_SetTrcvMode(0u, CANTRCV_TRCVMODE_SLEEP);
-		break;
-	case 'r':
-		rc = CanIf_SetTrcvMode(0u, CANTRCV_TRCVMODE_NORMAL);
-		break;
-	case 'b':
-		/* 看故障快照表 —— 不需要动 CAN 控制面，直接返回 */
-		Fault_Dump();
-		return;
-	case 'B':
-		/* 清故障码：走 0x14 的同一条后端路径（Dem_SelectDTC + Dem_ClearDTC），
-		 * 不是绕过协议直接抹表 —— 这样串口命令和 UDS 命令的结果必然一致，
-		 * 不会出现"串口清掉了、诊断仪还读得到"这种两套行为。 */
-		if ((Dem_SelectDTC(0u, 0x00FFFFFFu, DEM_DTC_FORMAT_UDS,
-		                   DEM_DTC_ORIGIN_PRIMARY_MEMORY) == E_OK) &&
-		    (Dem_ClearDTC(0u) == E_OK)) {
-			Platform_Puts("[dtc] cleared via Dem_ClearDTC (write when engine idle)\n");
-		} else {
-			Platform_Puts("[dtc] clear FAILED\n");
-		}
-		return;
-	case 'i':
-		/* 故障注入：直接喂一条 bus-off 记录给故障表。
-		 *
-		 * **为什么需要注入而不是真造一次 bus-off：**
-		 * 单节点实验室造不出 bus-off，这不是配置问题，是 CAN 协议本身：
-		 *   ① 对端不应答（最直觉的路径）只能把 TEC 推到 128（error passive），
-		 *      ISO 11898-1 §7.1.3 规定 error passive 下 **ACK 错误不再累加 TEC**，
-		 *      于是 TEC 死死卡在 128，永远到不了 256 的 bus-off 门槛；
-		 *   ② 想越过 128 只能靠位错误/格式错误，需要对端用**同一 ID、不同数据**
-		 *      精确地同时发送。实测用 Kvaser 连发 1.7 万帧去撞，TEC 只涨到 1~7
-		 *      —— 要么对端赢仲裁（板子根本没发），要么板子发完（对端没撞上）。
-		 *
-		 * 所以走故障注入验证**链路**（记录 → 分配槽位 → 落盘 → 掉电保持），
-		 * 这比"造不出就不验"实在。真实 bus-off 的触发条件已在
-		 * `CanAc_OredIsr()` 里由硬件保证，中断路径本身用 `!e` 看 BOFFMSK/BOFFINT 可查。
-		 */
-		if (Dem_SetEventStatusWithMonitorData(DEM_CFG_EVENT_CAN0_BUSOFF,
-		                                      DEM_EVENT_STATUS_FAILED,
-		                                      (Dem_MonitorDataType)CAN_BUSOFF_ERR_ACK,
-		                                      2u) == E_OK) {
-			Platform_Puts("[dtc] injected: CAN0 bus-off (ack error), see !b\n");
-		} else {
-			Platform_Puts("[dtc] inject FAILED (Dem 未初始化?)\n");
-		}
-		return;
-	case 'e':
-		/* 寄存器现场：TEC/REC 有没有涨、BOFFMSK 开没开、当前 FLTCONF */
-		CanAc_DbgDump(0u);
-		return;
-	case 'k':
-		CanTest_DumpRxCounters();
-		return;
-	case 'K':
-		CanTest_ClearCounters();
-		return;
-	case 'u':
-		/* 旧入口（m11/m12 脚本仍用）：RUN → POST_RUN */
-		EcumCmd_RequestPostRun();
-		return;
-	case 'U':
-		EcumCmd_RequestRun();
-		return;
-	case 'q':
-		EcumCmd_Mode();
-		return;
-	case 'z':
-		EcumCmd_SleepOnce();
-		return;
-	case 'M':
-		/* CAN1 真实矩阵发送（M19）：6 条报文各发一次，首字节 0xA1~0xA6。
-		 * Kvaser 挂在 CAN1 上才能收到（也需要它提供 ACK）。 */
-		CanTest_SendRealMatrix();
-		return;
-	case 'v':
-		/* 旧入口（m10 脚本仍用）：信号 dump */
-		ComCmd_DumpSignals();
-		return;
-	case 'y':
-		ComCmd_GroupToggle();
-		return;
-	case 'a':
-		/* 旧入口（m9 脚本仍用）：请求网络 */
-		NmCmd_Request();
-		return;
-	case 'A':
-		NmCmd_PassiveStartup();
-		return;
-	case 'R':
-		NmCmd_Release();
-		return;
-	case 'm':
-		NmCmd_DumpState();
-		return;
-	case 'f':
-		/* 高频发 100 帧（10 ms 间隔），配合 Kvaser 侧同 ID 冲突帧制造位错误。
-		 * 为什么需要它：ACK 错误在 error passive 状态下**不再累加 TEC**
-		 * （ISO 11898-1 §7.1.3 的特殊规则），所以"对端不应答"这条最直觉的
-		 * 路径根本到不了 bus-off —— 必须靠位错误/格式错误这类硬错。 */
-		CanTest_Burst(100u);
-		return;
-	case 'd':
-		/* 旧入口（m4 脚本仍用）：块状态 dump */
-		StorageCmd_Dump();
-		return;
-	case 'c':
-		StorageCmd_WriteAll();
-		return;
-	case 'w':
-		StorageCmd_Touch();
-		return;
-	case 'x':
-		StorageCmd_Illegal();
-		return;
-	case 'p':
-		StorageCmd_Stress();
-		return;
-	default:
-		Platform_Printf("[cmd] unknown '%c'\n", c);
-		return;
+	if ((Dem_SelectDTC(0u, 0x00FFFFFFu, DEM_DTC_FORMAT_UDS,
+	                   DEM_DTC_ORIGIN_PRIMARY_MEMORY) == E_OK) &&
+	    (Dem_ClearDTC(0u) == E_OK)) {
+		Platform_Puts("[dtc] cleared via Dem_ClearDTC (write when engine idle)\n");
+	} else {
+		Platform_Puts("[dtc] clear FAILED\n");
 	}
+}
 
-	(void)CanIf_GetPduMode(0u, &pduMode);
-	(void)CanIf_GetControllerMode(0u, &ctrlMode);
-	Platform_Printf("[cmd] %c rc=%u pduMode=%u ctrlMode=%u\n",
-	                c, (unsigned)rc, (unsigned)pduMode, (unsigned)ctrlMode);
+/**
+ * @brief 注入一条 bus-off 记录（`dtc inject`）
+ *
+ * @details **为什么需要注入而不是真造一次 bus-off：**
+ *          单节点实验室造不出 bus-off，这不是配置问题，是 CAN 协议本身：
+ *          ① 对端不应答只能把 TEC 推到 128（error passive），
+ *             ISO 11898-1 §7.1.3 规定 error passive 下 ACK 错误不再累加 TEC；
+ *          ② 想越过 128 只能靠位错误/格式错误，需要对端用同一 ID、不同数据
+ *             精确同时发送（实测 1.7 万帧只把 TEC 撞到 1~7）。
+ *          所以走故障注入验证**链路**（记录 → 分配槽位 → 落盘 → 掉电保持）。
+ */
+void Fault_InjectBusOff(void)
+{
+	if (Dem_SetEventStatusWithMonitorData(DEM_CFG_EVENT_CAN0_BUSOFF,
+	                                      DEM_EVENT_STATUS_FAILED,
+	                                      (Dem_MonitorDataType)CAN_BUSOFF_ERR_ACK,
+	                                      2u) == E_OK) {
+		Platform_Puts("[dtc] injected: CAN0 bus-off (ack error), see dtc dump\n");
+	} else {
+		Platform_Puts("[dtc] inject FAILED (Dem 未初始化?)\n");
+	}
 }

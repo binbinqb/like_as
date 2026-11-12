@@ -44,6 +44,23 @@ import re
 import sys
 import time
 
+# ── 旧 `!x` → 新 shell 命令（M-Shell 迁移；旧兼容桥已删）─────────────
+CMD_MAP = {
+	'!k': 'can counters',
+	'!K': 'can counters clear',
+	'!f': 'can burst',
+}
+
+
+def xlate(cmd):
+	"""旧单字符命令翻译成新命令；其它原样透传。保证以换行结尾。"""
+	c = CMD_MAP.get(cmd.strip(), cmd.strip())
+	if not c.endswith("\n"):
+		c += "\n"
+	return c
+
+
+
 import can
 
 # Kvaser 的发送缓冲溢出属于 `CANLIBOperationError`，它的基类是 `CanlibError`，
@@ -118,7 +135,7 @@ class Dut:
 	def cmd(self, text, wait=0.25):
 		"""发一条串口命令并读回显（用于 `!K` 这类只输出一行的）。"""
 		self.ser.reset_input_buffer()
-		self.ser.write(text.encode("ascii"))
+		self.ser.write(xlate(text).encode("ascii"))
 		self.ser.flush()
 		time.sleep(wait)
 		return self.ser.read(65536).decode("utf-8", "replace")

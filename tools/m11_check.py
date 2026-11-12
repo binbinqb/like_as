@@ -44,6 +44,27 @@ import re
 import sys
 import time
 
+# ── 旧 `!x` → 新 shell 命令（M-Shell 迁移；旧兼容桥已删）─────────────
+CMD_MAP = {
+	'!q': 'ecum',
+	'!m': 'nm',
+	'!s': 'can ctrl stop',
+	'!g': 'can ctrl start',
+	'!u': 'ecum postrun',
+	'!U': 'ecum run',
+	'!a': 'nm req',
+}
+
+
+def xlate(cmd):
+	"""旧单字符命令翻译成新命令；其它原样透传。保证以换行结尾。"""
+	c = CMD_MAP.get(cmd.strip(), cmd.strip())
+	if not c.endswith("\n"):
+		c += "\n"
+	return c
+
+
+
 import can
 import serial
 
@@ -95,7 +116,7 @@ def main():
 
 	def send(cmd, wait=0.25):
 		ser.reset_input_buffer()
-		ser.write(cmd.encode())
+		ser.write(xlate(cmd).encode())
 		time.sleep(wait)
 		return ser.read(8192).decode("utf-8", "replace")
 
