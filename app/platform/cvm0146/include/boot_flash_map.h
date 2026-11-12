@@ -11,14 +11,12 @@
  *          @section BOOTMAP_LAYOUT 1 MB PFlash 的划分
  *          @code
  *          0x00000000  ┌──────────────────────┐
- *                      │ Boot          64 KB  │  选槽 / 校验 / 跳转 / 回滚
- *          0x00010000  ├──────────────────────┤
+ *                      │ Boot         128 KB  │  选槽 / 校验 / 跳转 / 回滚 / 刷写服务
+ *          0x00020000  ├──────────────────────┤
  *                      │ Slot A       448 KB  │  尾部 4 KB = meta（主 + 备）
- *          0x00080000  ├──────────────────────┤
+ *          0x00090000  ├──────────────────────┤
  *                      │ Slot B       448 KB  │  尾部 4 KB = meta（主 + 备）
- *          0x000F0000  ├──────────────────────┤
- *                      │ 预留          64 KB  │  标定 / 参数 / 未来扩展
- *          0x00100000  └──────────────────────┘
+ *          0x00100000  └──────────────────────┘   （无预留区）
  *          @endcode
  *
  *          @section BOOTMAP_META meta 为什么放在槽尾部而不是单独一个区
@@ -76,14 +74,20 @@ extern "C" {
 /** @brief Boot 区基址 */
 #define BOOT_REGION_BASE            (0x00000000u)
 
-/** @brief Boot 区大小（64 KB） */
-#define BOOT_REGION_SIZE            (0x00010000u)
+/** @brief Boot 区大小（128 KB）
+ *
+ * @details 为什么从 64 KB 扩到 128 KB（D1 决策）：刷写服务（0x34/36/37）搬进 boot 后，
+ *          boot 要额外链接 CanIf + CanTp + PduR + Dcm + 各自的配置表。
+ *          实测 App 侧这几个模块 text 合计 18.9 KB，加上配置表与 CanAc 约 22 KB，
+ *          64 KB 区只剩 8.9 KB 余量，装不下 —— 扩到 128 KB 后余量约 45 KB。
+ */
+#define BOOT_REGION_SIZE            (0x00020000u)
 
-/** @brief Slot A 基址 */
-#define BOOT_SLOT_A_BASE            (0x00010000u)
+/** @brief Slot A 基址（boot 扩到 128 KB 后从 0x20000 起） */
+#define BOOT_SLOT_A_BASE            (0x00020000u)
 
-/** @brief Slot B 基址 */
-#define BOOT_SLOT_B_BASE            (0x00080000u)
+/** @brief Slot B 基址（A 槽 448 KB 之后：0x20000 + 0x70000 = 0x90000） */
+#define BOOT_SLOT_B_BASE            (0x00090000u)
 
 /** @brief 单个槽大小（448 KB） */
 #define BOOT_SLOT_SIZE              (0x00070000u)
@@ -98,11 +102,16 @@ extern "C" {
  */
 #define BOOT_SLOT_IMAGE_MAX         (BOOT_SLOT_SIZE - BOOT_SLOT_META_SIZE)
 
-/** @brief 预留区基址 */
-#define BOOT_RESERVED_BASE          (0x000F0000u)
+/** @brief 预留区基址（紧随 B 槽之后） */
+#define BOOT_RESERVED_BASE          (0x00100000u)
 
-/** @brief 预留区大小（64 KB） */
-#define BOOT_RESERVED_SIZE          (0x00010000u)
+/**
+ * @brief 预留区大小
+ *
+ * @details D1 后为 **0**：128K + 448K + 448K 正好 1 MB，没有预留空间。
+ *          标定/参数区以后要走 NVM（DFlash/FEE），不占 PFlash 槽区。
+ */
+#define BOOT_RESERVED_SIZE          (0x00000000u)
 
 /** @brief 槽数量 */
 #define BOOT_SLOT_NUM               (2u)

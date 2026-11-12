@@ -31,7 +31,8 @@
  *  分区数值的唯一权威在 app/platform/cvm0146/include/boot_flash_map.h，
  *  改分区时先改那个头文件，再同步这三个 .ld 的 ORIGIN/LENGTH。
  * ============================================================================
- *  Boot 镜像：0x00000000 起，64 KB（0x0 - 0xFFFF）。
+ *  Boot 镜像：0x00000000 起，128 KB（0x0 - 0x1FFFF）。
+ *  D1 起刷写服务在 boot，故从 64 KB 扩到 128 KB。
  *  放在 0x0 是因为 Cortex-M4 复位后从向量表首地址取 MSP、从 +4 取 PC，
  *  只有 0x0 处的向量表是复位默认的。boot 不参与 A/B 切换。
  * ============================================================================
@@ -60,7 +61,7 @@ MEMORY
 {
   /* Flash */
   m_interrupts          (RX)  : ORIGIN = 0x00000000, LENGTH = 0x00000400
-  m_text                (RX)  : ORIGIN = 0x00000400, LENGTH = 0x0000FC00
+  m_text                (RX)  : ORIGIN = 0x00000400, LENGTH = 0x0001FC00
 
   /* SRAM_L */
   m_data                (RW)  : ORIGIN = 0x1FFF0000, LENGTH = 0x00010000

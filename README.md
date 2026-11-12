@@ -2101,8 +2101,27 @@ Board 的生成物直接编进平台库，`$Board_Cfg` 单独注册 include 路�
 ⚠️ 生成宏里的 **逗号** 与 **LF 换行** 都是坑：CRLF 会让 `\` 续行失效；漏逗号报
 "expected '}' before '{'"。
 
+## D1 第一步：分区改 128 / 448 / 448 / 0（已上板）
+
+**尺寸预算**（实测 App 侧目标模块 text）：
+Dcm 10022 + CanTp 5348 + PduR 2444 + CanIf 1106 = 18,920 B，
+加配置表与 CanAc 约 22 KB；boot 现有 56,644 B + 22 KB ≈ 79 KB > 64 KB 上限。
+
+新布局（`boot_flash_map.h` + 三份 .ld + `flash.py` 同步）：
+
+```
+0x00000000  Boot     128 KB
+0x00020000  Slot A   448 KB（尾部 4 KB meta）
+0x00090000  Slot B   448 KB（尾部 4 KB meta）
+0x00100000  结束（无预留区）
+```
+
+验收：`--boot` 同烧后 boot 正常跳转（s19 首记录 `0002 0000`）、`board` 报 slot A、
+M2 39/39。**注意**：旧固件的 meta 全部失效（槽基址变了），两侧都要重烧。
+
 ### 尚未完成（下一步）
 
-1. 模块级 `cmd/` 目录约定（Adc/Pwm/CanIf 各自 SConscript 里加）。
-2. **M22**：CAN1 的 34 RX / 6 TX 迁入 Com/PduR JSON，生成器接管双网络。
-3. **D1**：0x34/36/37 挪进 boot（分区改 128/448/448/0，boot +26KB）。
+1. **D1 第二步**：boot 内接 CanIf+CanTp+PduR+Dcm（boot 专用 cfg：只留 UDS 与刷写服务），
+   app 侧关掉 0x34/36/37，实测"app 不在也能刷"。
+2. **M22**：CAN1 的 34 RX / 6 TX 迁入 Com/PduR JSON。
+3. 模块级 `cmd/` 目录约定。

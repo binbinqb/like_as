@@ -101,7 +101,7 @@ def reset_run():
 # 与 app/platform/cvm0146/include/boot_flash_map.h 保持一致。
 # 不在 Python 里 include 那个头文件，所以改分区时这两处都要改
 # （tools/uds_flash.py 也是同样的做法）。
-SLOT_BASE = {"A": 0x00010000, "B": 0x00080000}
+SLOT_BASE = {"A": 0x00020000, "B": 0x00090000}   # D1：boot 扩到 128 KB 后顺移
 SLOT_SIZE = 0x00070000
 SLOT_META_SIZE = 0x00001000        # 主备各一个 2 KB 扇区
 
@@ -207,7 +207,7 @@ def main():
 	tmpdir = tempfile.mkdtemp(prefix="as_flash_")
 
 	# A/B 分区之后，"能跑起来"需要两个镜像同时在位：
-	#   boot 在 0x0（选槽/校验/跳转），app 在 0x10000（slot A）。
+	#   boot 在 0x0（选槽/校验/跳转/刷写服务），app 在 0x20000（slot A）。
 	# 只烧 app 会得到一个"没有任何东西负责跳转到它"的板子 —— 上电停在 0x0
 	# 的旧 boot（或者干脆是空 Flash，直接 HardFault）。
 	# 所以首次部署、或者改过 boot 之后，一律用 --boot。
