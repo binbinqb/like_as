@@ -23,6 +23,12 @@ void EcumCmd_RequestRun(void);       /**< 旧 `!U`：POST_RUN → RUN */
 void EcumCmd_Mode(void);             /**< 旧 `!q`：模式查询 */
 void EcumCmd_SleepOnce(void);        /**< 旧 `!z`：睡一次 */
 
+/* nm_cmd.c */
+void NmCmd_Request(void);            /**< 旧 `!a`：请求网络（走 ComM） */
+void NmCmd_Release(void);            /**< 旧 `!R`：释放网络 */
+void NmCmd_PassiveStartup(void);     /**< 旧 `!A`：模拟总线唤醒（被动启动） */
+void NmCmd_DumpState(void);          /**< 旧 `!m`：ComM/CanNm 状态 */
+
 #ifdef __cplusplus
 }
 #endif

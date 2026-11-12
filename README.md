@@ -2015,7 +2015,8 @@ tools/shell.py           上位机标准客户端（提示符切帧 / 自动找�
 | ADC（M15） | `adc [group]` | `!j` 已删 | ✅ 已迁移并验证 |
 | PWM（M18） | `pwm [reset \| <ch> <pct>]` | `!l/!L` 已删 | ✅ 已迁移并验证 |
 | EcuM（M11/M12） | `ecum [run\|postrun\|sleep]` | `!u/!U/!q/!z` 保留（转调 cmd 实现） | ✅ 逻辑已迁移，M11 18/18、M12 15/15 |
-| NM / Com / 存储 / CAN·DTC | `nm` / `com` / `nvm` / `can`·`dtc` | 保留 | ⏳ 待迁移 |
+| NM（M9） | `nm [req\|rel\|passive]` | `!a/!R/!A/!m` 保留（转调 cmd 实现） | ✅ 逻辑已迁移，M9 26/26 |
+| Com / 存储 / CAN·DTC | `com` / `nvm` / `can`·`dtc` | 保留 | ⏳ 待迁移 |
 
 迁移方式：逻辑搬进 `cmd/xxx_cmd.c`，旧 `!x` 分支改为调用 `cmd_api.h` 里声明的包装函数
 （脚本零改动）；脚本切到新命令后再删旧分支。

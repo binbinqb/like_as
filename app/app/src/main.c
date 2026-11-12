@@ -407,9 +407,6 @@ static void CanTest_Burst(uint16_t n);
 static void CanTest_DumpRxCounters(void);
 static void CanTest_SendRealMatrix(void);
 
-/* 网络管理（M9）实现在"网络管理"区，晚于 CmdExec */
-static void Nm_CmdExec(char c);
-static void Nm_DumpState(void);
 
 /* 信号层（M10）实现在"信号层"区，晚于 CmdExec */
 static void Com_CmdExec(char c);
@@ -528,11 +525,17 @@ static void CmdExec(char c)
 		Com_CmdExec(c);
 		return;
 	case 'a':
+		/* 旧入口（m9 脚本仍用）：请求网络 */
+		NmCmd_Request();
+		return;
 	case 'A':
+		NmCmd_PassiveStartup();
+		return;
 	case 'R':
+		NmCmd_Release();
+		return;
 	case 'm':
-		/* 网络管理：a=请求网络 / R=释放网络 / m=状态 dump（M9） */
-		Nm_CmdExec(c);
+		NmCmd_DumpState();
 		return;
 	case 'f':
 		/* 高频发 100 帧（10 ms 间隔），配合 Kvaser 侧同 ID 冲突帧制造位错误。
@@ -1026,198 +1029,6 @@ static void Fault_Dump(void)
 		                (unsigned)rec.occurCount,
 		                (unsigned)rec.firstBoot, (unsigned)rec.lastBoot,
 		                (unsigned)rec.errBits, (unsigned)rec.fltConf);
-	}
-}
-
-/* ============================ [ 网络管理（M9） ] ============================ */
-
-/** @name ComM 状态名（下标 = `ComM_StateType` 取值） */
-#define COMM_STATE_NAME_NUM     (5u)
-static const char *const s_commStateName[COMM_STATE_NAME_NUM] = {
-	"NO_COM_NO_PENDING",
-	"NO_COM_REQUEST_PENDING",
-	"FULL_COM_NETWORK_REQUESTED",
-	"FULL_COM_READY_SLEEP",
-	"SILENT_COM",
-};
-
-/** @name CanNm 状态名（下标 = `Nm_StateType` 取值） */
-#define NM_STATE_NAME_NUM       (8u)
-static const char *const s_nmStateName[NM_STATE_NAME_NUM] = {
-	"UNINIT",
-	"BUS_SLEEP",
-	"PREPARE_BUS_SLEEP",
-	"READY_SLEEP",
-	"NORMAL_OPERATION",
-	"REPEAT_MESSAGE",
-	"SYNCHRONIZE",
-	"OFFLINE",
-};
-
-/** @name CanNm 模式名（下标 = `Nm_ModeType` 取值） */
-#define NM_MODE_NAME_NUM        (4u)
-static const char *const s_nmModeName[NM_MODE_NAME_NUM] = {
-	"BUS_SLEEP",
-	"PREPARE_BUS_SLEEP",
-	"SYNCHRONIZE",
-	"NETWORK",
-};
-
-/* 说明：M9 时期这里有一个 `ComM_Log()` 弱符号覆盖，用来实时打印
- * ComM 状态变化。M11 换成 as-master 的 ComM 之后，它**没有这个钩子**
- * （标准 ComM 只有 `ComM_GetState` 查询，没有状态变化回调），
- * 所以那段日志被删掉了。
- *
- * 现在的做法：用 `!m` 查当前 ComM/CanNm 状态，用 `!q` 查 EcuM 状态。
- * 想看完整的时间线就用 Kvaser + 串口同时录，或者临时加打印再烧一次 ——
- * 比给参考实现打补丁更划算。 */
-
-/**
- * @brief 打印 NM 三层状态（`!m`）
- *
- * @details @section NMDUMP_WHY 为什么要一次打三层
- *
- *          NM 是三层串联，任何一层卡住，现象都一样：**总线上没有 NM 报文**。
- *
- *          @code
- *          应用 → Nm → CanNm   （下面还有 CanIf → 硬件）
- *          @endcode
- *
- *          单看一层无法区分：
- *
- *          | 现象 | 可能的原因 |
- *          |------|------------|
- *          | `comm=NO_COM` 且 `cannm=BUS_SLEEP` | 应用没请求（`!a` 没发 / 发失败） |
- *          | `comm=FULL_COM` 但 `cannm=BUS_SLEEP` | Nm → CanNm 分发断了（`USE_CANNM` 没定义 / 通道号错） |
- *          | `cannm=NORMAL_OPERATION` 但总线无帧 | 发送侧：CanIf PDU / 邮箱 / 收发器 / 硬件 |
- *
- *          所以一条命令同时打三层，卡在哪一层一眼就看得出来。
- *
- * @note  `mode` 是 Nm 给应用的粗粒度视图（`NETWORK` / `BUS_SLEEP`），
- *        `state` 才是 CanNm 的精确状态机状态。两者不一致是正常的
- *        （比如 `REPEAT_MESSAGE` 时 mode 已经是 `NETWORK`）。
- */
-static void Nm_DumpState(void)
-{
-	Nm_StateType   nmState = NM_STATE_UNINIT;
-	Nm_ModeType    nmMode  = NM_MODE_BUS_SLEEP;
-	ComM_StateType comm    = COMM_NO_COM_NO_PENDING_REQUEST;
-
-	(void)CanNm_GetState((NetworkHandleType)NM_CFG_CHANNEL_CAN0, &nmState, &nmMode);
-	(void)ComM_GetState((NetworkHandleType)NM_CFG_CHANNEL_CAN0, &comm);
-
-	Platform_Printf("[nm] comm=%s(%u) cannm=%s(%u) mode=%s(%u)\n",
-	                (comm < COMM_STATE_NAME_NUM) ? s_commStateName[comm] : "?",
-	                (unsigned)comm,
-	                (nmState < NM_STATE_NAME_NUM) ? s_nmStateName[nmState] : "?",
-	                (unsigned)nmState,
-	                (nmMode < NM_MODE_NAME_NUM) ? s_nmModeName[nmMode] : "?",
-	                (unsigned)nmMode);
-}
-
-/**
- * @brief EcuM 的串口命令（`!u` / `!U` / `!q`）
- *
- * @param[in] c 命令字符
- *
- * @note  `!u` 走的是**标准关机路径**：释放 RUN 请求 + 请求 POST_RUN。
- *        之后 EcuM 状态机在下一拍调 `EcuM_AL_EnterPOST_RUN()`，
- *        它会撤销 ComM 的通信请求 → Nm 释放网络 → CanNm 进 ReadySleep
- *        → 2 s 后 PrepareBusSleep → ComM 停掉 Com 分组。
- *
- * @note  `!q` 读的是集成层自己记的模式（`EcuM_AL_GetMode`），
- *        因为 as-master 的 `EcuM.c` 没实现标准接口 `EcuM_GetCurrentMode()`。
- */
-
-/**
- * @brief 网络管理的串口命令（`!a` / `!R` / `!m`）
- *
- * @param[in] c 命令字符
- *
- * @note  **走 `Nm_*` 而不是 `CanNm_*`**：应用层不应该知道总线上用的是
- *        CAN 还是其它 NM。这条约束在只有一根 CAN 时看不出价值，
- *        但多一根 CAN 时，`CanNm_*` 的调用点就得全部改一遍。
- *
- * @note  `NetworkRequest` 只置一个标志，真正的动作在下一个
- *        `CanNm_MainFunction()` 里 —— 所以 `!a` 之后立刻 `!m` 看到的
- *        可能还是 `BUS_SLEEP`。这是 AUTOSAR 的异步语义，不是 bug。
- *        验收脚本里要等 50 ms 以上再查状态。
- */
-static void Nm_CmdExec(char c)
-{
-	Std_ReturnType rc;
-
-	switch (c) {
-	case 'a':
-		/*
-		 * @note **M11 起走 ComM，不再直接调 `Nm_NetworkRequest`。**
-		 *
-		 *       AUTOSAR 里应用不能绕过通信管理器直接操作某根总线：
-		 *       否则 ComM 认为"没有通信需求"，而 NM 已经在发报文，
-		 *       两边状态长期不一致。多总线时这种不一致会直接导致
-		 *       "一根线醒了、另一根没醒"。
-		 *
-		 *       链路：ComM_RequestComMode → 仲裁 → Nm_NetworkRequest
-		 *             → CanNm_NetworkRequest → NM 报文发出
-		 */
-		rc = ComM_RequestComMode((ComM_UserHandleType)COMM_USER_APP,
-		                         (ComM_ModeType)COMM_FULL_COMMUNICATION);
-		Platform_Printf("[comm] RequestComMode(FULL) -> %s\n", (rc == E_OK) ? "accepted" : "FAIL");
-		break;
-
-	case 'A':
-		/**
-		 * @brief 模拟"总线活动把 ECU 唤醒"（`ComM_EcuM_WakeUpIndication`）
-		 *
-		 * @details @section NMPASSIVE 为什么不再直接调 `Nm_PassiveStartUp`
-		 *
-		 *          M9 时这里是直接 `Nm_PassiveStartUp()`。接上 ComM 之后那是
-		 *          **越层调用**：ComM 并不知道有人在被动启动，它的 `nmFlag`
-		 *          与通道状态还是旧的，于是"NM 在发报文、ComM 认为没通信"，
-		 *          两边长期不一致。
-		 *
-		 *          AUTOSAR 的标准入口是：
-		 *          @code
-		 *          收发器检测到总线活动 → EcuM_CheckWakeup
-		 *                → ComM_EcuM_WakeUpIndication(channel)
-		 *                → ComM 置 COMM_NM_FLAG_NETWORK_START
-		 *                → 下一拍 MainFunction 走 PassiveStartup
-		 *                → Nm_PassiveStartUp → CanNm 进 RepeatMessage
-		 *          @endcode
-		 *
-		 *          @warning **as-master 的 ComM 没有实现 `ComM_EcuM_WakeUpIndication()`**
-		 *          （`ComM.h:105` 只有声明，全仓无定义，链接期才报错）。
-		 *          所以这里调用**同一条链路的后半段**
-		 *          `ComM_Nm_NetworkStartIndication()` —— 它做的事完全一样：
-		 *          `ComM.c:612` 置 `COMM_NM_FLAG_NETWORK_START`，
-		 *          下一拍 `ComM_MainFunction()` 就会走 `COMM_NOCOM_STARTUP_PASSIVE`
-		 *          → `ComM_Nm_PassiveStartup()`。
-		 *
-		 *          等 M12 接上收发器唤醒中断后，正确写法是在 EcuM 的
-		 *          wakeup 处理里补一个 `ComM_EcuM_WakeUpIndication()` 的实现
-		 *          （一行转调本函数），而不是在应用层继续调 Nm 侧入口。
-		 *
-		 * @note  被动启动不置 `CANNM_REQUEST_MASK`：报文里的 CBV 主动唤醒位是 0，
-		 *        表示"我是被叫醒的，不是我叫醒的"。跑完 `RepeatMessageTime`
-		 *        之后如果本地没有通信请求，会自动落到 `ReadySleep` 再睡回去。
-		 */
-		ComM_Nm_NetworkStartIndication((NetworkHandleType)COMM_CHANNEL_CAN0);
-		Platform_Puts("[comm] Nm NetworkStartIndication -> issued\n");
-		break;
-
-	case 'R':
-		rc = ComM_RequestComMode((ComM_UserHandleType)COMM_USER_APP,
-		                         (ComM_ModeType)COMM_NO_COMMUNICATION);
-		Platform_Printf("[comm] RequestComMode(NO_COM) -> %s\n", (rc == E_OK) ? "accepted" : "FAIL");
-		break;
-
-	case 'm':
-		Nm_DumpState();
-		break;
-
-	default:
-		Platform_Printf("[nm] unknown '%c'\n", c);
-		break;
 	}
 }
 
