@@ -29,6 +29,7 @@
 #include "Port.h"
 #include "Port_Cfg.h"
 #include "Port_Priv.h"
+#include "Board_Cfg.h"   /* BOARD_PINS_TABLE（Board.json 生成） */
 
 /* ============================ [ 数据 ] ============================ */
 
@@ -41,32 +42,10 @@
  *        - `port`：`PORT_PORT_x`；`pin`：引脚号；`mux`：厂商 MUX 值
  */
 static const Port_PortPinConfigType Port_PortPinConfigs[PORT_CFG_NUM_PINS] = {
-	/* ---- CAN0（通信 1）：PTE4/PTE5，ALT5 已在 M1 上板验证 ---- */
-	/* PTE4 = CAN0_RX，ALT5；方向由 CAN 外设接管，不走 GPIO */
-	PORT_PIN_DEF(CAN,   UNUSED, LOW,  PORT_PORT_E, 4u,  5u),
-	/* PTE5 = CAN0_TX，ALT5 */
-	PORT_PIN_DEF(CAN,   UNUSED, LOW,  PORT_PORT_E, 5u,  5u),
-
-	/* PTC1 = CAN0 STB，GPIO 输出，上电待机（HIGH） */
-	PORT_PIN_DEF(DIO,   OUT,    HIGH, PORT_PORT_C, 1u,  1u),
-
-	/* ---- CAN1（通信 2）：PTC6/PTC7，ALT3 ----
-	 * 依据：《CVM0146 开发板快速入门》表 8 + 本板 PinMux 表（cvm0146）
-	 *   PTC6: DEFAULT=ADC1_SE4 / ALT0=ADC1_SE4 / ALT1=PTC6 / ALT2=UART1_RX / **ALT3=CAN1_RX**
-	 *   PTC7: DEFAULT=ADC1_SE5 / ALT0=ADC1_SE5 / ALT1=PTC7 / ALT2=UART1_TX / **ALT3=CAN1_TX**
-	 * ⚠ 与 CAN0 的 ALT5 不同，不能照抄 */
-	PORT_PIN_DEF(CAN,   UNUSED, LOW,  PORT_PORT_C, 6u,  3u),   /* PTC6 = CAN1_RX */
-	PORT_PIN_DEF(CAN,   UNUSED, LOW,  PORT_PORT_C, 7u,  3u),   /* PTC7 = CAN1_TX */
-
-	/* PTE13 = CAN1 STB，GPIO 输出，上电待机（HIGH，1=STANDBY） */
-	PORT_PIN_DEF(DIO,   OUT,    HIGH, PORT_PORT_E, 13u, 1u),
-
-	/* ---- 三色灯：低电平点亮，上电全灭 ---- */
-	PORT_PIN_DEF(DIO,   OUT,    HIGH, PORT_PORT_D, 1u,  1u),   /* PTD1 红 */
-	PORT_PIN_DEF(DIO,   OUT,    HIGH, PORT_PORT_D, 3u,  1u),   /* PTD3 绿 */
-	PORT_PIN_DEF(DIO,   OUT,    HIGH, PORT_PORT_A, 17u, 1u),   /* PTA17 蓝 */
+	/* 表体来自 config/Board/Board.json 的 pins（Board_Cfg.h 生成宏）。
+	 * 改引脚只改 JSON；数量由 PORT_CFG_NUM_PINS 在编译期对上。 */
+	BOARD_PINS_TABLE
 };
-
 const Port_ConfigType Port_Config = {
 	Port_PortPinConfigs,
 	(uint16_t)ARRAY_SIZE(Port_PortPinConfigs),

@@ -13,7 +13,7 @@ __all__ = ["Gen"]
 
 
 def Gen_Board(cfg, dir):
-	H = open("%s/Board_Cfg.h" % (dir), "w")
+	H = open("%s/Board_Cfg.h" % (dir), "w", newline="\n")
 	GenHeader(H)
 	H.write("#ifndef BOARD_CFG_H\n")
 	H.write("#define BOARD_CFG_H\n")
@@ -30,6 +30,25 @@ def Gen_Board(cfg, dir):
 	H.write("#define BOARD_PWM_FREQ_HZ           (%uU)\n" % cfg.get("pwm", {}).get("frequencyHz", 100))
 	H.write("#define BOARD_PWM_CHANNELS          (%uU)\n" % cfg.get("pwm", {}).get("channels", 0))
 	H.write("#define BOARD_ADC_GROUPS            (%uU)\n" % cfg.get("adc", {}).get("groups", 0))
+	# ── 引脚表（Port_Cfg.c 用）：PIN 名 → PORT_PIN_DEF 展开 ──────
+	H.write("\n/* 引脚表：Port_Cfg.c 直接把这张表填进 Port_PortPinConfigs */\n")
+	H.write("#define BOARD_PINS_TABLE \\\n")
+	pins = cfg.get("pins", [])
+	for i, pin in enumerate(pins):
+		tail = "" if i == len(pins) - 1 else ", \\"
+		H.write('\tPORT_PIN_DEF(%s, %s, %s, PORT_PORT_%s, %uu, %uu)%s\n' %
+		        (pin.get("mode", "DIO"), pin.get("dir", "OUT"), pin.get("level", "LOW"),
+		         pin.get("port", "A"), pin.get("pin", 0), pin.get("mux", 1), tail))
+	H.write("\n/* Dio 通道表：按名字引用上面的引脚，顺序即通道号 */\n")
+	H.write("#define BOARD_DIO_CHANNELS \\\n")
+	chans = cfg.get("dioChannels", [])
+	by_name = {p.get("name"): p for p in pins}
+	for i, name in enumerate(chans):
+		pin = by_name.get(name, {"port": "A", "pin": 0})
+		tail = "" if i == len(chans) - 1 else ", \\"
+		H.write('\t{ (uint8_t)PORT_PORT_%s, %uu }%s\n' %
+		        (pin.get("port", "A"), pin.get("pin", 0), tail))
+	H.write("\n")
 	H.write("/* ================================ [ TYPES     ] ============================================== */\n")
 	H.write("/** @brief 板级身份与资源概览（只读表，命令与自检用） */\n")
 	H.write("typedef struct {\n")
@@ -52,7 +71,7 @@ def Gen_Board(cfg, dir):
 	H.close()
 
 	cans = cfg.get("can", [])
-	C = open("%s/Board_Cfg.c" % (dir), "w")
+	C = open("%s/Board_Cfg.c" % (dir), "w", newline="\n")
 	GenHeader(C)
 	C.write("/* ================================ [ INCLUDES  ] ============================================== */\n")
 	C.write('#include "Board_Cfg.h"\n')

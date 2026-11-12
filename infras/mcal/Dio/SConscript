@@ -9,5 +9,5 @@ objs = Glob("*.c")
 class LibraryDio(Library):
     def config(self):
         self.include = [CWD]
-        self.CPPPATH = ["$INFRAS", "$Dio_Cfg"]
+        self.CPPPATH = ["$INFRAS", "$Dio_Cfg", "$Board_Cfg"]
         self.source = objs

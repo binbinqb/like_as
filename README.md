@@ -2085,8 +2085,24 @@ JSON 编辑器 `schema.json` 已加 `Board` 条目（共 16 个模块）。
 ⚠️ **不走 cfgs 字典**：那个循环假定 key 是"库名"，没有 `Board` 库 → 会变成 `-lBoard`。
 Board 的生成物直接编进平台库，`$Board_Cfg` 单独注册 include 路径。
 
+### 引脚表也进了 Board.json（第二步）
+
+`Board.json` 新增 `pins[]`（9 个引脚）与 `dioChannels[]`（5 路），生成器产出两个宏：
+
+```c
+#define BOARD_PINS_TABLE   PORT_PIN_DEF(CAN, UNUSED, LOW, PORT_PORT_E, 4u, 5u), ...
+#define BOARD_DIO_CHANNELS { (uint8_t)PORT_PORT_C, 1u }, ...
+```
+
+`Port_Cfg.c` / `Dio_Cfg.c` 的表体改为引用这两个宏 —— **结构、头文件、构建方式全不动**，
+但引脚定义只有一个真源（JSON）。数量由 `PORT_CFG_NUM_PINS` / `DIO_CFG_NUM_CHANNELS`
+在编译期对上。
+
+⚠️ 生成宏里的 **逗号** 与 **LF 换行** 都是坑：CRLF 会让 `\` 续行失效；漏逗号报
+"expected '}' before '{'"。
+
 ### 尚未完成（下一步）
 
 1. 模块级 `cmd/` 目录约定（Adc/Pwm/CanIf 各自 SConscript 里加）。
-2. 引脚级映射逐步收进 Board.json（Port/Dio 的引脚表现在还是手写表）。
-3. M22 CAN1 进生成器 / D1 刷写进 boot。
+2. **M22**：CAN1 的 34 RX / 6 TX 迁入 Com/PduR JSON，生成器接管双网络。
+3. **D1**：0x34/36/37 挪进 boot（分区改 128/448/448/0，boot +26KB）。

@@ -8,8 +8,14 @@
         "baud": 115200
     },
     "can": [
-        { "instance": 0, "bitrate": 500000 },
-        { "instance": 1, "bitrate": 500000 }
+        {
+            "instance": 0,
+            "bitrate": 500000
+        },
+        {
+            "instance": 1,
+            "bitrate": 500000
+        }
     ],
     "adc": {
         "groups": 2
@@ -23,5 +29,95 @@
         "lsd": [],
         "hbridge": [],
         "expanders": []
-    }
+    },
+    "pins": [
+        {
+            "name": "CAN0_RX",
+            "mode": "CAN",
+            "dir": "UNUSED",
+            "level": "LOW",
+            "port": "E",
+            "pin": 4,
+            "mux": 5
+        },
+        {
+            "name": "CAN0_TX",
+            "mode": "CAN",
+            "dir": "UNUSED",
+            "level": "LOW",
+            "port": "E",
+            "pin": 5,
+            "mux": 5
+        },
+        {
+            "name": "CAN0_STB",
+            "mode": "DIO",
+            "dir": "OUT",
+            "level": "HIGH",
+            "port": "C",
+            "pin": 1,
+            "mux": 1
+        },
+        {
+            "name": "CAN1_RX",
+            "mode": "CAN",
+            "dir": "UNUSED",
+            "level": "LOW",
+            "port": "C",
+            "pin": 6,
+            "mux": 3
+        },
+        {
+            "name": "CAN1_TX",
+            "mode": "CAN",
+            "dir": "UNUSED",
+            "level": "LOW",
+            "port": "C",
+            "pin": 7,
+            "mux": 3
+        },
+        {
+            "name": "CAN1_STB",
+            "mode": "DIO",
+            "dir": "OUT",
+            "level": "HIGH",
+            "port": "E",
+            "pin": 13,
+            "mux": 1
+        },
+        {
+            "name": "LED_R",
+            "mode": "DIO",
+            "dir": "OUT",
+            "level": "HIGH",
+            "port": "D",
+            "pin": 1,
+            "mux": 1
+        },
+        {
+            "name": "LED_G",
+            "mode": "DIO",
+            "dir": "OUT",
+            "level": "HIGH",
+            "port": "D",
+            "pin": 3,
+            "mux": 1
+        },
+        {
+            "name": "LED_B",
+            "mode": "DIO",
+            "dir": "OUT",
+            "level": "HIGH",
+            "port": "A",
+            "pin": 17,
+            "mux": 1
+        }
+    ],
+    "dioChannels": [
+        "CAN0_STB",
+        "LED_R",
+        "LED_G",
+        "LED_B",
+        "CAN1_STB"
+    ]
 }

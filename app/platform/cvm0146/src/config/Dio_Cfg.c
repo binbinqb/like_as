@@ -19,6 +19,7 @@
 #include "Dio_Priv.h"
 
 #include "Port_Cfg.h"
+#include "Board_Cfg.h"   /* BOARD_DIO_CHANNELS（Board.json 生成） */
 
 /* ============================ [ 数据 ] ============================ */
 
@@ -27,13 +28,10 @@
  * @warning 顺序不能随意调整：调整等于改变通道号语义，业务代码会控制到别的引脚。
  */
 static const Dio_ChannelConfigType Dio_ChannelConfigs[DIO_CFG_NUM_CHANNELS] = {
-	{ (uint8_t)PORT_PORT_C, 1u  },   /* 0: PTC1  CAN0 STB */
-	{ (uint8_t)PORT_PORT_D, 1u  },   /* 1: PTD1  LED 红 */
-	{ (uint8_t)PORT_PORT_D, 3u  },   /* 2: PTD3  LED 绿 */
-	{ (uint8_t)PORT_PORT_A, 17u },   /* 3: PTA17 LED 蓝 */
-	{ (uint8_t)PORT_PORT_E, 13u },   /* 4: PTE13 CAN1 STB */
+	/* 表体来自 config/Board/Board.json 的 dioChannels（按名字引用 pins）。
+	 * 顺序即通道号，改顺序等于改语义 —— 与 Dio_Cfg.h 的宏一起改。 */
+	BOARD_DIO_CHANNELS
 };
-
 const Dio_ConfigType Dio_Config = {
 	Dio_ChannelConfigs,
 	(uint16_t)ARRAY_SIZE(Dio_ChannelConfigs),

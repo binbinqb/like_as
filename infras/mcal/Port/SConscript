@@ -9,5 +9,5 @@ objs = Glob("*.c")
 class LibraryPort(Library):
     def config(self):
         self.include = [CWD]
-        self.CPPPATH = ["$INFRAS", "$Port_Cfg"]
+        self.CPPPATH = ["$INFRAS", "$Port_Cfg", "$Board_Cfg"]
         self.source = objs
