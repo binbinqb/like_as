@@ -20,10 +20,29 @@ LD = os.path.normpath(LD)
 # ⚠ 同 app/SConscript：Glob 必须在模块级取，config() 执行时 cwd 已是 variant_dir
 objs = Glob("src/*.c")
 
+# boot 自己的 BSW 配置表（1RX+1TX 的 CanIf / 4 条 PduR 路径 / 刷写服务子集）。
+#
+# 为什么不复用 app 的 cfg：那些表是 const 数组，链接器不按表项裁剪；
+# 更关键的是 PDU 编号语义不同（app 的 CANIF_TX_DIAG_RESP=3，boot 只有 1 条 TX → 0）。
+#
+# **这些 .c 必须在应用源码里定义，而不是编进对应模块库**：
+# 静态库按需拉目标文件，boot 版已提供 `CanIf_Config` / `PduR_Config` /
+# `Dcm_Config` / `CanTp_Config`，链接器就不会再拉库里的 `*_Cfg.o`。
+cfgObjs = Glob("config/*.c")
+
+# 仓库根与各私有头目录。
+#
+# 为什么用显式路径而不是 `$Can` / `$CanIf` 这类变量：
+# 那些变量由 `Library` 实例化时注册（`building.py:2214`），而应用层的
+# config() 与库的实例化顺序不由我们控制 —— 引用不存在的变量会 KeyError。
+# 路径是死的东西，不会因为顺序或改名而静默失效。
+_ROOT = os.path.join(CWD, os.pardir, os.pardir)      # app/boot → 仓库根
+_INFRAS = os.path.join(_ROOT, "infras")
+
 
 @register_application
 class ApplicationBoot(Application):
-    """Boot：选槽 → 校验镜像 CRC → 跳转（不带刷写）"""
+    """Boot：选槽 → 校验 → 跳 app；无镜像/请求时停在 UDS 刷写"""
 
     def config(self):
         # Cvm0146 已经隐含了 Crc（BootMeta.c 用它算 CRC32）
@@ -34,14 +53,50 @@ class ApplicationBoot(Application):
         #   用途 2：将来记刷写历史/审计日志。
         # 这条链是 NvM → MemEngine(FEE) → FeeAc_FlsMethod，三个库缺一不可。
         # Det 是 NvM.c 的唯一 BSW 依赖（`Det_ReportError`），不能省。
-        self.LIBS = ["Cvm0146", "NvM", "MemEngine", "Det"]
+        #
+        # CanIf / CanTp / PduR / Dcm：D1 第二步，刷写服务进 boot。
+        # 顺序不重要（SCons 会处理依赖），但保持"自下而上"的可读顺序。
+        #
+        # Can：MCAL 层。**复用 app 的 `Can_Cfg.c`**（2 通道 / 57 邮箱）。
+        #   为什么不写精简版：`CanIf_RxDispatch()` 只用 `canid & mask` 匹配，
+        #   RX 表里的 `hoh` 是死字段（M19 验证），所以多配的邮箱只会被
+        #   CanIf 静默丢弃，既不越界也不报错；而 `Can_Cfg.c` 是 M2/M19
+        #   验证过的硬件配置，改它没有收益、只有风险。
+        #   代价：邮箱表约 1.1 KB 数据 + 初始化多几十微秒。
+        #
+        # Dio：CAN 收发器 STB 引脚要用（`Can.c:142` 的 `Dio_WriteChannel`）。
+        #   不链 Dio 的话 `TrcvPinSTB` 只能是 `DIO_INVALID_CHANNEL`，
+        #   收发器停在待机、总线上什么都发不出去。
+        self.LIBS = ["Cvm0146", "NvM", "MemEngine", "Det",
+                     "Can", "Dio", "Port", "CanIf", "CanTp", "PduR", "Dcm"]
         # $Cvm0146 → app/platform/cvm0146/include（boot_flash_map.h / boot_meta.h）
-        # $INFRAS  → infras/include（Std_Types.h / Crc.h / NvM.h / Det.h）
+        # $INFRAS  → infras/include（Std_Types.h / Crc.h / NvM.h / Dcm.h / Det.h）
         # $MEMORY  → infras/memory（NvM_Port.h）
         # $MEMORY_VENDOR → 厂商 fee/nvm 头（由 NvM_Cfg.c 间接拉取）
         # $NvM_Cfg → NvM_Cfg.h（块 id 与块长度：boot 读 VIN 要用）
-        self.CPPPATH = ["$Cvm0146", "$INFRAS", "$MEMORY", "$MEMORY_VENDOR", "$NvM_Cfg"]
-        self.source = objs
+        # $Can / $Dio / $Port → MCAL 私有头（Can_Priv.h / Dio_Cfg.h 等）
+        #
+        # ⚠ `config` 目录必须**排在 $CanIf_Cfg / $PduR_Cfg / $Dcm_Cfg 之前**：
+        #    CPPPATH 是按序搜索的，boot 版头文件要压过 app 版。
+        #    （CanTp_Cfg.h 与 Can_Cfg.h 刻意不覆盖：参数/硬件配置与 app 完全一致。）
+        self.CPPPATH = [os.path.join(CWD, "config"),      # boot 版 CanIf/PduR/Dcm 头
+                        "$Cvm0146", "$INFRAS", "$MEMORY", "$MEMORY_VENDOR",
+                        "$NvM_Cfg", "$Can_Cfg",
+                        "$CanIf_Cfg", "$CanTp_Cfg", "$PduR_Cfg", "$Dcm_Cfg",
+                        os.path.join(_INFRAS, "mcal", "Can"),            # Can_Priv.h
+                        os.path.join(_INFRAS, "mcal", "Dio"),            # Dio_Priv.h
+                        os.path.join(_INFRAS, "communication", "CanIf"),  # CanIf_Priv.h
+                        os.path.join(_INFRAS, "communication", "CanTp"),  # CanTp_Priv.h
+                        os.path.join(_INFRAS, "communication", "PduR"),   # PduR_Priv.h
+                        os.path.join(_INFRAS, "diagnostic", "Dcm")]       # Dcm_Priv.h
+        self.source = objs + cfgObjs
+
+        # 调试开关：强制停在 UDS（验证刷写链路时用）
+        #
+        # 用法：`set BOOT_FORCE_UDS=1 && build.bat --app=Boot`
+        # ⚠ 量产构建**不要**设这个环境变量，否则永远停在 boot。
+        if os.environ.get("BOOT_FORCE_UDS") == "1":
+            self.Append(CPPDEFINES=["BOOT_FORCE_UDS=1"])
         self.Append(LINKFLAGS=[
             # 启动由厂商 startup_M014x_gcc.S 提供，不要 newlib 的 crt0
             "-nostartfiles",

@@ -2181,6 +2181,55 @@ while time.time() - t0 < 5.0:
     time.sleep(0.005)
 ```
 
+
+## D1 第二步：刷写协议栈进 boot（架构完成，CAN 收发待排查）
+
+### 已完成
+
+| 项 | 状态 |
+|---|---|
+| boot 专用 cfg | `app/boot/config/`：CanIf（1RX+1TX）/ CanTp / PduR（4 条路径）/ Dcm（7 个服务） |
+| 协议栈链接 | Can / Dio / Port / CanIf / CanTp / PduR / Dcm + NvM / MemEngine / Det |
+| 平台层 | `Platform_McuInitMinimal` 增加 flexCAN 驱动句柄；keep 列表加 CanAc/PortAc/DioAc/FlashLoader |
+| UDS 模式 | 无镜像时进 `Boot_UdsLoop()`（10 ms 节拍跑 CanTp/Dcm），不再死等 J-Link |
+| DET 可见性 | `boot_stubs.c` 提供 `Det_Log`，否则 `Det.c` 的空实现把所有参数错误吞掉 |
+
+### 验证结果
+
+- ✅ boot 带完整协议栈正常启动、正常跳 app（M2 39/39 未受影响）
+- ✅ `BOOT_FORCE_UDS=1` 时 boot 停在 UDS 模式，串口打印就绪横幅
+- ✅ boot 与 app 共用同一份 `Can_Cfg.c` / `NvM_Cfg.c`（配置不漂移）
+- ❌ **CAN 收发未通**：Kvaser 发 `10 02` 到 0x7E0，boot 无响应、无 DET、无 CanIf 回调
+  → 帧在 **CanAc 邮箱中断层**就丢了，没进 `CanIf_RxIndication`
+
+寄存器快照（UDS 模式打印）：
+
+```
+[canreg] ch0 mcr=00830060 ctrl1=052ca007 ecr=00000000 esr1=00040080
+[canreg]  waitFailed=0
+[canreg]  TEC=0 REC=0 FLTCONF=0 BOFFINT=0 BOFFMSK=1 ERRMSK=0
+```
+
+`MCR` bit28（HALT）=0、bit31（MDIS）=0 → 控制器已使能；ECR=0 → 无任何收发活动。
+说明**邮箱中断没触发**，而不是总线错误。
+
+### 下一步排查方向（按可能性排序）
+
+1. **CAN0 的 IMR（中断掩码）**是否真被 `FlexCanDrv_EnableMsgObjInterrupt()` 写进去
+   —— 读 `CAN0_BASE + IMR`，若为 0 说明使能没生效
+2. **0x7E0 邮箱（mb5）的 `intEnable`** 在 `Can_Cfg.c` 里是否为 true
+3. **NVIC ISER**：`CAN0_ORed_0_15_MB_IRQn` 是否置位
+4. **收发器 STB（PC1）**：`Dio_WriteChannel(DIO_CHANNEL_CAN0_STB, STD_LOW)` 是否真执行
+   —— 用万用表量 PC1，低电平才是 Normal 模式
+
+### ⚠ 尺寸告警
+
+**boot = 128,392 B / 130,048 B（ld 的 m_text 上限），只剩 1.6 KB。**
+
+必须优化，否则加任何东西就链接失败。方向：
+- 给 boot 单独加 `-Os`（app 不动）
+- 或把 boot 区从 128 KB 扩到 160 KB（槽 448 → 432 KB，app 当前 202 KB 仍够）
+
 ### 尚未完成（下一步）
 
 1. **D1 第二步**：boot 内接 CanIf+CanTp+PduR+Dcm（boot 专用 cfg：只留 UDS 与刷写服务），

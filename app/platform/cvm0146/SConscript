@@ -115,13 +115,19 @@ class LibraryCvm0146(Library):
             # 控制台 RX 环形缓冲（UART2 中断 → 主循环，防丢字节）
             "$Lwrb",
         ]
-        # $Can / $Dio / $Port 是模块库注册的 include 变量（`self.include`），
-        # 只有那些库参与构建时才存在。boot 不链接它们，直接引用会让
-        # SCons 在解析 CPPPATH 时抛 "CPPPATH $Can not found"。
+        # $Can / $Dio / $Port 是库实例化时自动注册的 CPPPATH 变量
+        # （`building.py:2214`：`RegisterCPPPATH("$<name>", self.include)`）。
+        # 平台库的 config() 可能早于这些库的实例化，直接引用有 KeyError 风险。
         #
-        # 注意 FlashLoader.c 用的 `Dcm.h` 在 $INFRAS 里（`infras/include`），
-        # 不走 $Dcm —— Dcm 库没有注册 self.include，那个变量根本不存在。
-        if appName != "Boot":
+        # D1 第二步起 boot 也链 Can / Dio（刷写要走 CAN、收发器 STB 要用 Dio）。
+        # boot 用**显式路径**而不是 `$Can` 变量：不依赖注册顺序，也不会因为
+        # 库名变化而静默失效。app 沿用原写法（已验证，不折腾）。
+        if appName == "Boot":
+            _infras = os.path.join(CWD, os.pardir, os.pardir, os.pardir, "infras")
+            self.CPPPATH += [os.path.join(_infras, "mcal", "Can"),
+                             os.path.join(_infras, "mcal", "Dio"),
+                             os.path.join(_infras, "mcal", "Port")]
+        else:
             self.CPPPATH += ["$Can", "$Dio", "$Port"]
         # Lwrb：platform_cvm0146.c 的控制台 RX 环用它（lwrb.h）
         self.LIBS += ["Lwrb"]
@@ -158,7 +164,14 @@ class LibraryCvm0146(Library):
             # 为"编程会话下诊断仪查 VIN"留通道）。NvM → MemEngine(FEE) →
             # FeeAc_FlsMethod 这条链断一环就链接失败。FeeAc 只碰 DFlash，
             # 与 FlashAc 管的 PFlash 区域完全独立，不会互相踩。
-            keep = ("platform_cvm0146.c", "FlashAc.c", "BootMeta.c", "FeeAc.c")
+            # CanAc.c 为什么进 boot：D1 第二步刷写要走 CAN（邮箱中断、
+            # 收发器 STB、CanIf 上行）。它是 Can 库的平台实现，不链就没法发帧。
+            # FlashLoader.c 为什么进 boot：0x31 擦槽 / 0x34 登记目标槽 /
+            # 0x36 写数据 / 0x37 收尾 / 0x11 复位，全在这一份里。
+            # 它只碰 PFlash（FlashAc），与 NvM 走的 DFlash（FeeAc）互不干扰。
+            keep = ("platform_cvm0146.c", "FlashAc.c", "BootMeta.c",
+                    "FeeAc.c", "CanAc.c", "FlashLoader.c",
+                    "PortAc.c", "DioAc.c")
             self.source = [o for o in acObjs if os.path.basename(str(o)) in keep] + sdkObjs
         else:
             self.source = list(objs) + _board_srcs
@@ -180,8 +193,38 @@ class LibraryCvm0146(Library):
         # 平台库里没被引用的 AC 目标文件也不会进最终镜像。
         # 这正是 boot 能控制在 64 KB 内的原因（CanTp+Dcm+NvM 实测约 40 KB）。
         # ------------------------------------------------------------------
+        # boot 自带 cfg 源的模块：它们的配置表与 app **语义不同**
+        # （PDU 编号 / 服务集 / 路由条数）。其余模块的 cfg 只有一份，
+        # boot 必须复用 —— 尤其 NvM/Fee 的块表是"这块 DFlash 怎么解释"的契约，
+        # 分两份就是埋雷（改一处忘另一处，app 写的数据 boot 读不出来）。
+        _BOOT_OWN_CFG = ("CanIf", "CanTp", "PduR", "Dcm")
+
         for libName, cfg in cfgs.items():
+            _cfgDir = os.path.dirname(str(cfg[0]))
+
             if appName != "Boot":
                 self.LIBS += [libName]
-            self.RegisterConfig(libName, cfg)
+                # 把 cfg 源编进对应模块库（库拿到配置头路径 + USE_<NAME> 宏）
+                self.RegisterConfig(libName, cfg)
+            elif libName in _BOOT_OWN_CFG:
+                # ------------------------------------------------------------------
+                # boot 有自己的版本（`app/boot/config/*_Cfg.c`）。
+                # 若照常 RegisterConfig，app 的 `Dcm_Cfg.c` 会被编进 Dcm 库，
+                # 与 boot 版**重复定义**（`multiple definition of Dcm_Config`）——
+                # 链接器不会"因为已有定义就跳过库里的目标文件"：只要 `Dcm.o`
+                # 要 `Dcm_Config`，它就去拉 `Dcm_Cfg.o`，然后冲突。
+                # 所以这里只挂**头文件目录**，源交给 boot 自己的 config/。
+                # ------------------------------------------------------------------
+                RegisterCPPPATH("$%s_Cfg" % libName, _cfgDir, True)
+                if "$%s_Cfg" % libName not in self.CPPPATH:
+                    self.CPPPATH.append("$%s_Cfg" % libName)
+            else:
+                # boot 复用 app 的 cfg（Can / Dio / Port / NvM / MemEngine / …）。
+                # 这些表只有一份真源，编进对应模块库即可 —— boot 链接那个库
+                # 就自动拿到配置（和 app 完全一样的字节，不会漂移）。
+                self.RegisterConfig(libName, cfg)
+
+            # USE_<NAME> 宏对 boot 同样要定义：它会影响模块结构体的字段数
+            # （典型：`USE_NVM` 决定 `Dcm_ConfigType` 尾部有没有 SecurityNvMBlkId），
+            # 少一个宏就会让初始化器整体偏移一格，运行期才炸。
             self.Append(CPPDEFINES=["USE_%s" % (libName.split(":")[0].upper())])

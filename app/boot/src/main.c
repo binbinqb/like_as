@@ -51,9 +51,53 @@
 #include "NvM.h"        /* boot 也带存储栈：编程会话下读 VIN 用 */
 #include "NvM_Cfg.h"    /* NVM_CFG_ID_VIN / NVM_CFG_BLK_VIN_SIZE */
 
+/* D1 第二步：刷写协议栈（无镜像 / 有刷写请求时停在 UDS，不跳 app） */
+#include "Port.h"       /* Port_Init：引脚 MUX（CAN/STB） */
+#include "Can.h"
+#include "Can_Cfg.h"
+#include "CanIf.h"
+#include "CanIf_Cfg.h"
+#include "CanTp.h"
+#include "CanTp_Cfg.h"
+#include "PduR.h"
+#include "PduR_Cfg.h"
+#include "Dcm.h"
+#include "Dcm_Cfg.h"
+
 #include <string.h>     /* memset */
 
+/* ============================ [ 配置表符号 ] ============================ */
+
+/**
+ * @brief 各模块配置表的外部声明
+ *
+ * @note  这些符号由 boot 自己的 `config/*_Cfg.c` 定义（不是 app 的那份）。
+ *        它们**没有**在公共头里声明 —— as-master 的做法是让 EcuM 的
+ *        驱动表直接引用，走的是"配置层知道配置层"的路子。
+ *        boot 没有 EcuM，所以在这里显式声明，顺便把"boot 用哪份配置"写明白。
+ */
+extern const Can_ConfigType Can_Config;
+extern const CanIf_ConfigType CanIf_Config;
+extern const CanTp_ConfigType CanTp_Config;
+extern const PduR_ConfigType PduR_Config;
+extern const Dcm_ConfigType Dcm_Config;
+
 /* ============================ [ 内部 ] ============================ */
+
+/**
+ * @brief 调试开关：强制停在 UDS 模式（不跳 app）
+ *
+ * @details 正常路径只在"没有可启动镜像"时进 UDS。但验证刷写链路时，
+ *          app 通常是好的 —— 要去掉它才能触发，而擦除 app 需要
+ *          J-Link 的 FLM 配置（`flash.py` 走 CSpyBat，命令行直连做不到）。
+ *
+ *          所以给一个编译期开关：`build.bat --app=Boot` 前设环境变量
+ *          `BOOT_FORCE_UDS=1`（由 SConscript 转成 `-DBOOT_FORCE_UDS=1`）。
+ *          **验证完必须去掉这个环境变量**，否则量产固件会永远停在 boot。
+ */
+#ifndef BOOT_FORCE_UDS
+#define BOOT_FORCE_UDS 0
+#endif
 
 /**
  * @brief 存储自检的等待上限（ms）
@@ -265,12 +309,14 @@ static void Boot_DebugImage(uint8_t slot)
 }
 
 /**
- * @brief 停住：镜像全坏时的最终状态
+ * @brief 停住：镜像全坏且刷写栈也起不来时的最终状态
  *
  * @details 不跳转、不复位，就地打一行提示然后死循环。
  *          **故意不自动复位** —— 复位后会重复同样的失败流程，
- *          串口日志被刷屏反而看不清第一次的原因。停在原地，
- *          接上调试器能看到完整的调用栈。
+ *          串口日志被刷屏反而看不清第一次的原因。
+ *
+ * @note   正常路径**不走这里**：没有可启动镜像时进 `Boot_UdsLoop()` 等刷写。
+ *          只有连 CAN 都起不来（硬件故障）才落到这个死循环。
  */
 static void Boot_Halt(const char *reason)
 {
@@ -281,6 +327,102 @@ static void Boot_Halt(const char *reason)
 	for (;;) {
 		__asm volatile ("nop");
 	}
+}
+
+/* ============================ [ UDS 刷写模式（D1 第二步） ] ============================ */
+
+/**
+ * @brief 刷写模式初始化：自下而上拉起 CAN 协议栈
+ * @retval E_OK     就绪
+ * @retval E_NOT_OK CAN 控制器起不来（硬件故障）
+ *
+ * @details 初始化顺序与 app 的 EcuM 表一致，只是少了 CanSM/ComM 那几层
+ *          （boot 不做网络管理）：
+ *          @code
+ *          Can_Init      邮箱 + 滤波器 + 中断
+ *          CanIf_Init    所有控制器 PDU 模式置 OFFLINE
+ *          CanTp_Init / PduR_Init / Dcm_Init
+ *          CanIf_SetControllerMode(CAN0, STARTED)   → Can_SetControllerMode
+ *          CanIf_SetPduMode(CAN0, ONLINE)           **必须**，否则发送恒失败
+ *          @endcode
+ *
+ * @warning `SetPduMode(ONLINE)` 不能漏。漏了的表现是"收得到、发不出去"：
+ *          CanIf 在 OFFLINE 下直接丢 `CanIf_Transmit()`，且不报错 ——
+ *          诊断仪看到的是 0x7E8 一声不响，只能靠 P2 超时退出。
+ */
+static Std_ReturnType Boot_UdsInit(void)
+{
+	/**
+	 * @warning **`Port_Init()` 必须先调，且不能省。**
+	 *          它把 CAN0_RX/TX（PE4/PE5）、STB（PC1）等引脚配成复用功能。
+	 *          漏了它的表现是"CAN 初始化全部返回成功、总线上一个字都没有" ——
+	 *          引脚还是普通 GPIO，收发器的 TX 根本没接到 CAN 控制器上。
+	 *          这个错误没有任何报错，只能靠示波器或"发不出去"发现。
+	 */
+	Port_Init(NULL);        /* NULL = 用本工程的 Port_Config（与 app 同一份） */
+
+	Can_Init(&Can_Config);
+	CanIf_Init(&CanIf_Config);
+	CanTp_Init(&CanTp_Config);
+	PduR_Init(&PduR_Config);
+	Dcm_Init(&Dcm_Config);
+
+	if (CanIf_SetControllerMode(CANIF_CHL_CAN0, CAN_CS_STARTED) != E_OK) {
+		return E_NOT_OK;
+	}
+	if (CanIf_SetPduMode(CANIF_CHL_CAN0, CANIF_ONLINE) != E_OK) {
+		return E_NOT_OK;
+	}
+
+	return E_OK;
+}
+
+/**
+ * @brief 刷写主循环：不返回（只能靠 0x11 复位或断电退出）
+ *
+ * @note  为什么是 10 ms 固定节拍而不是自由循环：
+ *        `CanTp` / `Dcm` 的定时器是"每次 MainFunction 递减一次"，
+ *        配置里的 N_Bs / N_Cr / S3 都是按 `*_MAIN_FUNCTION_PERIOD`
+ *        折成 tick 的。扔进自由循环的话，100 tick 的 N_Bs 会在几百微秒内
+ *        耗尽 —— **单帧全通、多帧一律失败**（单帧不依赖定时器）。
+ */
+static void Boot_UdsLoop(void)
+{
+	uint32_t next = Platform_NowMs();
+
+	Platform_Puts("[boot] UDS flash mode: 0x7E0 -> 0x7E8 @ 500 kbps\n");
+	Platform_Puts("[boot] sequence: 10 02 | 27 01/02 | 31 01 FF00 | 34 | 36 | 37 | 11 01\n");
+
+	/* 寄存器快照：CAN 起不来的现场只有这里能看出来
+	 * （MCR 的 MDIS、CTRL0 的 HALT、ECR 的错误计数） */
+	CanAc_DbgDump(0u);
+
+	for (;;) {
+		if ((uint32_t)(Platform_NowMs() - next) >= DCM_MAIN_FUNCTION_PERIOD) {
+			next = Platform_NowMs();
+			CanTp_MainFunction();
+			Dcm_MainFunction();
+		}
+		/* 邮箱收发全在中断里（`CanAc_MbIsr`），主循环不需要轮询 CAN */
+	}
+}
+
+/**
+ * @brief 进入刷写模式（打印原因 → 起协议栈 → 死循环）
+ * @param[in] reason 为什么要停在 boot（打印出来便于现场判断）
+ *
+ * @note  CAN 起不来时退化成 `Boot_Halt()` —— 至少串口还能告诉人"是硬件问题"。
+ */
+static void Boot_EnterUds(const char *reason)
+{
+	Platform_Printf("\n[boot] %s\n", reason);
+	Platform_Puts("[boot] entering UDS flash mode ...\n");
+
+	if (Boot_UdsInit() != E_OK) {
+		Boot_Halt("CAN controller failed to start");
+	}
+
+	Boot_UdsLoop();
 }
 
 /**
@@ -372,6 +514,11 @@ int main(void)
 	 * 失败只打印，不影响下面的选槽与跳转 —— 存储坏了也要能刷能跳。 */
 	Boot_StorageSelfTest();
 
+#if BOOT_FORCE_UDS
+	/* 调试：不跳 app，直接进刷写模式（验证 UDS 链路用） */
+	Boot_EnterUds("BOOT_FORCE_UDS=1 (debug build, not for production)");
+#endif
+
 	/* ---- 第一步：按 meta 选活动槽 ---- */
 	slot = BootMeta_GetActiveSlot();
 
@@ -421,7 +568,9 @@ int main(void)
 	}
 
 	if (chosen == BOOT_NO_ACTIVE_SLOT) {
-		Boot_Halt("no valid image in slot A or B");
+		/* 没有可启动镜像 —— 这是 D1 第二步的核心场景：
+		 * app 被擦掉了，boot 停在 UDS 等诊断仪刷写，而不是死等 J-Link。 */
+		Boot_EnterUds("no valid image in slot A or B, waiting for flash");
 	}
 
 	/* ---- 第三步：跳转前的尝试计数（回滚触发点） ---- */
@@ -433,7 +582,8 @@ int main(void)
 		                (other == BOOT_SLOT_INDEX_A) ? 'A' : 'B');
 
 		if (BootMeta_CheckImage(other) != E_OK) {
-			Boot_Halt("rollback target also invalid");
+			/* 回滚目标也坏了 —— 同样进 UDS，让诊断仪能救回来 */
+			Boot_EnterUds("rollback target also invalid, waiting for flash");
 		}
 		chosen = other;
 	}

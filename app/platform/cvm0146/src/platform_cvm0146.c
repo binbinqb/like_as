@@ -942,6 +942,27 @@ static void Platform_McuInitMinimal(McuType *obj)
 	PinsDrv_Init(&obj->pte, PORTE, GPIOE);
 
 	UartDrv_Init(&obj->uartDrv2, UART2);
+
+	/* flexCAN：D1 第二步起 boot 要刷写，必须能收发。
+	 *
+	 * 两个实例都初始化，因为 `Can_Cfg.c`（boot 复用 app 那份）配了 2 个通道，
+	 * `Can_Init()` 会遍历全部通道 —— 只初始化 CAN0 的话，CAN1 那个句柄是
+	 * 全 0，`CanAc_Init` 写它的寄存器指针会打到地址 0，进 HardFault。
+	 *
+	 * `canRamNum` 是每个实例的 CAN RAM 块数，必须与 `mcu.c` 的
+	 * `Mcu_Init()` 完全一致（那是 M2/M19 验证过的分配），否则邮箱编号
+	 * 会整体错位 —— 表现是"某个邮箱永远收不到"，且没有任何报错。 */
+	{
+		FlexCanDrv_InitHwParType canInitHwPar;
+
+		canInitHwPar.canInstanceIdx = 0;
+		canInitHwPar.canRamNum      = 3;
+		FlexCanDrv_Init(&obj->flexCanDrv0, CAN0, PCC, SCG, SIM, &canInitHwPar);
+
+		canInitHwPar.canInstanceIdx = 1;
+		canInitHwPar.canRamNum      = 2;
+		FlexCanDrv_Init(&obj->flexCanDrv1, CAN1, PCC, SCG, SIM, &canInitHwPar);
+	}
 }
 
 #endif /* PLATFORM_BOOT_MINIMAL */
