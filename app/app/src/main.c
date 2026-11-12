@@ -61,7 +61,8 @@
  */
 
 #include "platform_cvm0146.h"
-#include "sh_app.h"      /* M-Shell：命令行解释器接入（sh_bind_io + sh_task） */
+#include "sh_app.h"
+#include "cmd/cmd_api.h"   /* 旧 !x 命令 → cmd/ 实现的桥（迁移期） */
 
 #include "Can.h"
 #include "Can_Cfg.h"     /* CAN_CFG_NUM_CHANNELS：通道数由平台配置决定，应用不写死 */
@@ -405,7 +406,6 @@ static void Fault_Dump(void);
 static void CanTest_Burst(uint16_t n);
 static void CanTest_DumpRxCounters(void);
 static void CanTest_SendRealMatrix(void);
-static void PwmCmd_Exec(char c);
 
 /* 网络管理（M9）实现在"网络管理"区，晚于 CmdExec */
 static void Nm_CmdExec(char c);
@@ -414,185 +414,6 @@ static void Nm_DumpState(void);
 /* 信号层（M10）实现在"信号层"区，晚于 CmdExec */
 static void Com_CmdExec(char c);
 
-/* ECU 状态管理（M11） */
-static void EcuM_CmdExec(char c);
-
-/**
- * @brief ADC 探针：启动一次组转换 → 等完成 → 读原始值 → 换算 mV（`!j`）
- *
- * @details 这是 M15 的**最小验证件**，只做一件事：证明
- *          `Adc_StartGroupConversion()` → PDB 软触发 → ADC 转换 → COCO
- *          → `Adc_ReadGroup()` 这条链路真的走通了。
- *
- * @note 为什么不用回调而用轮询：`CVM014x` 的 ADC 完成中断没有被 SDK 封装，
- *       只有 `AdcDrv_GetCocon()` 这个标志位。轮询虽然笨，但语义明确、
- *       不会引入中断优先级问题 —— 先证链路，再谈效率。
- *
- * @warning 超时给 5 ms 是**故意设小**的：一次 12 位转换在几十 MHz 的
- *          ADC 时钟下只要几微秒。如果 5 ms 都没完成，说明触发链路断了
- *          （PDB 没使能 / pretrigger 没配对 / ADC 没 Enable），
- *          而不是"再多等一会就好"。快速失败比慢速等待更容易定位。
- */
-static void AdcCmd_Probe(void)
-{
-	uint8_t g;
-
-	for (g = 0u; g < (uint8_t)ADC_CFG_NUM_GROUPS; g++) {
-		Adc_ValueGroupType raw[ADC_CFG_MAX_CH_PER_GROUP];
-		uint8_t  n = Adc_Cfg_GroupChannels[g];
-		Adc_StatusType st;
-		uint32_t t0;
-		uint8_t  i;
-
-		Adc_StartGroupConversion((Adc_GroupType)g);
-
-		t0 = Platform_NowMs();
-		do {
-			st = Adc_GetGroupStatus((Adc_GroupType)g);
-		} while ((st != ADC_COMPLETED) && ((Platform_NowMs() - t0) < 5u));
-
-		if (st != ADC_COMPLETED) {
-			Platform_Printf("[adc] g%u timeout, status=%u (PDB/trigger chain broken?)\n",
-			                (unsigned)g, (unsigned)st);
-			continue;
-		}
-
-		/* 显式传缓冲区：本探针不依赖 Adc_SetupResultBuffer，
-		 * 顺便把"两条用法都支持"这件事验掉。 */
-		if (Adc_ReadGroup((Adc_GroupType)g, raw) != E_OK) {
-			Platform_Printf("[adc] g%u read failed\n", (unsigned)g);
-			continue;
-		}
-
-		Platform_Printf("[adc] g%u:", (unsigned)g);
-		for (i = 0u; i < n; i++) {
-			/* 12 位满量程 4095 对应参考电压 3300 mV */
-			Platform_Printf(" %u(%umV)", (unsigned)raw[i],
-			                (unsigned)(((uint32_t)raw[i] * 3300u) / 4095u));
-		}
-		Platform_Puts("\n");
-	}
-}
-
-/* ============================ [ PWM 验收（M18） ] ============================ */
-
-/**
- * @brief 忙等若干毫秒（基于 SysTick 的 1 ms 计数）
- * @param[in] ms 毫秒数
- * @note  只用于验收命令，不用于业务逻辑 —— 忙等会占满 CPU。
- * @warning 若 `Platform_StopTick()` 被调用过，`Platform_NowMs()` 不再前进，
- *          这里会**死循环**。`!z`（STOP 模式）之后不要再发 `!l`。
- */
-static void PwmCmd_DelayMs(uint32_t ms)
-{
-	uint32_t t0 = Platform_NowMs();
-
-	while ((Platform_NowMs() - t0) < ms) {
-		/* 空转等待 */
-	}
-}
-
-/**
- * @brief 百分比 → 0x8000 满量程的占空比
- * @param[in] pct 0~100（超过 100 按 100 处理）
- * @return 占空比
- * @note  用百分比是因为**功能规范和人对频率/亮度的直觉都是百分比**
- *        （"占空比 20% → 90%"），而 `Pwm_SetDutyCycle()` 要的是 0~0x8000。
- *        换算只在这一个地方做，避免每个调用点各写一遍。
- */
-static Pwm_DutyCycleType PwmCmd_Pct(uint32_t pct)
-{
-	if (pct > 100u) {
-		pct = 100u;
-	}
-
-	return (Pwm_DutyCycleType)((pct * 0x8000u) / 100u);
-}
-
-/**
- * @brief PWM 验收命令（`!l` 演示 / `!L` 复位）
- *
- * @details 为什么需要这个命令：`Pwm` 模块像 `Adc` 一样，**编译通过不等于
- *          代码在跑** —— 没有任何调用点时整个模块会被 `--gc-sections` 丢弃，
- *          镜像里一个 `Pwm_*` 符号都不会有。
- *
- *          演示序列刻意做成**肉眼可见**：官方 `pwm_lite_output` 例程里
- *          `PTD0` / `PTE15` / `PTE16` 分别接 RGB 灯的三个颜色通道，所以
- *          改占空比能直接看到颜色/亮度的变化，不需要示波器。
- *
- *          | 步骤 | 内容 | 验什么 |
- *          |------|------|--------|
- *          | 1 | 全通道 0% | 0% 必须静态低（规范禁止尖峰） |
- *          | 2 | ch0 0→100% 分 10 步 | 顶灯渐亮的时序（IL001 是 20%→90%/2.5s） |
- *          | 3 | ch2 0→100% | 第二路独立输出 |
- *          | 4 | ch3 0→100% | 第三路独立输出 |
- *          | 5 | RGB 同时 50% | 多通道并发 |
- *          | 6 | 恢复配置表初值 | `Pwm_SetDutyCycle` 反复调用的稳定性 |
- */
-static void PwmCmd_Exec(char c)
-{
-	uint16_t i;
-
-	if (c == 'L') {
-		/* 恢复配置表里的初值：顶灯灭、三路验证通道各回自己的固定占空比 */
-		Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_DOME_LAMP, PwmCmd_Pct(0u));
-		Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST1, PwmCmd_Pct(50u));
-		Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST2, PwmCmd_Pct(25u));
-		Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST3, PwmCmd_Pct(75u));
-		Platform_Puts("  pwm restored: ch0=0% ch1=50% ch2=25% ch3=75%\n");
-		return;
-	}
-
-	Platform_Printf("  pwm: %u ch @ 100Hz on PwmLite0  init=%s\n",
-	                (unsigned)PWM_CFG_NUM_CHANNELS,
-	                Pwm_IsInitialized() ? "OK" : "**FAILED**");
-	Platform_Puts("   pad0=PTD0(RED) pad1=PTD1 pad2=PTE15(GREEN) pad3=PTE16(BLUE)\n");
-
-	/* 1) 全灭：0% 走静态电平分支，波形上应是恒低而不是极窄脉冲 */
-	for (i = 0u; i < (uint16_t)PWM_CFG_NUM_CHANNELS; i++) {
-		Pwm_SetDutyCycle((Pwm_ChannelType)i, PwmCmd_Pct(0u));
-	}
-	Platform_Puts("   [1/6] all 0%\n");
-	PwmCmd_DelayMs(200u);
-
-	/* 2) 顶灯渐亮：0→100% 分 10 步，每步 150 ms（真实 IL001 是 20%→90% 用 2.5 s） */
-	Platform_Puts("   [2/6] ch0 ramp 0->100%\n");
-	for (i = 0u; i <= 10u; i++) {
-		Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_DOME_LAMP,
-		                 PwmCmd_Pct((uint32_t)i * 10u));
-		PwmCmd_DelayMs(150u);
-	}
-
-	/* 3) 绿（PTE15）渐亮 */
-	Platform_Puts("   [3/6] ch2 (GREEN) ramp\n");
-	for (i = 0u; i <= 5u; i++) {
-		Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST2,
-		                 PwmCmd_Pct((uint32_t)i * 20u));
-		PwmCmd_DelayMs(150u);
-	}
-
-	/* 4) 蓝（PTE16）渐亮 */
-	Platform_Puts("   [4/6] ch3 (BLUE) ramp\n");
-	for (i = 0u; i <= 5u; i++) {
-		Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST3,
-		                 PwmCmd_Pct((uint32_t)i * 20u));
-		PwmCmd_DelayMs(150u);
-	}
-
-	/* 5) 三色同时 50%：多通道并发，肉眼看到接近白 */
-	Platform_Puts("   [5/6] RGB all 50%\n");
-	Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_DOME_LAMP, PwmCmd_Pct(50u));
-	Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST2, PwmCmd_Pct(50u));
-	Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST3, PwmCmd_Pct(50u));
-	PwmCmd_DelayMs(600u);
-
-	/* 6) 恢复初值 */
-	Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_DOME_LAMP, PwmCmd_Pct(0u));
-	Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST1, PwmCmd_Pct(50u));
-	Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST2, PwmCmd_Pct(25u));
-	Pwm_SetDutyCycle((Pwm_ChannelType)PWM_CFG_CH_TEST3, PwmCmd_Pct(75u));
-	Platform_Puts("   [6/6] done, restored\n");
-}
 
 static void CmdExec(char c)
 {
@@ -684,30 +505,22 @@ static void CmdExec(char c)
 		CanTest_DumpRxCounters();
 		return;
 	case 'u':
+		/* 旧入口（m11/m12 脚本仍用）：RUN → POST_RUN */
+		EcumCmd_RequestPostRun();
+		return;
 	case 'U':
+		EcumCmd_RequestRun();
+		return;
 	case 'q':
+		EcumCmd_Mode();
+		return;
 	case 'z':
-		/* EcuM：u=释放 RUN / U=回 RUN / q=模式查询（M11）/ z=睡一次（M12） */
-		EcuM_CmdExec(c);
+		EcumCmd_SleepOnce();
 		return;
 	case 'M':
 		/* CAN1 真实矩阵发送（M19）：6 条报文各发一次，首字节 0xA1~0xA6。
 		 * Kvaser 挂在 CAN1 上才能收到（也需要它提供 ACK）。 */
 		CanTest_SendRealMatrix();
-		return;
-	case 'l':
-	case 'L':
-		/* PWM 验收（M18）：l=演示扫描 / L=恢复初值。
-		 * 开发板 PTD0/PTE15/PTE16 接 RGB 灯，改占空比肉眼可见。 */
-		PwmCmd_Exec(c);
-		return;
-	case 'j':
-		/* ADC 探针（M15）：读一次探针组，打印原始值与换算电压。
-		 * 存在的意义是**验证链路**，不是业务功能 ——
-		 * 在它出现之前，Adc 模块虽然编译通过，但整个被 --gc-sections 丢弃了
-		 * （没有任何调用点），镜像里连一个 Adc_* 符号都没有。
-		 * 这也是"编译通过 ≠ 代码在跑"的最好例证。 */
-		AdcCmd_Probe();
 		return;
 	case 'v':
 	case 'y':
@@ -1315,91 +1128,6 @@ static void Nm_DumpState(void)
  * @note  `!q` 读的是集成层自己记的模式（`EcuM_AL_GetMode`），
  *        因为 as-master 的 `EcuM.c` 没实现标准接口 `EcuM_GetCurrentMode()`。
  */
-static void EcuM_CmdExec(char c)
-{
-	Std_ReturnType rc;
-
-	switch (c) {
-	case 'u':
-		rc = EcuM_ReleaseRUN((EcuM_UserType)0u);
-		if (rc == E_OK) {
-			rc = EcuM_RequestPOST_RUN((EcuM_UserType)0u);
-		}
-		Platform_Printf("[ecum] ReleaseRUN + RequestPOST_RUN -> %s\n",
-		                (rc == E_OK) ? "accepted" : "FAIL");
-		break;
-
-	case 'U':
-		rc = EcuM_ReleasePOST_RUN((EcuM_UserType)0u);
-		if (rc == E_OK) {
-			rc = EcuM_RequestRUN((EcuM_UserType)0u);
-		}
-		Platform_Printf("[ecum] ReleasePOST_RUN + RequestRUN -> %s\n",
-		                (rc == E_OK) ? "accepted" : "FAIL");
-		break;
-
-	case 'q':
-		Platform_Printf("[ecum] mode=%u (0=OFF 1=STARTUP 2=RUN 3=POST_RUN 5=SLEEP)\n",
-		                (unsigned)EcuM_AL_GetMode());
-		break;
-
-	case 'z':
-		/**
-		 * @brief 手动睡一次，醒来报告唤醒源（M12）
-		 *
-		 * @details @section CMDZ_WHY 这条命令验的是什么
-		 *
-		 *          它验证的是 **WFI 通路 + 唤醒源读取**，不是低功耗指标：
-		 *          @code
-		 *          配 100 ms 兜底节拍 → WFI → 被 tick 唤醒
-		 *          → 读 PowerDrv_GetWakeupSource() → 恢复 1 ms 节拍
-		 *          @endcode
-		 *
-		 *          @warning **为什么不完全停掉 SysTick**：
-		 *          停了就有睡死风险 —— 本工程还没有可用的外部唤醒源
-		 *          （收发器 WAKE 引脚硬件没接，PTE4 端口唤醒也没配）。
-		 *          一旦睡死只能断电重启，这个代价不能由一条测试命令承担。
-		 *
-		 *          把节拍放大到 100 ms 有两个好处：
-		 *          1. 兜底：100 ms 后一定醒，**不可能睡死**；
-		 *          2. 可测：1 ms 节拍下 WFI 几乎立刻返回，什么都量不出；
-		 *             100 ms 下能看到 `Platform_NowMs()` 只前进了 1，
-		 *             而实际过了约 100 ms —— 这就是"CPU 真的停过"的证据。
-		 *
-		 * @note  睡着期间所有 10 ms 节拍任务都停了，醒来后
-		 *        CanTp/Dcm/NM 的定时器会"跳"一下。这是停节拍的必然结果，
-		 *        只在测试命令里出现，正常运行路径不会睡。
-		 */
-		Platform_Puts("[sleep] 进 STOP(Sleep) 模式，100 ms 兜底唤醒...\n");
-		/* 走 EcuM 的标准接口使能唤醒源（当前只记录 + 打日志，
-		 * 因为唯一能关的中断是 SysTick，而它是兜底，见 ecum_callout.c） */
-		EcuM_EnableWakeupSources((EcuM_WakeupSourceType)ECUM_WKSOURCE_CAN0);
-
-		{
-			uint32_t t0 = Platform_NowMs();
-
-			Platform_SetTickPeriodMs(100u);
-			Platform_EnterStopMode();
-			Platform_StartTick();
-
-			Platform_Printf("[sleep] 醒来: tick +%u (约 %u ms), 唤醒源=%s(%u)\n",
-			                (unsigned)(Platform_NowMs() - t0),
-			                (unsigned)((Platform_NowMs() - t0) * 100u),
-			                Platform_GetWakeupSourceName(Platform_GetWakeupSource()),
-			                (unsigned)Platform_GetWakeupSource());
-		}
-
-		/* 走一遍标准唤醒链路：EcuM_CheckWakeup → ComM → Nm → CanNm
-		 * 即使这次是 tick 唤醒（不是 CAN），也要让它跑一遍 ——
-		 * 验证接口可达，并且日志能说清"实际是什么唤醒的"。 */
-		EcuM_CheckWakeup((EcuM_WakeupSourceType)ECUM_WKSOURCE_CAN0);
-		break;
-
-	default:
-		Platform_Printf("[ecum] unknown '%c'\n", c);
-		break;
-	}
-}
 
 /**
  * @brief 网络管理的串口命令（`!a` / `!R` / `!m`）

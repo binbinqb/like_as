@@ -41,7 +41,10 @@ APP_CPPPATH = ["$Cvm0146", "$INFRAS", "$Shell", "$Can_Cfg", "$CanIf_Cfg", "$CanT
                "$Dem_Cfg", "$CanNm_Cfg", "$Nm_Cfg", "$Com_Cfg",
                "$ComM_Cfg", "$CanSM_Cfg",
                # $EcuM：EcuM_Priv.h（`EcuM_Cfg.c` 要填配置结构）
-               "$EcuM"]
+               "$EcuM",
+               # 本应用源码目录：cmd/ 子目录里的命令文件要 include
+               # 上层目录的 xxx_Cfg.h（如 EcuM_Cfg.h），靠它兜住
+               os.path.join(CWD, "src")]
 
 
 class _AppImageBase(Application):

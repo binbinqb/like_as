@@ -2008,9 +2008,21 @@ tools/shell.py           上位机标准客户端（提示符切帧 / 自动找�
 | 回归 M19 | 34/34 |
 | 镜像体积 | App 200,684 B（+17 KB）· Boot 56,640 B（+1.8 KB，64K 区仍余 8.8K） |
 
+### 命令迁移进度（2026-11-12 第二批）
+
+| 模块 | 新命令 | 旧入口 | 状态 |
+|---|---|---|---|
+| ADC（M15） | `adc [group]` | `!j` 已删 | ✅ 已迁移并验证 |
+| PWM（M18） | `pwm [reset \| <ch> <pct>]` | `!l/!L` 已删 | ✅ 已迁移并验证 |
+| EcuM（M11/M12） | `ecum [run\|postrun\|sleep]` | `!u/!U/!q/!z` 保留（转调 cmd 实现） | ✅ 逻辑已迁移，M11 18/18、M12 15/15 |
+| NM / Com / 存储 / CAN·DTC | `nm` / `com` / `nvm` / `can`·`dtc` | 保留 | ⏳ 待迁移 |
+
+迁移方式：逻辑搬进 `cmd/xxx_cmd.c`，旧 `!x` 分支改为调用 `cmd_api.h` 里声明的包装函数
+（脚本零改动）；脚本切到新命令后再删旧分支。
+
 ### 尚未完成（下一步）
 
-1. 旧命令迁移：`main.c` 的 ~30 个 `case` 逐个变成模块 `cmd/xxx_cmd.c`，
-   完成后删兼容桥；`m*_check.py` 同步改为 `tools/shell.py` 的 `cmd()`。
+1. 剩余命令迁移：`nm` / `com` / `nvm` / `can` / `dtc`，完成后删兼容桥；
+   `m*_check.py` 逐步改用 `tools/shell.py` 的 `cmd()`。
 2. `sh_cfg.h` 的参数（提示符/环深/历史）进 JSON 配置 + 生成器 `Shell.py`。
 3. 模块级 `cmd/` 目录的 glob 约定（Adc/Pwm/CanIf 各自 SConscript 里加）。
