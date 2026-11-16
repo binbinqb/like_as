@@ -220,10 +220,16 @@ def main():
 	n_sig_stop = count(1.0, ID_SIG)
 	note("!s: 控制器停止后信号报文停发", n_sig_stop == 0, "%d 帧 / 1.0 s" % n_sig_stop)
 
-	send("!g", 0.3)
+	# 命令回显要留下来：`!g` 失败时"到底命令没进去、还是进去了状态没变"
+	# 是两种完全不同的故障，只看帧数分不出来。`can ctrl start` 会把
+	# pduMode/ctrlMode 一起回显，是最好的一手证据。
+	g_out = send("!g", 0.3)
 	drain(0.6)
 	n_sig_go = count(1.0, ID_SIG)
-	note("!g: 控制器启动后信号报文恢复", n_sig_go >= 5, "%d 帧 / 1.0 s" % n_sig_go)
+	note("!g: 控制器启动后信号报文恢复", n_sig_go >= 5,
+	     "%d 帧 / 1.0 s, ctrlMode=%s"
+	     % (n_sig_go, "STARTED" if "STARTED" in g_out
+	        else ("STOPPED" if "STOPPED" in g_out else "无回显")))
 
 	# ---------- 6) RUN → POST_RUN ----------
 	send("!u", 0.25)

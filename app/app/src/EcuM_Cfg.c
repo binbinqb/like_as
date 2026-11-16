@@ -167,7 +167,30 @@ static const EcuM_DriverMainFncType EcuM_DriverMainList[] = {
 	Com_MainFunction_Fast,
 	CanNm_MainFunction,   /* NM 状态机 */
 	Nm_MainFunction,      /* Nm 分发层（当前为空实现） */
-	CanTp_MainFunction,   /* ISO-TP 分段/重组 */
+	CanTp_MainFunction,   /* ISO-TP 分段/重组 + N_As/N_Cr 告警递减 */
+	/**
+	 * @brief ISO-TP 重发 —— `CanTp_ReSend()` 的**唯一**内部调用者
+	 *
+	 * @note A1 发现的漏调度（2026-11-16）。`CanTp_ReSend(Channel)` 在
+	 *       `CanTp.c` 里只有一个内部调用点：`CanTp_MainFunction_ChannelFast()`
+	 *       的 `case CANTP_RESEND_CF`（`CanTp.c:1119`），而该函数只被本函数
+	 *       调用。本函数在此之前**从未被调用**，于是：
+	 *
+	 *       `CanTp_TransmitCF()` 里 `CanIf_Transmit()` 返回 `E_NOT_OK`
+	 *       （TX 邮箱全忙）→ 状态置 `CANTP_RESEND_CF` + 启动 N_As 告警
+	 *       → **没人推进重发** → N_As 超时 → `CanTp_MainFunction_Channel()`
+	 *       走 `default:` 分支直接 `ResetToIdle` + `TxConfirmation(E_NOT_OK)`。
+	 *
+	 *       现象：刷写偶发失败（打回 NRC 0x78 之后再也等不到下一帧），
+	 *       重刷一次往往就好 —— 因为邮箱不总是满。这是典型的
+	 *       "只在总线负载高时出现"的缺陷，台架空载跑一百次也复现不了。
+	 *
+	 * @note 库注释说本函数"通常 1 ms 一次"。本工程只有 10 ms 节拍，
+	 *       重发晚 10 ms 完全可接受（N_As 是 1000 ms 量级），
+	 *       所以直接放进本表即可，不需要为它单独建 1 ms 任务。
+	 * @warning 不要删。删掉就等于 `CANTP_RESEND_CF` 成为死状态。
+	 */
+	CanTp_MainFunction_Fast,
 	Dcm_MainFunction,     /* 诊断会话/服务处理 */
 	NvM_MainFunction,     /* 存储栈推进（含 Fee） */
 	Dem_MainFunction,     /* DTC 落盘 */

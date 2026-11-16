@@ -10,7 +10,11 @@
 	4. `22 F1 87` → `62 F1 87` + 11 字节零件号（单帧，走 SF 路径）；
 	5. `3E 00` → `7E 00`（TesterPresent 保活）；
 	6. `22 12 34`（未配置 DID）→ `7F 22 31`（requestOutOfRange）；
-	7. `31 01`（未实现服务）→ `7F 31 11`（serviceNotSupported）；
+	7. `12 34 56`（未实现服务）→ `7F 12 11`（serviceNotSupported）；
+	   另测 `31 01` 无安全访问 → `7F 31 33`（securityAccessDenied）。
+	   注意 0x31 是**已启用**服务（RoutineControl，用于校验/切槽），
+	   它的 0x33 检查先于"例程是否存在"，所以不能再拿它当
+	   "未实现服务"的例子 —— 这条断言 2026-11-16 才改正；
 	8. `2E F1 87` + 11 字节（13 字节长请求）→ `7F 2E 31`（不可写 DID）——
 	   **证明 RX 侧 FF/CF 重组正常**：重组失败就一个字节都不会回。
 	   注意别用 F190 当例子：M7 起 0x2E 真能写 VIN，会改掉板子上的值；
@@ -141,10 +145,20 @@ def main():
 	note("NRC: 未知 DID → 7F 22 31",
 		 r is not None and r[:3] == b"\x7F\x22\x31")
 
-	# ---- 7) 未实现服务 → 7F 31 11 ----
+	# ---- 7) 未实现服务 → 7F xx 11 ----
+	# 注意：不要用 0x31 当"未实现服务"的例子。0x31 RoutineControl 是
+	# **已启用**的（Dcm_Cfg.h 的 DCM_USE_SERVICE_ROUTINE_CONTROL，用于
+	# 校验 / 请求切槽），未做 0x27 安全访问时它回 NRC 0x33
+	# （securityAccessDenied）—— 这是正确行为，0x33 的检查先于"例程是否存在"。
+	# 所以这里换成真正未启用的 0x12（ReadDataByIdentifier 之外的任意未实现服务）。
+	r = uds(tp, [0x12, 0x34, 0x56])
+	note("NRC: 未实现服务 0x12 → 7F 12 11",
+		 r is not None and r[:3] == b"\x7F\x12\x11")
+	# 顺带把 0x31 的当前语义钉住：无安全访问必须回 0x33，不是 0x31/0x11。
+	# 将来给 0x31 加安全访问门控时，这条断言会保护"别忘了门控"。
 	r = uds(tp, [0x31, 0x01])
-	note("NRC: 未实现服务 → 7F 31 11",
-		 r is not None and r[:3] == b"\x7F\x31\x11")
+	note("NRC: 0x31 无安全访问 → 7F 31 33",
+		 r is not None and r[:3] == b"\x7F\x31\x33")
 
 	# ---- 8) 长请求 → 证明 RX 多帧重组 ----
 	# 用 0x2E 写 **F187（零件号）**：13 字节请求，必须 FF+CF 才能送到 Dcm。

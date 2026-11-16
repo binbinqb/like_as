@@ -363,48 +363,54 @@ int main(void)
 
 		/* 5) BSW 周期任务：**必须按固定周期调用，不能放在自由循环里**
 		 *
-		 *    `CanTp` / `Dcm` 的定时器是"每次 MainFunction 递减一次"（见
-		 *    `CanTp_Priv.h` 的 `CanTpSignalAlarm`），而配置里的 N_Bs/N_Cr/S3
-		 *    是按 `XXX_MAIN_FUNCTION_PERIOD` 毫秒折算成 tick 数的。
-		 *    如果把这两个函数直接扔进无节拍的 while(1)，主循环每秒跑几万次，
-		 *    100 tick 的 N_Bs 会在几百微秒内耗尽 —— 多帧传输立刻超时中断。
+		 *    定时器型模块（CanTp / Dcm / Com / Nm）的计数都是"每次
+		 *    MainFunction 递减一次"（见 `CanTp_Priv.h` 的 `CanTpSignalAlarm`），
+		 *    配置里的 N_Bs / N_Cr / S3 按 `XXX_MAIN_FUNCTION_PERIOD` 毫秒
+		 *    折算成 tick 数。扔进无节拍的 while(1)，主循环每秒跑几万次，
+		 *    100 tick 的 N_Bs 会在几百微秒内耗尽 —— 多帧传输立刻超时。
+		 *    症状很有迷惑性：**单帧全通，多帧一律失败**。
 		 *
-		 *    症状很有迷惑性：**单帧全通，多帧一律失败**（单帧不依赖任何定时器）。
+		 *    ★★ 唯一归属（A1）
+		 *    BSW 模块只在 `EcuM_DriverMainList` 里注册、只在
+		 *    `EcuM_BswService()` 里被调用一次。**本文件不得再直接调用
+		 *    任何 BSW 的 `*_MainFunction()`。**
+		 *
+		 *    历史教训：2026-11-16 之前这里直接调了 CanTp / Dcm / NvM / Dem
+		 *    各一次，叠加表里的同名项 = 四个模块每拍各跑两次。后果不是
+		 *    "跑得快一点"，而是**所有时间基准减半**：S3 标称 5 s 实际
+		 *    2.5 s、N_Bs/N_Cr 折半、Dem 落盘节奏翻倍。而当时所有
+		 *    "静默 6.5 s 看是否掉会话"的测试**依然是绿的**（它只断言
+		 *    "掉了"，不断言"何时掉"）—— 这类错误只能靠
+		 *    `tools/a1_sched_check.py` 的静态唯一性判据拦住。
+		 *
+		 *    应用层不在此列：`BcmSig_MainFunction()` / `ComApp_Tick()`
+		 *    不在 BSW 调度表里，必须留在下面，且**必须在
+		 *    `EcuM_BswService()` 之前**（要抢在 Com 打包前把新值写进报文
+		 *    缓冲，否则第一帧发出去的是上一拍的旧值，差一帧）。
 		 */
 		if ((uint32_t)(Platform_NowMs() - nextBsw) >= BSW_PERIOD_MS) {
 			nextBsw = Platform_NowMs();
-			CanTp_MainFunction();
-			Dcm_MainFunction();
-			/* NM 放在存储**之前**：它每 200 ms 才发一帧，本身几乎不耗时
-			 * （一次 CanIf_Transmit + 几个定时器判断），但**周期精度依赖
-			 * 主函数被准时调用**。放在 FEE 擦除之后会让 NM 周期被拖出
-			 * 几毫秒的抖动 —— 单看一次无所谓，实测 Kvaser 上的间隔会周期性
-			 * 出现一个偏长的值，容易被误判成"定时器算错了"。 */
-			/* 应用侧信号更新：**必须在 `EcuM_BswService()` 之前**。
-			 * 它要抢在 `Com_MainFunction()` 前面把新值写进报文缓冲，
-			 * 否则第一帧发出去的是上一拍的旧值（差一帧）。
-			 * 这一步是应用逻辑，不属于 BSW 调度表。 */
-			/* 车身信号绑定层（M23）先跑：它把业务语义翻成 raw 写进 Com。
-			 * 必须排在任何消费信号的业务逻辑**之前**（读到的是本拍的输入），
-			 * 也必须排在 `EcuM_BswService()` 之前（否则发送再晚一帧）。 */
+
+			/* 车身信号绑定层（M23）先跑：把业务语义翻成 raw 写进 Com。
+			 * 必须排在任何消费信号的业务逻辑之前（读到的是本拍输入）。 */
 			BcmSig_MainFunction();
 			ComApp_Tick();
 
 			/* BSW 调度交给 EcuM：按 `EcuM_DriverMainList` 的顺序跑一遍
-			 * （CanSM → ComM → Com → CanNm → Nm → CanTp → Dcm → NvM → Dem）。
-			 * 顺序和内容都在配置表里，这里不再逐行列出。 */
+			 * （CanSM → ComM → Com → ComFast → CanNm → Nm → CanTp →
+			 *  Dcm → NvM → Dem）。顺序和内容都在配置表里。
+			 *
+			 * 两个表内顺序是刻意的，不是随手排的：
+			 * - Nm 在 NvM 之前：Nm 每 200 ms 发一帧，周期精度依赖主函数
+			 *   被准时调用；放在 FEE 擦除之后会被拖出几毫秒抖动。
+			 * - NvM / Dem 在表尾：FEE 擦除是 1 KB 分片的，单次可能占用
+			 *   几毫秒，放前面会把 UDS 的 10 ms 节拍推歪。 */
 			EcuM_BswService();
 
-			/* 状态机单独推进：它负责 RUN / POST_RUN / SLEEP 的迁移，
-			 * 与 BSW 主函数是两件事（AUTOSAR 里也是两个入口）。 */
+			/* 状态机单独推进：负责 RUN / POST_RUN / SLEEP 的迁移，
+			 * 与 BSW 主函数是两件事（AUTOSAR 里也是两个入口），
+			 * 所以它**不在** `EcuM_DriverMainList` 里。 */
 			EcuM_MainFunction();
-			/* 存储放在这一拍的**最后**：FEE 的擦除是 1 KB 分片的，
-			 * 单次可能占用几毫秒。放前面会把 UDS 的 10 ms 节拍推歪，
-			 * 而存储本身对几十毫秒的抖动不敏感 —— 让时间敏感的先用 CPU。 */
-			NvM_MainFunction();
-			/* Dem 的落盘紧跟在存储推进之后：同一拍里先推进引擎、
-			 * 再看它是否空闲，比"先请求再推进"少一次无谓的 BUSY */
-			Dem_MainFunction();
 		}
 
 		/* 6) 心跳 */
