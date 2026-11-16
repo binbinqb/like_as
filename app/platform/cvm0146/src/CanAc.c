@@ -1156,15 +1156,23 @@ void CanAc_DbgProbe(uint8_t controller)
 	uint32_t mbRx = 0xFFFFFFFFu;
 	uint32_t mbTx;
 	uint32_t i;
+	uint32_t u0;
+
+	/* 分步检查点：探针本身也会出问题（第一版就卡在第一次打印之前，
+	 * 串口静默 4 s 后被复位）。带编号打印，一次就能看出停在哪一步。 */
+	Platform_Printf("[probe] 1 enter\n");
 
 	if (controller >= CAN_CFG_NUM_CHANNELS) {
+		Platform_Printf("[probe] 1b bad controller\n");
 		return;
 	}
 	obj = CanAc_GetObj(controller);
 	if (obj == NULL) {
+		Platform_Printf("[probe] 1c obj=NULL\n");
 		return;
 	}
 	r = obj->flexCanReg;
+	Platform_Printf("[probe] 2 num=%u\n", (unsigned)s_flexCfgNum[controller]);
 
 	/* 从翻译后的邮箱表里反查"哪个邮箱在收 0x7E0" ——
 	 * 不写死 mb5：改了 `Can_Cfg.c` 的邮箱分配，这里自动跟着走 */
@@ -1177,22 +1185,33 @@ void CanAc_DbgProbe(uint8_t controller)
 	}
 	hoh  = &CanHw_Hohs[CAN_HW_HTH_DIAG_RESP];
 	mbTx = (uint32_t)hoh->msgBufId;
+	Platform_Printf("[probe] 3 mbRx=%u mbTx=%u\n", (unsigned)mbRx, (unsigned)mbTx);
 
-	/* 单个邮箱占 4 个 32 位字：CS / ID / DATA0-3 / DATA4-7 */
+	/* 单个邮箱占 4 个 32 位字：CS / ID / DATA0-3 / DATA4-7。
+	 * 每一读单独一行打印：上一版把三读塞进一条 printf，结果停在
+	 * "读了但没打出来"的中间态，分不清是读越界还是打印出问题。
+	 *
+	 * @warning **不要读 `RXIMR[]`**。本片的 FlexCAN 只解码到 `base+0x87F`
+	 *          （MSGBUF 之后就没有了），读 `RXIMR[5]` 即 `base+0x894`
+	 *          会立刻触发精确总线错：
+	 *          @code
+	 *          cfsr=00008200 (BFSR: PRECERR|BFARVALID)  BFAR=40038894
+	 *          @endcode
+	 *          顺带说明 `flexcan_reg.h` 里 `RXIMR[128]` / `HR_TIME_STAMP` /
+	 *          `ENHRXFIFO` 这些后续成员**不适用于本片**，只能当偏移占位看。
+	 */
 	if (mbRx < 128u) {
-		Platform_Printf("[probe] mb%u RX(0x7E0) cs=%08x id=%08x imr=%08x\n",
-		                (unsigned)mbRx,
-		                (unsigned)r->MSGBUF[mbRx * 4u],
-		                (unsigned)r->MSGBUF[(mbRx * 4u) + 1u],
-		                (unsigned)r->RXIMR[mbRx]);
+		u0 = r->MSGBUF[mbRx * 4u];
+		Platform_Printf("[probe] 4a cs=%08x\n", (unsigned)u0);
+		u0 = r->MSGBUF[(mbRx * 4u) + 1u];
+		Platform_Printf("[probe] 4b id=%08x\n", (unsigned)u0);
 	} else {
-		Platform_Printf("[probe] 邮箱表里没有 0x7E0 的 RX 项！\n");
+		Platform_Printf("[probe] 4 邮箱表里没有 0x7E0 的 RX 项！\n");
 	}
-	Platform_Printf("[probe] mb%u TX(0x7E8) cs=%08x id=%08x imr=%08x\n",
-	                (unsigned)mbTx,
-	                (unsigned)r->MSGBUF[mbTx * 4u],
-	                (unsigned)r->MSGBUF[(mbTx * 4u) + 1u],
-	                (unsigned)r->RXIMR[mbTx]);
+	u0 = r->MSGBUF[mbTx * 4u];
+	Platform_Printf("[probe] 5a txcs=%08x\n", (unsigned)u0);
+	u0 = r->MSGBUF[(mbTx * 4u) + 1u];
+	Platform_Printf("[probe] 5b txid=%08x\n", (unsigned)u0);
 
 	/* 数据填一个容易在示波器/上位机上认出来的图案 */
 	for (i = 0u; i < 8u; i++) {
@@ -1204,18 +1223,65 @@ void CanAc_DbgProbe(uint8_t controller)
 	pdu.id          = CAN_HW_ID_DIAG_RESP;
 	pdu.sdu         = data;
 
+	Platform_Printf("[probe] 6 send x8\n");
+
 	for (i = 0u; i < 8u; i++) {
+		/* 逐帧打一个编号：卡在第几帧一目了然（发送邮箱可能一直是
+		 * TX pending，第二帧就写不进去） */
+		Platform_Printf("[%u]", (unsigned)i);
 		(void)Can_Write((Can_HwHandleType)CAN_HW_HTH_DIAG_RESP, &pdu);
 		CanAc_DbgSpin(40000u);      /* 约 1.2 ms，够发完 8 帧 */
 	}
 
-	Platform_Printf("[probe] after TX x8: ecr=%08x tec=%u rec=%u fltconf=%u\n",
+	Platform_Printf("\n[probe] 7 after TX x8: ecr=%08x tec=%u rec=%u fltconf=%u\n",
 	                (unsigned)r->ECR,
 	                (unsigned)((r->ECR >> FLEXCAN_ECR_TXERRCNT_SHIFT) & 0xFFu),
 	                (unsigned)((r->ECR >> FLEXCAN_ECR_RXERRCNT_SHIFT) & 0x7Fu),
 	                (unsigned)((r->ESR1 & FLEXCAN_ESR1_FLTCONF_MASK) >> FLEXCAN_ESR1_FLTCONF_SHIFT));
-	Platform_Printf("[probe] IFLAG1=%08x（bit4=TX完成 bit5=RX0x7E0 命中）\n",
+	Platform_Printf("[probe] 8 IFLAG1=%08x（bit4=TX完成 bit5=RX0x7E0 命中）\n",
 	                (unsigned)r->IFLAG1);
+}
+
+void CanAc_DbgStatus(uint8_t controller)
+{
+	FlexCanDrvType *obj;
+	const FlexCanRegType *r;
+	uint32_t mbRx = 0xFFFFFFFFu;
+	uint32_t i;
+
+	if (controller >= CAN_CFG_NUM_CHANNELS) {
+		return;
+	}
+	obj = CanAc_GetObj(controller);
+	if (obj == NULL) {
+		return;
+	}
+	r = obj->flexCanReg;
+
+	for (i = 0u; i < (uint32_t)s_flexCfgNum[controller]; i++) {
+		if ((s_flexCfgs[controller][i].msgId == CAN_HW_ID_DIAG_REQ) &&
+		    (s_flexCfgs[controller][i].msgType == FLEXCANDRV_MSGTYPE_RX)) {
+			mbRx = (uint32_t)s_flexCfgs[controller][i].msgBufId;
+			break;
+		}
+	}
+
+	/* 一行打完：中断次数 / 累计帧数 / 诊断邮箱已收帧数 / 邮箱 CS / IFLAG1。
+	 * 五个量放一起看才知道是"没收到"还是"收到了没人取"。 */
+	if (mbRx < CANAC_MAX_MB) {
+		Platform_Printf("[st] isr=%u rx=%u mb%u=%u cs=%08x iflag=%08x\n",
+		                (unsigned)s_isrCount[controller],
+		                (unsigned)s_rxTotal[controller],
+		                (unsigned)mbRx,
+		                (unsigned)s_rxPerMb[controller][mbRx],
+		                (unsigned)r->MSGBUF[mbRx * 4u],
+		                (unsigned)r->IFLAG1);
+	} else {
+		Platform_Printf("[st] isr=%u rx=%u (no diag rx mb) iflag=%08x\n",
+		                (unsigned)s_isrCount[controller],
+		                (unsigned)s_rxTotal[controller],
+		                (unsigned)r->IFLAG1);
+	}
 }
 
 

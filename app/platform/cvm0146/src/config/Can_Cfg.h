@@ -120,4 +120,24 @@ void CanAc_DbgDump(uint8_t controller);
  */
 void CanAc_DbgProbe(uint8_t controller);
 
+/**
+ * @brief 打印接收侧状态（中断次数 / 累计帧数 / 诊断邮箱 CS / IFLAG1）
+ *
+ * @details @section CANAC_STATUS_WHY 用来区分"硬件没收到"和"收到了没人取"
+ *
+ *          探针已经证明本板 TX/RX 硬件都正常（发 8 帧全被上位机收到，
+ *          诊断邮箱 `CS.CODE` 能看到 `0b0010`=FULL），剩下的可能只有三种，
+ *          而它们的修法完全不同：
+ *
+ *          | `isr` | `rx` | `mb?` | 结论 |
+ *          |-------|------|-------|------|
+ *          | 不涨 | 不涨 | >0 | 中断没进（NVIC / IMASK / 向量表） |
+ *          | 涨 | 不涨 | >0 | 中断进了但邮箱标志没挂上（IMASK 位错 / 邮箱号错） |
+ *          | 涨 | 涨 | 不涨 | 中断取走了帧，问题在 CanIf 之后 |
+ *
+ * @param[in] controller 通道号
+ * @note  每秒调一次足够；不要在中断或高频路径里调（会打串口）。
+ */
+void CanAc_DbgStatus(uint8_t controller);
+
 #endif /* CAN_CFG_H */

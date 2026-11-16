@@ -2182,7 +2182,7 @@ while time.time() - t0 < 5.0:
 ```
 
 
-## D1 第二步：刷写协议栈进 boot（架构完成，CAN 收发待排查）
+## D1 第二步：刷写协议栈进 boot（已闭环，UDS 刷写端到端实测通过）
 
 ### 已完成
 
@@ -2192,6 +2192,8 @@ while time.time() - t0 < 5.0:
 | 协议栈链接 | Can / Dio / Port / CanIf / CanTp / PduR / Dcm + NvM / MemEngine / Det |
 | 平台层 | `Platform_McuInitMinimal` 增加 flexCAN 驱动句柄；keep 列表加 CanAc/PortAc/DioAc/FlashLoader |
 | UDS 模式 | 无镜像时进 `Boot_UdsLoop()`（10 ms 节拍跑 CanTp/Dcm），不再死等 J-Link |
+| 时基 | `Boot_UdsInit()` 调 `Platform_InitTick()`（boot 没有 EcuM，漏了它 Dcm 永不应答） |
+| 异常上报 | `boot_fault.c`：覆盖 startup 的弱别名，打印 `CFSR/HFSR/BFAR/MMFAR` + 入栈帧 |
 | DET 可见性 | `boot_stubs.c` 提供 `Det_Log`，否则 `Det.c` 的空实现把所有参数错误吞掉 |
 
 ### 验证结果
@@ -2199,19 +2201,55 @@ while time.time() - t0 < 5.0:
 - ✅ boot 带完整协议栈正常启动、正常跳 app（M2 39/39 未受影响）
 - ✅ `BOOT_FORCE_UDS=1` 时 boot 停在 UDS 模式，串口打印就绪横幅
 - ✅ boot 与 app 共用同一份 `Can_Cfg.c` / `NvM_Cfg.c`（配置不漂移）
-- ❌ **CAN 收发未通**：Kvaser 发 `10 02` 到 0x7E0，boot 无响应、无 DET、无 CanIf 回调
-  → 帧在 **CanAc 邮箱中断层**就丢了，没进 `CanIf_RxIndication`
+- ✅ **CAN 收发全通**：探针主动发 8 帧 0x7E8 被 Kvaser 全收；Kvaser 发 0x7E0 后
+  RX 邮箱看到 `CS.CODE=0b0010`（FULL），中断正常取走（`isr=20 rx=10 mb5=10`）
+- ✅ **UDS 应答**：
+  ```
+  0x7E8 06 50 02 00 32 01 F4 CC   ← 10 02（P2=50ms, P2*=5000ms）
+  0x7E8 02 7E 00 CC CC CC CC CC   ← 3E 00
+  ```
+- ✅ **端到端刷写**：`tools/uds_flash.py --elf AppB.exe --slot B --verify`
+  → `transfer 100% (203124 B)` → `31 01 FF01` 复核 CRC = OK → `11 01` 复位
+- ✅ **复位后自动切槽**：boot 读到 B 的 meta（TESTING / rc=3 / crc 一致）
+  → `jump to slot B base=0x090000 entry=0x090400` → app 起来后 `boot confirmed for slot B`
 
-寄存器快照（UDS 模式打印）：
+### 根因 1：boot 漏了 `Platform_InitTick()`（"发得出去但一个字节都不回"的主因）
+
+`Platform_NowMs()` 依赖 SysTick 中断累加 `s_ms`，而 tick 初始化在 app 里是 **EcuM** 调的。
+boot 没有 EcuM，于是：
+
+```c
+if ((Platform_NowMs() - next) >= DCM_MAIN_FUNCTION_PERIOD)   /* 恒为 0 >= 10，永不成立 */
+```
+
+`CanTp_MainFunction()` / `Dcm_MainFunction()` **一次都没执行过**。报文全部堆在 CanTp
+缓冲里，状态机没人推 —— 所以诊断仪看到的不是 NRC，而是彻底沉默。
+
+这个坑最难受的地方在于**所有寄存器证据都正常**（下面那张排除表全绿），
+只有"主循环到底跑没跑"这件事没有寄存器可查。现在已在 `Boot_UdsInit()` 开头补上，
+并以 `CanAc_DbgStatus()` 每秒打一行 `[st] isr=.. rx=.. mb5=.. cs=.. iflag=..`，
+把"中断进没进 / 帧取没取走"变成可观测的。
+
+### 根因 2：本片 FlexCAN 没有 `RXIMR` 区，读它就精确总线错
+
+排查过程中探针停在同一处，靠加打印二分已经无效，于是给 boot 加了真正的故障上报器
+（`app/boot/src/boot_fault.c`，覆盖 startup 里的弱别名死循环）。一次运行就定位：
 
 ```
-[canreg] ch0 mcr=00830060 ctrl1=052ca007 ecr=00000000 esr1=00040080
-[canreg]  waitFailed=0
-[canreg]  TEC=0 REC=0 FLTCONF=0 BOFFINT=0 BOFFMSK=1 ERRMSK=0
+[fault] cfsr=00008200 hfsr=40000000
+[fault] forced: mmfsr=00 bfsr=82 ufsr=0000     ← PRECERR + BFARVALID
+[fault] BFAR (bad access addr) = 40038894      ← CAN0 基址 0x40038800 + 0x894
+[fault] pc=00001eee lr=00001eef xpsr=61000000
 ```
 
-`MCR` bit28（HALT）=0、bit31（MDIS）=0 → 控制器已使能；ECR=0 → 无任何收发活动。
-说明**邮箱中断没触发**，而不是总线错误。
+`0x894 = 0x880 + 5*4` 正是 `RXIMR[5]`。**本片只解码到 `base+0x87F`（MSGBUF 之后就没有了）**，
+`flexcan_reg.h` 里 `RXIMR[128]` / `HR_TIME_STAMP` / `ENHRXFIFO` / `ERFFEL` 这些后续成员
+只是偏移占位，**不能读**（写会被吞掉，读直接报错）。这也是为什么
+`FlexCanDrv_InitCanRAM()` 里那段"清 RXIMR"的写循环从没出过问题 —— 它写的是黑洞。
+
+> 附带收获：厂商 startup 把所有异常入口都弱别名到同一个 `Default_Handler` 死循环，
+> 故障现场**什么都不留**，表现就是"串口打到最后一行突然没声、几秒后被复位"。
+> `boot_fault.c` 补上了 `CFSR/HFSR/BFAR/MMFAR` + 入栈帧 `PC/LR/xPSR/SP` 的打印。
 
 ### 已修复：STB 拉低漏了 `CanIf_SetTrcvMode`
 
@@ -2234,40 +2272,26 @@ boot 没有 CanSM 所以漏了 —— 收发器一直停在 Standby，总线上�
 **且 MCR / CTRL1 / IMASK1 与 app 运行时逐位相同**（唯一差异是 ECR：
 app 有 TX 错误累积因为它在发心跳，boot 从不发帧）。
 
-### 当前剩余疑点与判定方法
+### 排查工具（bring-up 专用，默认关闭）
 
-`ECR = 0` + `IFLAG1 = 0` —— 控制器**完全没看到总线活动**，而 app 在同一块板上
-工作正常。软件侧能查的都已排除，所以不再靠猜：**固件里内置了主动发帧探针**。
+三个工具都受 `BOOT_CAN_PROBE`（`app/boot/src/main.c`）控制，量产/正常刷写时保持 0：
 
-`CanAc_DbgProbe(ch)`（`Can_Cfg.h` 声明，`CanAc.c` 实现）进 UDS 模式时自动跑一次，
-一次运行就能把"收不到"切成两半：
-
-| 串口输出 | 结论 | 方向 |
+| 工具 | 作用 | 关键输出 |
 |---|---|---|
-| `mbN ... cs=` 低 4 位为 `0` | 邮箱根本没配 | 查 `Can_Init` / `CanAc_Init` 是否真跑过 |
-| `TEC` 一路涨到 128+ / `FLTCONF` 变 1 | 帧发出去了但**没有节点 ACK** | 硬件：STB 实际电平、收发器 EN、供电、线束、终端电阻 |
-| `TEC=0` 且 `IFLAG1` bit4 置起 | 发送链路完全正常 | 软件：RXD 引脚通路、RX 邮箱/掩码、对端没发 |
-| `REC` 涨、`FLTCONF` 变 1 | 收到过波形但**位错误** | 波特率对不上（时钟源或位时序） |
+| `CanAc_DbgDump(ch)` | 控制器寄存器快照 | `MCR/CTRL1/ECR/ESR1/IMASK1/IFLAG1` |
+| `CanAc_DbgProbe(ch)` | 主动发 8 帧 0x7E8，把"收不到"切成"发得出去吗" | `mb5 cs/id`、`TEC/REC/FLTCONF` |
+| `CanAc_DbgStatus(ch)` | 每秒一行接收侧状态 | `isr=.. rx=.. mb5=.. cs=.. iflag=..` |
 
-输出样例（进 UDS 模式时）：
+`DbgStatus` 的判读方式：
 
-```
-[boot] STB(CAN0) = 0（0=低=Normal，1=高=Standby）
-[probe] mb5 RX(0x7E0) cs=... id=... imr=...
-[probe] mb4 TX(0x7E8) cs=... id=... imr=...
-[probe] after TX x8: ecr=... tec=... rec=... fltconf=...
-[probe] IFLAG1=... (bit4=TX完成 bit5=RX0x7E0 命中)
-```
+| `isr` | `rx` | 结论 |
+|---|---|---|
+| 不涨 | 不涨 | 中断没进（NVIC / IMASK / 向量表） |
+| 涨 | 不涨 | 中断进了但邮箱标志没挂上（邮箱号或掩码错） |
+| 涨 | 涨 | 中断已取走帧，问题在 CanIf 之后（本次就是这种：取走了但没人跑状态机） |
 
-其余仍需上板确认的：
-
-1. **示波器看 PE5（CAN0_TX）** 有无波形 —— 直接区分"控制器没发"还是"收发器没转"
-2. 万用表量 **PC1 电压**（0 V = Normal）—— `PDOR` 读 0 在引脚为输入时只反映外部电平，
-   证明不了"被驱动为低"，所以探针里同时打了 `Dio_ReadChannel`
-3. 检查 CAN0 收发器供电（VDDA / 待机电路的 EN 引脚是否还有第三根控制线）
-
-> 探针开关：`app/boot/src/main.c` 的 `BOOT_CAN_PROBE`，定位完置 0（否则正常刷写时
-> 它会在总线上插 8 帧 `0xA0..0xA7` 的 0x7E8）。
+> ⚠ 探针会在总线上插 8 帧 `0xA0..0xA7` 的 0x7E8，**刷写时必须关掉**，
+> 否则上位机会把它们当成诊断响应。
 
 ### ✅ 尺寸告警已解除：boot 单独开 `-Os`
 
@@ -2283,7 +2307,9 @@ app 有 TX 错误累积因为它在发心跳，boot 从不发帧）。
 
 ### 尚未完成（下一步）
 
-1. **D1 第二步**：boot 内接 CanIf+CanTp+PduR+Dcm（boot 专用 cfg：只留 UDS 与刷写服务），
-   app 侧关掉 0x34/36/37，实测"app 不在也能刷"。
-2. **M22**：CAN1 的 34 RX / 6 TX 迁入 Com/PduR JSON。
-3. 模块级 `cmd/` 目录约定。
+1. **0x27 换成真算法**：现在 `27 01/02` 是桩（种子返回 0、key 任意），
+   刷写链路的 `securityMask` 因此形同虚设 —— 上车前必须补 SWS 里的种子-密钥算法。
+2. **app 侧关掉 0x34/36/37**：刷写服务现在 boot 和 app 都有，
+   按 D1 设计应只留 boot，app 收到这三个服务直接回 NRC 0x11。
+3. **M22**：CAN1 的 34 RX / 6 TX 迁入 Com/PduR JSON。
+4. 模块级 `cmd/` 目录约定。

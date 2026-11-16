@@ -118,7 +118,7 @@ extern const Dcm_ConfigType Dcm_Config;
  *          `0xA0..0xA7` 的 0x7E8，上位机会把它们当成诊断响应。
  */
 #ifndef BOOT_CAN_PROBE
-#define BOOT_CAN_PROBE 1
+#define BOOT_CAN_PROBE 0
 #endif
 
 /**
@@ -375,6 +375,25 @@ static void Boot_Halt(const char *reason)
 static Std_ReturnType Boot_UdsInit(void)
 {
 	/**
+	 * @warning **`Platform_InitTick()` 必须调，否则 Dcm 永远不应答。**
+	 *
+	 *          这是 D1 第二步最后一个"什么都对但没有响应"的原因：
+	 *          `Platform_NowMs()` 依赖 SysTick 中断累加 `s_ms`，
+	 *          而 tick 初始化在 app 里是由 EcuM 调的 —— boot 没有 EcuM，
+	 *          于是 `s_ms` 恒为 0，`Boot_UdsLoop()` 里的
+	 *          @code
+	 *          if ((Platform_NowMs() - next) >= DCM_MAIN_FUNCTION_PERIOD)
+	 *          @endcode
+	 *          条件永远不成立 → `CanTp_MainFunction()` / `Dcm_MainFunction()`
+	 *          **一次都没执行过**。
+	 *
+	 *          现象极具误导性：CAN 收发硬件全好（主动发帧上位机收得到、
+	 *          RX 邮箱 `CS.CODE` 能看到 FULL），只是诊断仪发什么都是"石沉大海"，
+	 *          连 NRC 都没有 —— 因为报文进了 CanTp 的缓冲，却没人跑状态机。
+	 */
+	Platform_InitTick();
+
+	/**
 	 * @warning **`Port_Init()` 必须先调，且不能省。**
 	 *          它把 CAN0_RX/TX（PE4/PE5）、STB（PC1）等引脚配成复用功能。
 	 *          漏了它的表现是"CAN 初始化全部返回成功、总线上一个字都没有" ——
@@ -432,6 +451,10 @@ static Std_ReturnType Boot_UdsInit(void)
 static void Boot_UdsLoop(void)
 {
 	uint32_t next = Platform_NowMs();
+#if BOOT_CAN_PROBE
+	uint32_t nextSt = Platform_NowMs();
+	uint32_t stCnt  = 0u;
+#endif
 
 	Platform_Puts("[boot] UDS flash mode: 0x7E0 -> 0x7E8 @ 500 kbps\n");
 	Platform_Puts("[boot] sequence: 10 02 | 27 01/02 | 31 01 FF00 | 34 | 36 | 37 | 11 01\n");
@@ -463,6 +486,15 @@ static void Boot_UdsLoop(void)
 			CanTp_MainFunction();
 			Dcm_MainFunction();
 		}
+#if BOOT_CAN_PROBE
+		/* 接收侧状态行：每秒一次，最多 12 行。
+		 * 与中断里的计数对照，判断"帧进了邮箱但没人取"还是"中断根本没进"。 */
+		if ((stCnt < 12u) && ((uint32_t)(Platform_NowMs() - nextSt) >= 1000u)) {
+			nextSt = Platform_NowMs();
+			stCnt++;
+			CanAc_DbgStatus(0u);
+		}
+#endif
 		/* 邮箱收发全在中断里（`CanAc_MbIsr`），主循环不需要轮询 CAN */
 	}
 }
