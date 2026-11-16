@@ -189,6 +189,13 @@ def main():
 	note("启动: 无 PCC 时钟/Configure 超时",
 	     ("PCC 时钟使能失败" not in boot) and ("Configure 握手超时" not in boot))
 
+	# ---------- 0b) 打开自测帧自动发送（A3）----------
+	# 0x123 是驱动层自测帧，默认关闭（见 can_test.h 的 CanTest_SetAutoTx）。
+	# 本脚本第 3 节要验"控制器起来后 0x123 在发"，所以显式打开。
+	# 注意这里验的仍然是有意义的东西：ComM/CanSM 自动把控制器拉起来之后
+	# 那条自测帧才能发出去 —— 所以"能发"本身就证明了链路已通。
+	send("can auto on", 0.25)
+
 	# ---------- 1) EcuM 模式 ----------
 	note("!q: 当前是 RUN", ecum_mode() == ECUM_RUN, "mode=%s" % ecum_mode())
 

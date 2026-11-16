@@ -162,6 +162,15 @@ def main():
 	results.append(("横幅: bring-up", ("bring-up" in boot) and ("CVM0146" in boot)))
 	results.append(("横幅: CAN0 + CAN1 都在", "CAN0 + CAN1, 500 kbps" in boot))
 
+	# ---- 1b) 打开自测帧自动发送（A3）----
+	# 0x123 / 0x124 / 扩展帧现在是**默认关闭**的驱动层自测帧，
+	# 量产固件不主动发（见 can_test.h 的 CanTest_SetAutoTx 说明）。
+	# 本脚本测的正是这三条帧，必须显式打开。
+	ser.write(b"can auto on\n")
+	ser.flush()
+	time.sleep(0.3)
+	ser.read(4096)
+
 	# ---- 2) CAN0 TX 标准帧 0x123 ----
 	drain([bus0, bus1], 0.8)
 	frames = collect(bus0, CAN0_TX_STD, False, 3.0)

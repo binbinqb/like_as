@@ -6,10 +6,11 @@
  *          （M-Shell 命令迁移）。实现在 `can_test.c`，本文件只做命令路由与回读打印。
  *
  * @note 用法：
- *       - `can`                     状态（PDU / 控制器模式）
+ *       - `can`                     状态（PDU / 控制器模式 / 自测自动发送）
  *       - `can pdu offline|online`  PDU 模式
  *       - `can ctrl stop|start`     控制器模式
  *       - `can trcv sleep|normal`   收发器模式
+ *       - `can auto on|off`         主循环自测帧（0x123/0x124/ext）自动发送
  *       - `can counters [clear]`    接收计数（按邮箱 / 按 PDU）
  *       - `can regs`                寄存器现场（TEC/REC/BOFFMSK/FLTCONF）
  *       - `can burst [n]`           高频突发（默认 100 帧，制造位错误）
@@ -44,6 +45,10 @@ static void can_cmd_state(void)
 	sh_print("[can] pduMode=%u (0=OFFLINE 1=TX_OFFLINE 2=TX_OFFLINE_ACTIVE 3=ONLINE) "
 	         "ctrlMode=%u (1=STARTED 2=STOPPED)\r\n",
 	         (unsigned)pdu, (unsigned)ctrl);
+	/* 自测自动发送的当前状态。量产件这里恒为 off —— 如果现场看到 on，
+	 * 说明有人执行过 `can auto on` 而没关，可以直接定位。 */
+	sh_print("[can] selftest auto-tx=%s   (`can auto on|off`)\r\n",
+	         CanTest_IsAutoTx() ? "on" : "off");
 }
 
 /**
@@ -140,6 +145,25 @@ static int sh_cmd_can(int argc, char *argv[])
 		sh_puts(SH_RET_OK);
 		return SH_OK;
 	}
+	if (strcmp(sub, "auto") == 0) {
+		/* 自测帧自动发送开关（A3）。默认 off，只有回归脚本会打开。
+		 * 不带参数时只查询，方便脚本"先读后设"。 */
+		if (argc <= 2) {
+			sh_print("[can] selftest auto-tx=%s\r\n", CanTest_IsAutoTx() ? "on" : "off");
+			sh_puts(SH_RET_OK);
+			return SH_OK;
+		}
+		if (strcmp(argv[2], "on") == 0) {
+			CanTest_SetAutoTx(TRUE);
+		} else if (strcmp(argv[2], "off") == 0) {
+			CanTest_SetAutoTx(FALSE);
+		} else {
+			sh_puts(SH_RET_PARA);
+			return SH_ERR_PARAM;
+		}
+		sh_puts(SH_RET_OK);
+		return SH_OK;
+	}
 	if (argc > 2) {
 		return can_cmd_set(sub, argv[2]);
 	}
@@ -148,6 +172,6 @@ static int sh_cmd_can(int argc, char *argv[])
 	return SH_ERR_PARAM;
 }
 
-SH_EXPORT_CMD(can, sh_cmd_can, "can [pdu|ctrl|trcv|counters|regs|burst|matrix] -- CAN control");
+SH_EXPORT_CMD(can, sh_cmd_can, "can [pdu|ctrl|trcv|auto|counters|regs|burst|matrix] -- CAN control");
 
 #endif /* !SH_DISABLE_CMD_CAN */

@@ -39,6 +39,19 @@ static uint8_t s_txData[8] = { 0u, 1u, 2u, 3u, 4u, 5u, 6u, 7u };
 /** @brief CAN1 发送缓冲（首字节滚动，其余 C3 便于在总线上认出是 CAN1） */
 static uint8_t s_tx1Data[8] = { 0u, 0xC3u, 0xC3u, 0xC3u, 0xC3u, 0xC3u, 0xC3u, 0xC3u };
 
+/**
+ * @brief 主循环自动周期发送开关（A3 测试隔离）
+ *
+ * @note  **上电默认 `false`**。理由见 `can_test.h` 里 `CanTest_SetAutoTx()`
+ *        的说明：0x123 / 0x124 是驱动层自测帧，不是整车矩阵报文，
+ *        不能跟着量产固件上总线。回归脚本用 `can auto on` 显式打开。
+ *
+ * @warning 用 `bool` 而不是 `boolean`：本文件已 include `<stdbool.h>`，
+ *          且这是**单字节**标志，主循环读、命令层写，Cortex-M4 上单字节
+ *          读写是原子的，不需要关中断保护。
+ */
+static volatile bool s_autoTx = false;
+
 /** @brief 扩展帧发送缓冲（首字节是滚动计数，其余填 A5 便于肉眼识别） */
 static uint8_t s_extTxData[8] = { 0u, 0xA5u, 0xA5u, 0xA5u, 0xA5u, 0xA5u, 0xA5u, 0xA5u };
 
@@ -151,6 +164,9 @@ void CanTest_Init(void)
 	 * 现在顺序就是表里的行序，加模块只改表。
 	 * ------------------------------------------------------------------ */
 
+	/* 自动周期发送**默认关闭**（A3）：本函数不打开 `s_autoTx`。
+	 * 它由 `can auto on` 命令显式打开，只在回归期间生效。 */
+
 	/* CAN1 仍然是「测试用通道」：没有 NM、没有 Com，不在 ComM/CanSM 管理之下，
 	 * 所以它的控制器要在这里手动启动。CAN0 不在这里启动 —— 那是 CanSM 的职责，
 	 * 手工再启动一次会和 CanSM 的 PRE_FULLCOM 状态机抢控制器。
@@ -162,12 +178,11 @@ void CanTest_Init(void)
 	(void)CanIf_SetPduMode(1u, CANIF_ONLINE);
 
 	Platform_Puts("  can   : CAN0 + CAN1, 500 kbps\n");
-	Platform_Puts("          CAN0 TX 0x123/500ms + 0x18FF0002/1000ms (ext)\n");
-	Platform_Puts("          CAN0 RX 0x321 + 0x18FF0001 (ext)\n");
-	Platform_Puts("          CAN1 TX 0x124/500ms\n");
-	Platform_Puts("          CAN1 RX 0x322\n");
+	Platform_Puts("          CAN1 TX 6 条真实矩阵报文（Com 周期驱动）\n");
+	Platform_Puts("          CAN1 RX 34 条（CanIf -> PduR -> Com）\n");
 	Platform_Puts("  diag  : 0x7E0 -> 0x7E8 (ISO-TP, 10 03 / 22 F1 90 / 3E 00)\n");
 	Platform_Puts("  stack : EcuM -> ComM -> CanSM -> CanIf (0x500 NM / 0x200 Sig)\n");
+	Platform_Puts("  selftest: 0x123/0x124 自动发送 **关闭**（`can auto on` 打开）\n");
 
 	/* 接收过滤表自检：二分查找要求"按 canid 升序 + 掩码项在末尾"，
 	 * 违反了不会报错、只会"某条报文收不到"。这里只打日志不阻断 ——
@@ -175,6 +190,33 @@ void CanTest_Init(void)
 	if (!CanIfCfg_CheckRxOrder()) {
 		Platform_Puts("  [warn] CanIf RX 过滤表顺序非法（二分查找会漏项）\n");
 	}
+}
+
+/**
+ * @brief 开关主循环自动周期发送（A3 测试隔离）
+ * @param[in] on `TRUE` = 允许 0x123 / 0x124 / 扩展帧按时发送
+ *
+ * @note 唯一的调用者是 `cmd/can_cmd.c` 的 `can auto on|off`。
+ *        `main.c` 只**读**本标志，不写 —— 这样"谁把调试帧打开过"
+ *        只有一个入口，出问题时 grep 得到。
+ */
+void CanTest_SetAutoTx(boolean on)
+{
+	s_autoTx = (on != FALSE);
+	if (s_autoTx) {
+		Platform_Puts("  [can] selftest auto-tx: ON  (0x123 / 0x124 / ext)\n");
+	} else {
+		Platform_Puts("  [can] selftest auto-tx: OFF\n");
+	}
+}
+
+/**
+ * @brief 查询主循环自动周期发送是否打开
+ * @return `TRUE` = 打开
+ */
+boolean CanTest_IsAutoTx(void)
+{
+	return (s_autoTx ? TRUE : FALSE);
 }
 
 /**

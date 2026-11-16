@@ -85,8 +85,19 @@ def main():
 	# ---- 1) 启动横幅 ----
 	time.sleep(0.4)
 	boot = ser.read(16384).decode("utf-8", "replace")
-	results.append(("横幅: bring-up (M1)", "(M1)" in boot))
-	results.append(("横幅: CAN 配置行", "can   : CAN0 500 kbps" in boot))
+	# 断言从 "(M1)" 改为 "bring-up"：横幅里的里程碑号会随版本变化
+	# （现在打的是 (M4)），钉死具体编号等于让这条断言每次都过期。
+	results.append(("横幅: bring-up", "bring-up" in boot))
+	results.append(("横幅: CAN 配置行", "CAN0 + CAN1, 500 kbps" in boot))
+
+	# ---- 1b) 打开自测帧自动发送（A3）----
+	# 0x123 / 0x124 现在是**默认关闭**的驱动层自测帧（见 can_test.h
+	# 的 CanTest_SetAutoTx 说明），量产固件不会主动发。本脚本测的正是
+	# 这两条帧，所以必须显式打开。
+	ser.write(b"can auto on\n")
+	ser.flush()
+	time.sleep(0.3)
+	ser.read(4096)
 
 	# ---- 2) TX：0x123 且数据逐帧 +1 ----
 	# 先把 Kvaser 缓冲里的旧帧读掉：复位前那批帧的序号与复位后接不上，
@@ -142,7 +153,9 @@ def main():
 	resp = ser.read(16384).decode("utf-8", "replace")
 
 	results.append(("RX: 板子打印 [can] rx", "[can] rx" in resp))
-	results.append(("RX: ID 为 0x321", "id=0x321" in resp))
+	# 打印格式在 M2 之后变成 `pdu=N (CAN0 0x321)`，不再是 `id=0x321`。
+	# 断言宽松到"能认出这是 0x321 就行"，格式再改也不会立刻失效。
+	results.append(("RX: ID 为 0x321", "0x321" in resp))
 	results.append(("RX: 数据 8 字节全部正确",
 					"de ad be ef 01 02 03 04" in resp.lower()))
 

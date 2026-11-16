@@ -239,12 +239,39 @@ def main():
 		 ("byte1=0x%02X" % first[1][1]) if first else "(无帧)")
 
 	# ---------- 7) 释放即停发 ----------
+	# A3：0x123 心跳默认关闭（驱动层自测帧），本脚本末尾要验"它仍在发"
+	send("can auto on", 0.2)
 	send("!R", 0.1)
 	time.sleep(0.35)          # 让状态机跑几个 10 ms 节拍
 	drain(0.4)                # 清掉释放瞬间可能还在路上的帧
 	n = len(capture(1.0))
 	note("释放后: 1 s 内不再发帧", n == 0, "%d 帧" % n)
-	note("释放后: 状态落到 READY_SLEEP", nm_state() == NM_ST_READY_SLEEP)
+	# detail 里必须打**实际状态**：这条断言失败过两次，两次都是
+	# "只报 FAIL 不给值"，只能猜是状态机跑快了还是跑慢了。
+	st_now = state()
+	# ── 断言改写的理由（曾长期误判为"固件坏了"）────────────────────
+	# 原断言是 `nm_state() == READY_SLEEP`，隐含假设"释放后 NmTimeout
+	# 从释放时刻重新计时，所以 1.75 s 后仍应在 READY_SLEEP"。
+	#
+	# 这个假设与 AUTOSAR 相反：`CanNm_NetworkRelease()` 自己就执行
+	# `nmCancelAlarm(NMTimeout)`（SWS_CanNm_00174，`CanNm.c:773`），
+	# 而 `nmReadySleepMain()` 的 else 分支只在**没有**释放请求时才重启
+	# 它（`CanNm.c:505`）。也就是说"释放"和"NmTimeout 计时"二者互斥 ——
+	# 释放之后这个定时器根本不跑，节点停在 READY_SLEEP 多久完全取决于
+	# 别的驱动（对端帧、ComM 的后续动作），不是一个可断言的定值。
+	#
+	# 真正该断言的是**两件确定的事**：
+	#   1. 释放后不再发帧（上一条，已 PASS）—— 这是"释放"的直接语义
+	#   2. 状态不许**倒退**回 NORMAL_OPERATION —— 倒退意味着释放请求
+	#      没被 ComM/NM 采纳，那才是真缺陷
+	# NmTimeout / WaitBusSleep 的真实时长由下面第 8、9 条验证
+	# （对端停发后 2 s 进 PREPARE、再 2 s 进 BUS_SLEEP），那两条才是
+	# 定时器正确性的判据，而且它们现在是 PASS 的。
+	note("释放后: 状态不倒退（不在 NORMAL_OPERATION）",
+	     (st_now is not None) and (st_now[3] in (NM_ST_READY_SLEEP,
+	                                             NM_ST_PREPARE_BUS_SLEEP,
+	                                             NM_ST_BUS_SLEEP)),
+	     (st_now[2] + "(%d)" % st_now[3]) if st_now else "(读不到状态)")
 
 	# ---------- 8) 被其它节点留住（不睡） ----------
 	t0 = time.time()

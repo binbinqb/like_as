@@ -2518,17 +2518,138 @@ PASS 24 / 24
 
 M10 22/22、M11 18/18、M19 34/34、M23 24/24，全绿。
 
+### ✅ A1 调度唯一性：四个模块曾每拍各跑两次（已上板，双向证据）
+
+这条来自 Codex 只读复核（R1），实测**比复核所述更严重**：不是 CanTp/Dcm
+两个模块，而是 **CanTp / Dcm / NvM / Dem 四个**每拍各跑两次。
+
+**根因**：`main.c` 的 10 ms 节拍里直接调了这四个，`EcuM_BswService()` 又按
+`EcuM_DriverMainList` 跑一遍同名项，节拍末尾还单独调 `NvM`/`Dem`。
+
+**后果不是"跑快一点"，而是所有时间基准减半**：
+
+| 项 | 配置值 | 改前实测 | 改后实测 |
+|---|---|---|---|
+| Dcm S3 超时 | 5000 ms | **2.547 s** | **5.046 s** |
+| N_Bs / N_Cr | 1000 ms | 500 ms | 1000 ms |
+| Dem 落盘节奏 | — | 每拍两次 | 每拍一次 |
+
+难点在于**当时所有"静默 6.5 s 看是否掉会话"的测试依然是绿的**——它只断言
+"掉了"，不断言"何时掉"。这类错误只能靠静态判据拦住，所以新增
+`tools/a1_sched_check.py`：
+
+| 检查 | 内容 |
+|---|---|
+| 唯一性 | 每个 `*_MainFunction` 的全工程调用点，>1 个即 FAIL |
+| 白名单 | "阻塞等待循环"（`Storage_WaitIdle`）与"条件编译下为空"（`CanIf_Fast`）显式登记，**每条带理由**，配置一改就提醒复核 |
+| 漏调度 | 库里存在但全工程无调用者的 `*_MainFunction` |
+
+结果：0 FAIL / 1 WARN（见下）。
+
+#### 顺带查出一个真实潜伏缺陷：`CanTp_ReSend` 从未被调度
+
+`CanTp_ReSend(Channel)` 全库唯一的内部调用点是
+`CanTp_MainFunction_ChannelFast()` 的 `case CANTP_RESEND_CF`（`CanTp.c:1119`），
+而该函数只被 `CanTp_MainFunction_Fast()` 调用 —— **后者从未被调度**。
+
+于是 `CanTp_TransmitCF()` 里 `CanIf_Transmit()` 返回 `E_NOT_OK`（TX 邮箱全忙）时，
+状态置 `CANTP_RESEND_CF` 后没人推进 → N_As 超时 →
+`CanTp_MainFunction_Channel()` 走 `default` 直接 `ResetToIdle` +
+`TxConfirmation(E_NOT_OK)`。
+
+**现象**：刷写偶发失败（打回 `0x78` 后等不到下一帧），重刷一次往往就好——
+因为邮箱不总是满。这是典型"只在总线负载高时出现"的缺陷，台架空载跑一百次
+也复现不了。修法：把 `CanTp_MainFunction_Fast` 加进 `EcuM_DriverMainList`
+（重发晚 10 ms 完全可接受，N_As 是 1000 ms 量级）。
+
+#### 一条待拍板的配置矛盾（未擅自修）
+
+GEN 里定义了 `CANIF_USE_TX_TIMEOUT`（CanIf 会调 `CanSM_CheckTransmitTimeout`），
+但**全工程没人定义 `USE_CANSM`** → `CanSM.c` 里的超时监控整段被裁掉，
+形成"调用方有、实现方无"的空转。开启会改变结构体布局，列为决策项。
+
+### ✅ A3 测试隔离：驱动层自测帧不再跟着量产固件上总线
+
+`0x123`（CAN0 心跳）和 `0x124`（CAN1）是**驱动层自测帧**，不属于整车矩阵。
+它们留在量产固件里有三个真实问题：
+
+1. 两条非矩阵报文常年占总线（各 500 ms 一帧），网关/网络管理侧会报"未知报文"
+2. `0x124` 与 CAN1 上已接入 Com 的 6 条真实报文**同通道**，排查总线时多一条噪音
+3. 发送失败时往串口打 `[can] CanIf_Transmit(heartbeat) failed`，量产件上刷屏
+
+**做法**：运行时开关而非编译开关。
+
+```c
+void    CanTest_SetAutoTx(boolean on);   /* 命令层唯一写入口 */
+boolean CanTest_IsAutoTx(void);          /* main.c 只读 */
+```
+
+`main.c` 把三处周期发送包进 `if (CanTest_IsAutoTx())`，**上电默认 `false`**；
+恢复靠 `can auto on`。为什么不编译开关：
+
+| 方案 | 代价 |
+|---|---|
+| 编译开关 | 需要量产/回归两个构建变体，M1/M2/M8/M9/M10/M11 六项回归每次都要重编 |
+| **运行时开关（采用）** | 脚本开头多一行 `can auto on`；且 `CanTest_Burst` 等命令触发路径不受影响 |
+
+#### 验收判据（`tools/a3_isolation_check.py`，10/10）
+
+| 判据 | 实测 |
+|---|---|
+| 上电 CAN0 无 0x123 | 0 帧 / 3.0 s |
+| 上电 CAN1 无 0x124 | 0 帧 / 3.0 s |
+| **对照组**：真实矩阵 0x18FE4021 仍在发 | **58 帧 / 3.0 s**（50 ms 周期） |
+| `can` 回读 `auto-tx=off` | 一致 |
+| `can auto on` → 0x123 出现 | 6 帧 / 2.0 s |
+| `can auto on` → 0x124 出现 | 4 帧 / 2.0 s |
+| `can auto off` → 都停发 | 各 0 帧 / 1.5 s |
+
+**对照组那一条是这套判据的关键**：只证明"没发 0x123"太弱——把 CAN 控制器
+停了也能满足。必须同时证明真实报文在发，才能排除"整条链路坏了"。
+
+#### 顺带修掉一条长期误判的 M9 断言
+
+M9 有一条 `释放后: 状态落到 READY_SLEEP`，A1 固件上通过、A3 固件上失败。
+深挖后发现**断言本身不成立**：
+
+`CanNm_NetworkRelease()` 自己就执行 `nmCancelAlarm(NMTimeout)`
+（SWS_CanNm_00174，`CanNm.c:773`），而 `nmReadySleepMain()` 的 else 分支
+只在**没有**释放请求时才重启它（`CanNm.c:505`）。也就是说"释放"与
+"NmTimeout 计时"二者互斥——释放后这个定时器根本不跑，节点停在
+`READY_SLEEP` 多久取决于别的驱动，**不是一个可断言的定值**。
+
+改为断言两件确定的事：① 释放后不再发帧（核心语义）② 状态不倒退
+回 `NORMAL_OPERATION`（倒退才是真缺陷）。NmTimeout / WaitBusSleep 的
+真实时长由后续两条验证（对端停发 2 s 进 PREPARE、再 2 s 进 BUS_SLEEP），
+那两条一直 PASS。
+
 ### 尚未完成（下一步）
 
 1. **0x27 换成真算法**：现在 `27 01/02` 是桩（种子返回 0、key 任意），
    刷写链路的 `securityMask` 因此形同虚设 —— 上车前必须补 SWS 里的种子-密钥算法。
    **（本轮按决定暂不换，保持固定桩。）**
-2. **M23 余下部分**：绑定层骨架已落地（灯光 11 条 + 手刹 1 条），还剩
+2. **A2 信号有效性接口**：`Com_ReceiveSignal()` 的 `E_OK` 是恒真的
+   （`Com.c:137`，只有 UpdateBit 未置位才失败），**不携带"收到过没有"**。
+   标准做法是 Com 支持 `ComSignalDataInvalidValue` + `InvalidNotification`
+   + data status，RTE 才能区分 `RTE_E_INVALID`（对方说它坏了）与
+   `RTE_E_NEVER_RECEIVED`（对方没告诉我）。当前是**应用侧**用"FAULT 从
+   raw 值恢复 + 初值 0xFF"这个次优替代。要补就得先定 D9（`infras/` 改动权限）。
+3. **A4 生成一致性**：两个 sync 脚本已验证幂等，但 `Com_Cfg.c` 是**生成物
+   却被 git 跟踪**（`GEN/` 在 ignore 里、它不在），重新生成时是否覆盖了
+   某处手改无法自动发现。
+4. **A5/A8 掉电安全**：Boot 异常恢复（镜像校验失败 / rollback / 双槽边界）
+   可以软件构造，"擦除中断电""写入中断电"需要**程控电源**；
+   NvM 的掉电写策略同样卡在这里。
+5. **A6 资源预算**：栈水位（0xAA 填充扫描）、中断延迟（DWT_CYCCNT）、
+   App 单槽余量都要量化。
+6. **A9 业务骨架**：端到端链路可打通，但"用哪路 GPIO 做输出"要定，
+   否则只能随便挑一路。
+7. **M23 余下部分**：绑定层骨架已落地（灯光 11 条 + 手刹 1 条），还剩
    - 命令型信号需要**动作枚举**（`CentralLockSw` 的 `lock`/`unlock`、
      `_WinSw` 的 `up`/`down`），塞进开关枚举会把 `unlock` 读成"故障"
    - 模拟量需要 `物理值 = raw × factor + offset`（`TachographVehicleSpeed`
      的 factor 是 1/256，Com 返回 raw 4660 = 18.2 km/h），表结构要扩字段
    - 其余 360 个信号的语义，以及 14 个矩阵**没给枚举表**的接收信号
      （如 `IC_MSG.DoorOpenSw`）需要向福田确认
-3. 业务功能 145 项（设计评审第 4 步），消费绑定层。
-4. 模块级 `cmd/` 目录约定。
+8. 业务功能 145 项（设计评审第 4 步），消费绑定层。
+9. 模块级 `cmd/` 目录约定。

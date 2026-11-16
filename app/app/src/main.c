@@ -341,27 +341,44 @@ int main(void)
 		 *    旧 `!x` 兼容桥与单字符分发已删除。 */
 		ShApp_Task();
 
-		/* 2) CAN 标准帧周期发送（500 ms，两个通道各一帧） */
-		if ((uint32_t)(Platform_NowMs() - nextTx) >= CAN_TX_PERIOD_MS) {
-			nextTx = Platform_NowMs();
-			CanTest_SendOne();      /* CAN0 0x123：8 字节全递增 */
-			CanTest_SendCan1();     /* CAN1 0x124：首字节递增 */
+		/* 2) CAN 自测帧周期发送（500 ms / 1000 ms）
+		 *
+		 *    ★ A3 测试隔离：`0x123`（CAN0 心跳）和 `0x124`（CAN1）是
+		 *    **驱动层自测帧**，不属于整车通信矩阵。它们默认不发 ——
+		 *    `s_autoTx` 上电为 `FALSE`，只有 `can auto on` 才打开。
+		 *
+		 *    为什么必须隔离：这两条帧常年占着总线（各 500 ms 一帧），
+		 *    网关/网络管理侧会报"未知报文"；而 `0x124` 与 CAN1 上已经
+		 *    接入 Com 的 6 条真实报文同通道，排查总线问题时多一条噪音源。
+		 *    更要紧的是发送失败时它会往串口打
+		 *    `[can] CanIf_Transmit(heartbeat) failed` —— 量产件上刷屏。
+		 *
+		 *    保留而不是删除的理由：M1/M2 验收的就是"CAN 驱动能不能收发"，
+		 *    删掉等于把驱动层唯一的端到端自测手段拆了。
+		 *
+		 *    注意 `Fault_PollBusOff()` 与 `CanTest_DrainRx()` **不在**这个
+		 *    开关里：前者只读寄存器，后者只在中断已置标志时打一行串口，
+		 *    都不会主动占总线。 */
+		if (CanTest_IsAutoTx()) {
+			if ((uint32_t)(Platform_NowMs() - nextTx) >= CAN_TX_PERIOD_MS) {
+				nextTx = Platform_NowMs();
+				CanTest_SendOne();      /* CAN0 0x123：8 字节全递增 */
+				CanTest_SendCan1();     /* CAN1 0x124：首字节递增 */
+			}
+			if ((uint32_t)(Platform_NowMs() - nextExt) >= CAN_EXT_TX_PERIOD_MS) {
+				nextExt = Platform_NowMs();
+				CanTest_SendExt();
+			}
 		}
 
-		/* 3) CAN 扩展帧周期发送（1000 ms） */
-		if ((uint32_t)(Platform_NowMs() - nextExt) >= CAN_EXT_TX_PERIOD_MS) {
-			nextExt = Platform_NowMs();
-			CanTest_SendExt();
-		}
-
-		/* 4) CAN 收帧打印 */
+		/* 3) CAN 收帧打印（只打印中断已收到的帧，不主动发送） */
 		CanTest_DrainRx();
 
-		/* 4b) 总线故障：检测 bus-off、记录、复查恢复
+		/* 3b) 总线故障：检测 bus-off、记录、复查恢复
 		 *     放在主循环而不是中断里，理由见 `Fault_PollBusOff` 的注释 */
 		Fault_PollBusOff();
 
-		/* 5) BSW 周期任务：**必须按固定周期调用，不能放在自由循环里**
+		/* 4) BSW 周期任务：**必须按固定周期调用，不能放在自由循环里**
 		 *
 		 *    定时器型模块（CanTp / Dcm / Com / Nm）的计数都是"每次
 		 *    MainFunction 递减一次"（见 `CanTp_Priv.h` 的 `CanTpSignalAlarm`），
