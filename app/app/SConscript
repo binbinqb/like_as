@@ -54,6 +54,10 @@ APP_CPPPATH = ["$Cvm0146", "$INFRAS", "$Shell", "$Shell_Cfg", "$Board_Cfg", "$Sh
                "$ComM_Cfg", "$CanSM_Cfg",
                # $EcuM：EcuM_Priv.h（`EcuM_Cfg.c` 要填配置结构）
                "$EcuM",
+               # Com 的私有头：`com can1` 要读 IPdu 的运行期 timer / bTxRetry
+               # （`Com_Priv.h`）。Com 库自己把 CWD 加进了它的私有 CPPPATH，
+               # 但不对外导出 —— 这里显式加，只影响 app 的编译单元。
+               os.path.join(CWD, "..", "..", "infras", "communication", "Com"),
                # 本应用源码目录：cmd/ 子目录里的命令文件要 include
                # 上层目录的 xxx_Cfg.h（如 EcuM_Cfg.h），靠它兜住
                os.path.join(CWD, "src")]
@@ -76,9 +80,13 @@ class _AppImageBase(Application):
         # 命令裁剪：Shell.json 的 disabledCmds → SH_DISABLE_CMD_<NAME>
         for _n in DISABLED_CMDS:
             self.Append(CPPDEFINES=["SH_DISABLE_CMD_%s" % str(_n).upper()])
-        # 命令裁剪：Shell.json 的 disabledCmds → SH_DISABLE_CMD_<NAME>
-        for _n in DISABLED_CMDS:
-            self.Append(CPPDEFINES=["SH_DISABLE_CMD_%s" % str(_n).upper()])
+        # USE_PDUR：让生成的 `Com_Cfg.c` 把 TX 的 `TxPduId` 写成 PduR 的
+        # **路径号**（`PDUR_CAN1_*_TX`），而不是它自己的 PDU 下标。
+        # 生成器里这是 `#ifdef USE_PDUR` 分支（Com.py:225），
+        # 不定义就会退回 `COM_ECUC_PDUID_OFFSET + COM_xxx` —— 编得过、
+        # 但 Com 周期发送会打到 PduR 的**诊断路径**上，总线上出现的是
+        # 一串发不出去的请求（NRC 只在 ASLOG 里，本工程没开）。
+        self.Append(CPPDEFINES=["USE_PDUR"])
         self.source = objs
         self.Append(LINKFLAGS=[
             # 启动由厂商 startup_M014x_gcc.S 提供，不要 newlib 的 crt0

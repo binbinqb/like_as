@@ -155,6 +155,16 @@ static const EcuM_DriverMainFncType EcuM_DriverMainList[] = {
 	CanSM_MainFunction,   /* 控制器模式请求 + bus-off 恢复计时 */
 	ComM_MainFunction,    /* 通信模式仲裁 */
 	Com_MainFunction,     /* 信号打包/周期发送 + 解包 + 信号超时 */
+	/**
+	 * @brief 发送失败重试（`bTxRetry` 的唯一推进者）
+	 * @note  M22 之前这张表里没有它，后果是：`PduR_ComTransmit` 只要失败一次
+	 *        （CanIf 邮箱忙、Can_Write 提前返回），Com 就把 `bTxRetry` 置起
+	 *        等重发 —— 而**没人推进这个标志**，那条报文就永远停在"发过一次"。
+	 *        现象极隐蔽：Kvaser 上每个 ID 只出现 1 帧，`com can1` 里
+	 *        `retry=1`，而 t 还在正常回卷。
+	 *        它和 `Com_MainFunction` 同周期调用即可（内部只扫 bTxRetry 为真的项）。
+	 */
+	Com_MainFunction_Fast,
 	CanNm_MainFunction,   /* NM 状态机 */
 	Nm_MainFunction,      /* Nm 分发层（当前为空实现） */
 	CanTp_MainFunction,   /* ISO-TP 分段/重组 */

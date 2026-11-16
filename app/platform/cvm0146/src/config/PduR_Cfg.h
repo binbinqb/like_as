@@ -117,7 +117,112 @@
  */
 #define PDUR_COM_TX_CONFIRM     (8u)
 
+/**
+ * @brief 手写路径数：诊断 4 + NM 2 + 测试 3
+ * @note  改这里的同时必须改 `PduR_Cfg.c` 里的 `PduR_SrcPdu[]` / `PduR_DstPdu[]` /
+ *        `PduR_RoutingPaths[]` 三张表 —— 它们是**全量初始化**，
+ *        少一条是编译错（`-Wmissing-field-initializers` 不报，但其余条目会
+ *        整体前移一位），所以宁可让它显式写在一起。
+ */
+#define PDUR_MANUAL_PATHS       (9u)
+
+/* @generated BEGIN: CAN1 real matrix */
+/*
+ * CAN1 报文路由（由 tools/sync_pdur.py 从 dbc/can1.dbc 生成，勿手改）
+ *
+ * 每条报文一条路径：RX 是 CanIf→Com，TX 是 Com→CanIf。
+ * 路径号从 9u 起 —— 0~8u 归诊断/NM/测试（见文件前半部分）。
+ */
+/** @brief 0x18FE4021 BCM_LCSF（发送） */
+#define PDUR_CAN1_BCM_LCSF_TX              (9u)
+/** @brief 0x18FF0C21 BCM_Ctrl（发送） */
+#define PDUR_CAN1_BCM_CTRL_TX              (10u)
+/** @brief 0x0CFDCC21 BCM_OEL（发送） */
+#define PDUR_CAN1_BCM_OEL_TX               (11u)
+/** @brief 0x18FDCD21 BCM_OWW（发送） */
+#define PDUR_CAN1_BCM_OWW_TX               (12u)
+/** @brief 0x18FE4E21 BCM_DoorCtrl（发送） */
+#define PDUR_CAN1_BCM_DOOR_CTRL_TX         (13u)
+/** @brief 0x18FECA21 BCM_DM1（发送） */
+#define PDUR_CAN1_BCM_DM1_TX               (14u)
+/** @brief 0x14F02B54 Crash_Notification（接收，来自 NODE_54） */
+#define PDUR_CAN1_CRASH_NOTIFICATION_RX    (15u)
+/** @brief 0x18FEF500 AMB_Ambient_Conditions（接收，来自 NODE_00） */
+#define PDUR_CAN1_AMB_AMBIENT_CONDITIONS_RX (16u)
+/** @brief 0x18FF0534 PEPS1（接收，来自 NODE_34） */
+#define PDUR_CAN1_PEPS1_RX                 (17u)
+/** @brief 0x18FF7534 PEPS2（接收，来自 NODE_34） */
+#define PDUR_CAN1_PEPS2_RX                 (18u)
+/** @brief 0x10FFB634 PEPS_ESCLM（接收，来自 NODE_34） */
+#define PDUR_CAN1_PEPS_ESCLM_RX            (19u)
+/** @brief 0x18EEFF00 ACL（接收，来自 NODE_00） */
+#define PDUR_CAN1_ACL_RX                   (20u)
+/** @brief 0x0CFD9200 EOI（接收，来自 NODE_00） */
+#define PDUR_CAN1_EOI_RX                   (21u)
+/** @brief 0x18F00503 ETC2（接收，来自 NODE_03） */
+#define PDUR_CAN1_ETC2_RX                  (22u)
+/** @brief 0x10FFB04D ESCL1（接收，来自 NODE_4D） */
+#define PDUR_CAN1_ESCL1_RX                 (23u)
+/** @brief 0x10FFB24D ESCLM_PEPS（接收，来自 NODE_4D） */
+#define PDUR_CAN1_ESCLM_PEPS_RX            (24u)
+/** @brief 0x18FF904D ESCL_NM（接收，来自 NODE_4D） */
+#define PDUR_CAN1_ESCL_NM_RX               (25u)
+/** @brief 0x18FF0CEC DW_State（接收，来自 NODE_EC） */
+#define PDUR_CAN1_DW_STATE_RX              (26u)
+/** @brief 0x18FF0917 IC_MSG（接收，来自 NODE_17） */
+#define PDUR_CAN1_IC_MSG_RX                (27u)
+/** @brief 0x0CF00400 EEC1_Electronic_Engine_Controller_1（接收，来自 NODE_00） */
+#define PDUR_CAN1_EEC1_ELECTRONIC_ENGINE_CONTROLLER_1_RX (28u)
+/** @brief 0x18FEF121 CCVS（接收，来自 NODE_21） */
+#define PDUR_CAN1_CCVS_RX                  (29u)
+/** @brief 0x18FF12EF VCU_4（接收，来自 NODE_EF） */
+#define PDUR_CAN1_VCU_4_RX                 (30u)
+/** @brief 0x0CFE6CEE TCO1（接收，来自 NODE_EE） */
+#define PDUR_CAN1_TCO1_RX                  (31u)
+/** @brief 0x18FEF433 TireCondition（接收，来自 NODE_33） */
+#define PDUR_CAN1_TIRE_CONDITION_RX        (32u)
+/** @brief 0x18FECA33 DM1_TPMS（接收，来自 NODE_33） */
+#define PDUR_CAN1_DM1_TPMS_RX              (33u)
+/** @brief 0x18F0010B EBC1_Electronic_Brake_Controller_1（接收，来自 NODE_0B） */
+#define PDUR_CAN1_EBC1_ELECTRONIC_BRAKE_CONTROLLER_1_RX (34u)
+/** @brief 0x18FDC40B EBC5_Electronic_Brake_Controller_5（接收，来自 NODE_0B） */
+#define PDUR_CAN1_EBC5_ELECTRONIC_BRAKE_CONTROLLER_5_RX (35u)
+/** @brief 0x18FD0700 DLCC1_Direct_Lamp_Control_Command_1（接收，来自 NODE_00） */
+#define PDUR_CAN1_DLCC1_DIRECT_LAMP_CONTROL_COMMAND_1_RX (36u)
+/** @brief 0x18FEF100 CCVS1_Cruise_Control_Vehicle_Speed_1（接收，来自 NODE_00） */
+#define PDUR_CAN1_CCVS1_CRUISE_CONTROL_VEHICLE_SPEED_1_RX (37u)
+/** @brief 0x18FE4F0B VDC1_Vehicle_Dynamic_Stability_Control_1（接收，来自 NODE_0B） */
+#define PDUR_CAN1_VDC1_VEHICLE_DYNAMIC_STABILITY_CONTROL_1_RX (38u)
+/** @brief 0x18F0000F ERC1（接收，来自 NODE_0F） */
+#define PDUR_CAN1_ERC1_RX                  (39u)
+/** @brief 0x18F00000 ERC3（接收，来自 NODE_00） */
+#define PDUR_CAN1_ERC3_RX                  (40u)
+/** @brief 0x1CFEC321 ETC5（接收，来自 NODE_21） */
+#define PDUR_CAN1_ETC5_RX                  (41u)
+/** @brief 0x18FFBA19 EEC3（接收，来自 NODE_19） */
+#define PDUR_CAN1_EEC3_RX                  (42u)
+/** @brief 0x18FFBC19 ECC2（接收，来自 NODE_19） */
+#define PDUR_CAN1_ECC2_RX                  (43u)
+/** @brief 0x18FF4C56 ID1（接收，来自 NODE_56） */
+#define PDUR_CAN1_ID1_RX                   (44u)
+/** @brief 0x18FF4D56 ID2（接收，来自 NODE_56） */
+#define PDUR_CAN1_ID2_RX                   (45u)
+/** @brief 0x18FF4E56 ID3（接收，来自 NODE_56） */
+#define PDUR_CAN1_ID3_RX                   (46u)
+/** @brief 0x1CECFF21 TP_CM（接收，来自 NODE_21） */
+#define PDUR_CAN1_TP_CM_RX                 (47u)
+/** @brief 0x1CEBFF21 TP_DT（接收，来自 NODE_21） */
+#define PDUR_CAN1_TP_DT_RX                 (48u)
+/** @brief 0x200 信号测试帧（M10） */
+#define PDUR_CANTEST_TX_TEST               (49u)
+/** @brief 0x201 信号测试帧（M10） */
+#define PDUR_CANTEST_RX_TEST               (50u)
+
+/** @brief 生成段路径数（供 PDUR_NUM_ROUTING_PATHS 相加） */
+#define PDUR_CAN1_PATHS         (42u)
+/* @generated END: CAN1 real matrix */
+
 /** @brief 路径总数（= `RoutingPaths[]` 长度） */
-#define PDUR_NUM_ROUTING_PATHS  (9u)
+#define PDUR_NUM_ROUTING_PATHS  (PDUR_MANUAL_PATHS + PDUR_CAN1_PATHS)
 
 #endif /* PDUR_CFG_H */

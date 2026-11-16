@@ -35,8 +35,16 @@ def gen_rx_sig_cfg(sig, C):
         C.write("  %s%s_TimeoutSubstitutionValue,\n" % ("" if t0 in ["UINT8N", "SINT8N"] else "&", sig["name"]))
     else:
         C.write("  NULL, /* TimeoutSubstitutionValue */\n")
-    C.write("  %s, /* FirstTimeout */\n" % (FirstTimeout))
-    C.write("  %s, /* Timeout */\n" % (Timeout))
+    # 单位换算：信号级 Timeout 的配置单位是 **Com 主函数周期数**，
+    # 而 JSON 里的 `Timeout` / `FirstTimeout` 是**毫秒**（与 IPdu 级
+    # `gen_rx_msg_cfg` 的写法一致）。原版这里直接写裸数字，于是 JSON
+    # 写 1000 ms 会被当成 1000 个 10 ms 拍 = **10 秒**才超时，表现为
+    # "信号超时像没实现"（实测 2.6 s 读到的还是最后一帧的值）。
+    # 本工程改成与 IPdu 级相同的换算，JSON 侧只写毫秒。
+    C.write("  %s, /* FirstTimeout */\n"
+            % ("COM_CONVERT_MS_TO_MAIN_CYCLES(%su)" % FirstTimeout if FirstTimeout != 0 else "0"))
+    C.write("  %s, /* Timeout */\n"
+            % ("COM_CONVERT_MS_TO_MAIN_CYCLES(%su)" % Timeout if Timeout != 0 else "0"))
     C.write("  COM_ACTION_%s, /* DataInvalidAction */\n" % (DataInvalidAction))
     C.write("  COM_ACTION_%s, /* RxDataTimeoutAction */\n" % (RxDataTimeoutAction))
     C.write("};\n\n")

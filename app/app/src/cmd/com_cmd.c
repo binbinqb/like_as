@@ -32,6 +32,8 @@ static int sh_cmd_com(int argc, char *argv[])
 		ComCmd_DumpSignals();
 	} else if (strcmp(sub, "group") == 0) {
 		ComCmd_GroupToggle();
+	} else if (strcmp(sub, "can1") == 0) {
+		ComCmd_DumpCan1();
 	} else {
 		sh_puts(SH_RET_PARA);
 		return SH_ERR_PARAM;
@@ -41,6 +43,6 @@ static int sh_cmd_com(int argc, char *argv[])
 	return SH_OK;
 }
 
-SH_EXPORT_CMD(com, sh_cmd_com, "com [sig|group] -- signal dump / ipdu group toggle");
+SH_EXPORT_CMD(com, sh_cmd_com, "com [sig|group|can1] -- signal dump / ipdu group toggle / can1 pdu state");
 
 #endif /* !SH_DISABLE_CMD_COM */

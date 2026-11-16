@@ -43,6 +43,7 @@ bool Storage_IsReady(void);          /**< 存储栈是否就绪 */
 void ComApp_Tick(void);              /**< 主循环 10 ms 节拍：更新 TX 信号 */
 void ComCmd_DumpSignals(void);       /**< 旧 `!v`：信号 dump */
 void ComCmd_GroupToggle(void);       /**< 旧 `!y`：IPdu 分组启停 */
+void ComCmd_DumpCan1(void);          /**< M22：CAN1 报文定时器 + 关键信号 */
 
 #ifdef __cplusplus
 }

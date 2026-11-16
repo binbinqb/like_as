@@ -335,240 +335,448 @@ static const CanIf_RxPduType CanIf_RxPdus_CAN0[] = {
  *          `CanIf_RxDispatch()` 是按 `ControllerId` 选表后各自二分的。
  */
 /* @generated BEGIN: CAN1 real matrix */
+/* ---- PduR 回调 shim（M22）----
+ *
+ * 每条报文一个：`CanIf_RxPduType` / `CanIf_TxPduType` 只有函数指针、
+ * 没有 context 字段，所以 pathId 只能靠「每条一个函数」带进去。
+ * 先调 App 的统计回调再进 PduR —— 统计是 `!k` / `!b` 的数据源。
+ */
+static void CanIfCfg_TxPduR_CAN1_LCSF(PduIdType TxPduId, Std_ReturnType result)
+{
+	App_CanIfTxConfirmation(TxPduId, result);      /* `!b` burst 的确认计数 */
+	PduR_CanIfTxConfirmation((PduIdType)PDUR_CAN1_BCM_LCSF_TX, result);
+} /* BCM_LCSF → CANIF_TX_CAN1_LCSF */
+static void CanIfCfg_TxPduR_CAN1_CTRL(PduIdType TxPduId, Std_ReturnType result)
+{
+	App_CanIfTxConfirmation(TxPduId, result);      /* `!b` burst 的确认计数 */
+	PduR_CanIfTxConfirmation((PduIdType)PDUR_CAN1_BCM_CTRL_TX, result);
+} /* BCM_Ctrl → CANIF_TX_CAN1_CTRL */
+static void CanIfCfg_TxPduR_CAN1_OEL(PduIdType TxPduId, Std_ReturnType result)
+{
+	App_CanIfTxConfirmation(TxPduId, result);      /* `!b` burst 的确认计数 */
+	PduR_CanIfTxConfirmation((PduIdType)PDUR_CAN1_BCM_OEL_TX, result);
+} /* BCM_OEL → CANIF_TX_CAN1_OEL */
+static void CanIfCfg_TxPduR_CAN1_OWW(PduIdType TxPduId, Std_ReturnType result)
+{
+	App_CanIfTxConfirmation(TxPduId, result);      /* `!b` burst 的确认计数 */
+	PduR_CanIfTxConfirmation((PduIdType)PDUR_CAN1_BCM_OWW_TX, result);
+} /* BCM_OWW → CANIF_TX_CAN1_OWW */
+static void CanIfCfg_TxPduR_CAN1_DOOR(PduIdType TxPduId, Std_ReturnType result)
+{
+	App_CanIfTxConfirmation(TxPduId, result);      /* `!b` burst 的确认计数 */
+	PduR_CanIfTxConfirmation((PduIdType)PDUR_CAN1_BCM_DOOR_CTRL_TX, result);
+} /* BCM_DoorCtrl → CANIF_TX_CAN1_DOOR */
+static void CanIfCfg_TxPduR_CAN1_DM1(PduIdType TxPduId, Std_ReturnType result)
+{
+	App_CanIfTxConfirmation(TxPduId, result);      /* `!b` burst 的确认计数 */
+	PduR_CanIfTxConfirmation((PduIdType)PDUR_CAN1_BCM_DM1_TX, result);
+} /* BCM_DM1 → CANIF_TX_CAN1_DM1 */
+
+static void CanIfCfg_RxPduR_CAN1_EEC1_ELECTRONIC_ENGINE_CONTROLLER_1(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_EEC1_ELECTRONIC_ENGINE_CONTROLLER_1_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_EOI(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_EOI_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_TCO1(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_TCO1_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_ESCL1(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_ESCL1_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_ESCLM_PEPS(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_ESCLM_PEPS_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_PEPS_ESCLM(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_PEPS_ESCLM_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_CRASH_NOTIFICATION(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_CRASH_NOTIFICATION_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_ACL(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_ACL_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_ERC3(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_ERC3_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_ERC1(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_ERC1_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_EBC1_ELECTRONIC_BRAKE_CONTROLLER_1(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_EBC1_ELECTRONIC_BRAKE_CONTROLLER_1_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_ETC2(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_ETC2_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_DLCC1_DIRECT_LAMP_CONTROL_COMMAND_1(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_DLCC1_DIRECT_LAMP_CONTROL_COMMAND_1_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_EBC5_ELECTRONIC_BRAKE_CONTROLLER_5(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_EBC5_ELECTRONIC_BRAKE_CONTROLLER_5_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_VDC1_VEHICLE_DYNAMIC_STABILITY_CONTROL_1(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_VDC1_VEHICLE_DYNAMIC_STABILITY_CONTROL_1_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_DM1_TPMS(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_DM1_TPMS_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_CCVS1_CRUISE_CONTROL_VEHICLE_SPEED_1(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_CCVS1_CRUISE_CONTROL_VEHICLE_SPEED_1_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_CCVS(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_CCVS_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_TIRE_CONDITION(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_TIRE_CONDITION_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_AMB_AMBIENT_CONDITIONS(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_AMB_AMBIENT_CONDITIONS_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_PEPS1(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_PEPS1_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_IC_MSG(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_IC_MSG_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_DW_STATE(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_DW_STATE_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_VCU_4(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_VCU_4_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_ID1(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_ID1_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_ID2(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_ID2_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_ID3(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_ID3_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_PEPS2(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_PEPS2_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_ESCL_NM(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_ESCL_NM_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_EEC3(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_EEC3_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_ECC2(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_ECC2_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_TP_DT(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_TP_DT_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_TP_CM(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_TP_CM_RX, PduInfoPtr);
+}
+static void CanIfCfg_RxPduR_CAN1_ETC5(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
+{
+	App_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_ETC5_RX, PduInfoPtr);
+}
+
 static const CanIf_RxPduType CanIf_RxPdus_CAN1[] = {
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_EEC1_ELECTRONIC_ENGINE_CONTROLLER_1,	/* rxInd */
 		CANIF_RX_CAN1_EEC1_ELECTRONIC_ENGINE_CONTROLLER_1,
 		0x0CF00400u,			/* canid：PF=0xF0 */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		11u,			/* hoh：mb11（PF=0xF0 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_EOI,	/* rxInd */
 		CANIF_RX_CAN1_EOI,
 		0x0CFD9200u,			/* canid：PF=0xFD */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		12u,			/* hoh：mb12（PF=0xFD 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_TCO1,	/* rxInd */
 		CANIF_RX_CAN1_TCO1,
 		0x0CFE6CEEu,			/* canid：PF=0xFE */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		13u,			/* hoh：mb13（PF=0xFE 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_ESCL1,	/* rxInd */
 		CANIF_RX_CAN1_ESCL1,
 		0x10FFB04Du,			/* canid：PF=0xFF */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_ESCLM_PEPS,	/* rxInd */
 		CANIF_RX_CAN1_ESCLM_PEPS,
 		0x10FFB24Du,			/* canid：PF=0xFF */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_PEPS_ESCLM,	/* rxInd */
 		CANIF_RX_CAN1_PEPS_ESCLM,
 		0x10FFB634u,			/* canid：PF=0xFF */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_CRASH_NOTIFICATION,	/* rxInd */
 		CANIF_RX_CAN1_CRASH_NOTIFICATION,
 		0x14F02B54u,			/* canid：PF=0xF0 */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		11u,			/* hoh：mb11（PF=0xF0 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_ACL,	/* rxInd */
 		CANIF_RX_CAN1_ACL,
 		0x18EEFF00u,			/* canid：PF=0xEE */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		10u,			/* hoh：mb10（PF=0xEE 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_ERC3,	/* rxInd */
 		CANIF_RX_CAN1_ERC3,
 		0x18F00000u,			/* canid：PF=0xF0 */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		11u,			/* hoh：mb11（PF=0xF0 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_ERC1,	/* rxInd */
 		CANIF_RX_CAN1_ERC1,
 		0x18F0000Fu,			/* canid：PF=0xF0 */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		11u,			/* hoh：mb11（PF=0xF0 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_EBC1_ELECTRONIC_BRAKE_CONTROLLER_1,	/* rxInd */
 		CANIF_RX_CAN1_EBC1_ELECTRONIC_BRAKE_CONTROLLER_1,
 		0x18F0010Bu,			/* canid：PF=0xF0 */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		11u,			/* hoh：mb11（PF=0xF0 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_ETC2,	/* rxInd */
 		CANIF_RX_CAN1_ETC2,
 		0x18F00503u,			/* canid：PF=0xF0 */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		11u,			/* hoh：mb11（PF=0xF0 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_DLCC1_DIRECT_LAMP_CONTROL_COMMAND_1,	/* rxInd */
 		CANIF_RX_CAN1_DLCC1_DIRECT_LAMP_CONTROL_COMMAND_1,
 		0x18FD0700u,			/* canid：PF=0xFD */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		12u,			/* hoh：mb12（PF=0xFD 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_EBC5_ELECTRONIC_BRAKE_CONTROLLER_5,	/* rxInd */
 		CANIF_RX_CAN1_EBC5_ELECTRONIC_BRAKE_CONTROLLER_5,
 		0x18FDC40Bu,			/* canid：PF=0xFD */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		12u,			/* hoh：mb12（PF=0xFD 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_VDC1_VEHICLE_DYNAMIC_STABILITY_CONTROL_1,	/* rxInd */
 		CANIF_RX_CAN1_VDC1_VEHICLE_DYNAMIC_STABILITY_CONTROL_1,
 		0x18FE4F0Bu,			/* canid：PF=0xFE */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		13u,			/* hoh：mb13（PF=0xFE 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_DM1_TPMS,	/* rxInd */
 		CANIF_RX_CAN1_DM1_TPMS,
 		0x18FECA33u,			/* canid：PF=0xFE */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		13u,			/* hoh：mb13（PF=0xFE 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_CCVS1_CRUISE_CONTROL_VEHICLE_SPEED_1,	/* rxInd */
 		CANIF_RX_CAN1_CCVS1_CRUISE_CONTROL_VEHICLE_SPEED_1,
 		0x18FEF100u,			/* canid：PF=0xFE */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		13u,			/* hoh：mb13（PF=0xFE 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_CCVS,	/* rxInd */
 		CANIF_RX_CAN1_CCVS,
 		0x18FEF121u,			/* canid：PF=0xFE */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		13u,			/* hoh：mb13（PF=0xFE 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_TIRE_CONDITION,	/* rxInd */
 		CANIF_RX_CAN1_TIRE_CONDITION,
 		0x18FEF433u,			/* canid：PF=0xFE */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		13u,			/* hoh：mb13（PF=0xFE 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_AMB_AMBIENT_CONDITIONS,	/* rxInd */
 		CANIF_RX_CAN1_AMB_AMBIENT_CONDITIONS,
 		0x18FEF500u,			/* canid：PF=0xFE */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		13u,			/* hoh：mb13（PF=0xFE 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_PEPS1,	/* rxInd */
 		CANIF_RX_CAN1_PEPS1,
 		0x18FF0534u,			/* canid：PF=0xFF */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_IC_MSG,	/* rxInd */
 		CANIF_RX_CAN1_IC_MSG,
 		0x18FF0917u,			/* canid：PF=0xFF */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_DW_STATE,	/* rxInd */
 		CANIF_RX_CAN1_DW_STATE,
 		0x18FF0CECu,			/* canid：PF=0xFF */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_VCU_4,	/* rxInd */
 		CANIF_RX_CAN1_VCU_4,
 		0x18FF12EFu,			/* canid：PF=0xFF */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_ID1,	/* rxInd */
 		CANIF_RX_CAN1_ID1,
 		0x18FF4C56u,			/* canid：PF=0xFF */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_ID2,	/* rxInd */
 		CANIF_RX_CAN1_ID2,
 		0x18FF4D56u,			/* canid：PF=0xFF */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_ID3,	/* rxInd */
 		CANIF_RX_CAN1_ID3,
 		0x18FF4E56u,			/* canid：PF=0xFF */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_PEPS2,	/* rxInd */
 		CANIF_RX_CAN1_PEPS2,
 		0x18FF7534u,			/* canid：PF=0xFF */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_ESCL_NM,	/* rxInd */
 		CANIF_RX_CAN1_ESCL_NM,
 		0x18FF904Du,			/* canid：PF=0xFF */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_EEC3,	/* rxInd */
 		CANIF_RX_CAN1_EEC3,
 		0x18FFBA19u,			/* canid：PF=0xFF */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_ECC2,	/* rxInd */
 		CANIF_RX_CAN1_ECC2,
 		0x18FFBC19u,			/* canid：PF=0xFF */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_TP_DT,	/* rxInd */
 		CANIF_RX_CAN1_TP_DT,
 		0x1CEBFF21u,			/* canid：PF=0xEB */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		8u,			/* hoh：mb8（PF=0xEB 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_TP_CM,	/* rxInd */
 		CANIF_RX_CAN1_TP_CM,
 		0x1CECFF21u,			/* canid：PF=0xEC */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
 		9u,			/* hoh：mb9（PF=0xEC 段） */
 	},
 	{
-		App_CanIfRxIndication,	/* rxInd */
+		CanIfCfg_RxPduR_CAN1_ETC5,	/* rxInd */
 		CANIF_RX_CAN1_ETC5,
 		0x1CFEC321u,			/* canid：PF=0xFE */
 		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
@@ -649,7 +857,7 @@ static const CanIf_TxPduType CanIf_TxPdus[] = {
 	 *          但**邮箱号写错它发现不了**，只会发到别的邮箱上去。
 	 */
 	{
-		App_CanIfTxConfirmation,        /* txConfirm */
+		CanIfCfg_TxPduR_CAN1_LCSF,        /* txConfirm */
 		CANIF_TX_CAN1_LCSF,             /* txPduId */
 		CAN_HW_ID_TX_LCSF,              /* canid：0x18FE4021 */
 		NULL,                           /* p_canid */
@@ -657,7 +865,7 @@ static const CanIf_TxPduType CanIf_TxPdus[] = {
 		CANIF_CHL_CAN1,                 /* ControllerId */
 	},
 	{
-		App_CanIfTxConfirmation,
+		CanIfCfg_TxPduR_CAN1_CTRL,
 		CANIF_TX_CAN1_CTRL,
 		CAN_HW_ID_TX_CTRL,              /* 0x18FF0C21 */
 		NULL,
@@ -665,7 +873,7 @@ static const CanIf_TxPduType CanIf_TxPdus[] = {
 		CANIF_CHL_CAN1,
 	},
 	{
-		App_CanIfTxConfirmation,
+		CanIfCfg_TxPduR_CAN1_OEL,
 		CANIF_TX_CAN1_OEL,
 		CAN_HW_ID_TX_OEL,               /* 0x0CFDCC21，P=3 */
 		NULL,
@@ -673,7 +881,7 @@ static const CanIf_TxPduType CanIf_TxPdus[] = {
 		CANIF_CHL_CAN1,
 	},
 	{
-		App_CanIfTxConfirmation,
+		CanIfCfg_TxPduR_CAN1_OWW,
 		CANIF_TX_CAN1_OWW,
 		CAN_HW_ID_TX_OWW,               /* 0x18FDCD21 */
 		NULL,
@@ -681,7 +889,7 @@ static const CanIf_TxPduType CanIf_TxPdus[] = {
 		CANIF_CHL_CAN1,
 	},
 	{
-		App_CanIfTxConfirmation,
+		CanIfCfg_TxPduR_CAN1_DOOR,
 		CANIF_TX_CAN1_DOOR,
 		CAN_HW_ID_TX_DOOR,              /* 0x18FE4E21 */
 		NULL,
@@ -689,7 +897,7 @@ static const CanIf_TxPduType CanIf_TxPdus[] = {
 		CANIF_CHL_CAN1,
 	},
 	{
-		App_CanIfTxConfirmation,
+		CanIfCfg_TxPduR_CAN1_DM1,
 		CANIF_TX_CAN1_DM1,
 		CAN_HW_ID_TX_DM1,               /* 0x18FECA21 */
 		NULL,

@@ -49,9 +49,26 @@ SRC = os.path.join(CFG_DIR, "CanIf_Cfg.c")
 
 ID_BASE = 23                     # CAN0 已用 0~22
 
-# 上层回调。PduR 尚未接入 CAN1 路由，暂时直连 App 的调试回调，
-# 这样 `!k` 能看到 PDU 计数；接入 PduR 后改成 "PduR_CanIfRxIndication" 即可。
-RX_IND = "App_CanIfRxIndication"
+# 上层回调：M22 起 CAN1 的 34 条统一走 PduR → Com（信号解包）。
+#
+# 但 `App_CanIfRxIndication` 不能直接撤 —— 它是 `!k` 的"pdu 计数"来源，
+# M19 的 34 项验收全靠它判"CanIf 软件过滤有没有把帧丢掉或投错项"。
+# 所以每条报文生成一个 3 行 shim：先喂调试计数（保留可观测性），
+# 再交给 PduR。把统计放在 shim 里而不是删掉，是因为"能看见"比"干净"重要。
+SHIM_PREFIX_RX = "CanIfCfg_RxPduR_CAN1_"
+SHIM_PREFIX_TX = "CanIfCfg_TxPduR_CAN1_"
+
+# CAN1 发送报文 → (shim 后缀, CanIf TX PDU 宏, PduR 路径宏)
+# 后缀与 `CANIF_TX_MAP`（tools/sync_pdur.py）保持一致的短名，
+# 这样两个脚本生成的回调名与 PduR 宏名能对得上眼。
+TX_MAP = {
+    "BCM_LCSF":     ("LCSF", "CANIF_TX_CAN1_LCSF", "PDUR_CAN1_BCM_LCSF_TX"),
+    "BCM_Ctrl":     ("CTRL", "CANIF_TX_CAN1_CTRL", "PDUR_CAN1_BCM_CTRL_TX"),
+    "BCM_OEL":      ("OEL",  "CANIF_TX_CAN1_OEL",  "PDUR_CAN1_BCM_OEL_TX"),
+    "BCM_OWW":      ("OWW",  "CANIF_TX_CAN1_OWW",  "PDUR_CAN1_BCM_OWW_TX"),
+    "BCM_DoorCtrl": ("DOOR", "CANIF_TX_CAN1_DOOR", "PDUR_CAN1_BCM_DOOR_CTRL_TX"),
+    "BCM_DM1":      ("DM1",  "CANIF_TX_CAN1_DM1",  "PDUR_CAN1_BCM_DM1_TX"),
+}
 
 BEGIN_MARK = "/* @generated BEGIN: CAN1 real matrix */"
 END_MARK = "/* @generated END: CAN1 real matrix */"
@@ -106,11 +123,7 @@ def collect():
     # `0, /* hoh */`（恒 0，因为它的 hrh 是每网络递增而不是每报文），
     # 直接搬过来会让人误读成"34 条共用邮箱 0"。
     out = ["static const CanIf_RxPduType CanIf_RxPdus_CAN1[] = {"]
-    pat = re.compile(
-        r"\{\s*\n\s*pdur_can1_\w+?,\s*\n\s*\w+,\s*\n"
-        r"\s*(0x[0-9a-f]+),\s*/\* canid \*/\s*\n"
-        r"\s*(0x[0-9a-f]+),\s*/\* mask \*/\s*\n"
-        r"\s*\d+,\s*/\* hoh \*/", re.I)
+    shims = []
 
     # 生成器用的宏前缀是 PDUR_CAN1_，与块内第二个字段同名；上面正则第一行
     # 只是占位，真正的名字从 pair 里取。
@@ -133,8 +146,16 @@ def collect():
         if name not in known:
             raise SystemExit("表体里的 %s 不在宏列表里" % name)
 
+        shim = SHIM_PREFIX_RX + name
+        shims.append(
+            "static void %s(PduIdType RxPduId, const PduInfoType *PduInfoPtr)\n"
+            "{\n"
+            "\tApp_CanIfRxIndication(RxPduId, PduInfoPtr);   /* `!k` 的 pdu 计数（M19 判据） */\n"
+            "\tPduR_CanIfRxIndication((PduIdType)PDUR_CAN1_%s_RX, PduInfoPtr);\n"
+            "}" % (shim, name))
+
         out.append("\t{")
-        out.append("\t\t%s,\t/* rxInd */" % RX_IND)
+        out.append("\t\t%s,\t/* rxInd */" % shim)
         out.append("\t\tCANIF_RX_CAN1_%s," % name)
         out.append("\t\t0x%08Xu,\t\t\t/* canid：PF=0x%02X */" % (canid, pf))
         out.append("\t\t0x1FFFFFFFu,\t/* mask：精确匹配，忽略源地址 */")
@@ -144,7 +165,26 @@ def collect():
     out.append("};")
     if len(blocks) != len(macros):
         raise SystemExit("表体解析出 %d 条，与宏数量 %d 不符" % (len(blocks), len(macros)))
-    return macros, "\n".join(out)
+
+    # 发送方向的 shim 也放在这个区块里：TX 表本身是手写的（6 条报文各带
+    # 邮箱/HTH 注释，不适合生成），但它们的 txConfirm 必须切到 PduR，
+    # 于是回调体集中在这一处生成，TX 表里只写函数名。
+    tx_shims = []
+    for dbc_name, (short, canif_macro, pdur_macro) in TX_MAP.items():
+        tx_shims.append(
+            "static void %s%s(PduIdType TxPduId, Std_ReturnType result)\n"
+            "{\n"
+            "\tApp_CanIfTxConfirmation(TxPduId, result);      /* `!b` burst 的确认计数 */\n"
+            "\tPduR_CanIfTxConfirmation((PduIdType)%s, result);\n"
+            "} /* %s → %s */" % (SHIM_PREFIX_TX, short, pdur_macro, dbc_name, canif_macro))
+
+    head = ["/* ---- PduR 回调 shim（M22）----", " *",
+            " * 每条报文一个：`CanIf_RxPduType` / `CanIf_TxPduType` 只有函数指针、",
+            " * 没有 context 字段，所以 pathId 只能靠「每条一个函数」带进去。",
+            " * 先调 App 的统计回调再进 PduR —— 统计是 `!k` / `!b` 的数据源。",
+            " */"]
+    body = "\n".join(head + tx_shims + [""] + shims + [""] + out)
+    return macros, body
 
 
 def build_header(macros):

@@ -103,26 +103,50 @@
  *   34/36/37    下载到非活动槽，37 时写 meta
  *   11 01       复位，让 boot 跳新槽
  *
- * 业务实现全在 `app/app/src/flash_loader.c`，这里只是打开编译开关。
+ * 业务实现全在 `app/platform/cvm0146/src/FlashLoader.c`，这里只是打开编译开关。
  *
- * @note 这四个开关会改变 `Dcm_ConfigType` 的**字段数量**（rtCtrlConfig 等），
+ * @note 这几个开关会改变 `Dcm_ConfigType` 的**字段数量**（rtCtrlConfig 等），
  *       所以 `Dcm_Cfg.c` 里的 `Dcm_Config` 初始化必须同步补字段。
  *       漏补的后果不是编译错，而是后面的字段整体错位 —— 症状是
  *       "开一个服务，另一个无关服务突然坏了"。本工程的初始化器一律
  *       带字段名注释，就是为了让这种错位在 code review 时能看出来。
+ *
+ * @section DCMCFG_H_BOOTONLY 为什么 app 不开放 0x34/0x36/0x37
+ *
+ *          D1 之后刷写链路的**唯一入口是 boot**（`app/boot/config/Dcm_Cfg.c`），
+ *          app 侧只保留 0x31 / 0x11：
+ *
+ *          | 服务 | 在 boot | 在 app | 原因 |
+ *          |------|---------|--------|------|
+ *          | 0x31 FF00/FF01 | ✅ | ✅ | app 也需要"校验镜像/请求切槽"，属于正常业务 |
+ *          | 0x34/0x36/0x37 | ✅ | ❌ | **正在运行的 app 不该擦写自己脚下的 Flash** |
+ *          | 0x11 | ✅ | ✅ | 复位本身无害，且应用需要能自己重启 |
+ *
+ *          关掉下载有三个实际好处（不只是"设计更干净"）：
+ *          1. **刷写过程中 app 被中断不会再污染非活动槽** —— 两套 Dcm 同时
+ *             能写 Flash，等于给了两条互相不知道对方进度的写路径；
+ *          2. **每次坐车上的 ECU 都在跑 app**，把擦写能力关掉等于把那扇门锁上，
+ *             攻击面从"任何时候都能刷"收缩到"只有进 boot 的几秒窗口"；
+ *          3. app 不再链接 `FlashLoader_RequestDownload/TransferData` 的分支，
+ *             省几百字节（app 现在也不宽裕）。
+ *
+ *          @warning 关掉之后 `uds_flash.py` **只能刷进 boot**。在 app 里跑刷写
+ *                   会收到 NRC 0x11（serviceNotSupported），这是**预期行为**，
+ *                   不是回归。要刷写请先让 ECU 停在 boot（`BOOT_FORCE_UDS=1`
+ *                   或 app 主动 `11 01` 后 boot 无有效镜像）。
  */
 
-/** @brief 0x31 RoutineControl */
+/** @brief 0x31 RoutineControl（保留：校验 / 请求切槽） */
 #define DCM_USE_SERVICE_ROUTINE_CONTROL
 
-/** @brief 0x34 RequestDownload */
-#define DCM_USE_SERVICE_REQUEST_DOWNLOAD
-
-/** @brief 0x36 TransferData */
-#define DCM_USE_SERVICE_TRANSFER_DATA
-
-/** @brief 0x37 RequestTransferExit */
-#define DCM_USE_SERVICE_REQUEST_TRANSFER_EXIT
+/*
+ * @brief 0x34 / 0x36 / 0x37 下载链路 —— **app 侧关闭，只留 boot**
+ * @note  恢复的话把下面三行取消注释即可，同时要补 `Dcm_Config` 的对应字段
+ *        （`Dcm_Cfg.c` 里这几项都在 `#ifdef` 内，成对出现）。
+ */
+/* #define DCM_USE_SERVICE_REQUEST_DOWNLOAD */
+/* #define DCM_USE_SERVICE_TRANSFER_DATA */
+/* #define DCM_USE_SERVICE_REQUEST_TRANSFER_EXIT */
 
 /** @brief 0x11 ECUReset */
 #define DCM_USE_SERVICE_ECU_RESET

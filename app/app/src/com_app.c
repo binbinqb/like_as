@@ -17,9 +17,13 @@
 #include "platform_cvm0146.h"
 #include "Com.h"
 #include "Com_Cfg.h"
+#include "Com_Priv.h"    /* M22：`com can1` 要读 IPdu 的运行期 timer */
 
 #include <stdbool.h>
 #include <stdint.h>
+
+/** @brief Com 的总配置表（`Com_Cfg.c` 里定义，生成物，只读） */
+extern const Com_ConfigType Com_Config;
 
 /* ============================ [ 信号层（M10） ] ============================ */
 
@@ -84,9 +88,9 @@ void ComApp_Tick(void)
 	 * 单发 counter 时，flag/level 只在 `Com_IpduGroupStart()` 那一次
 	 * 被写进缓冲，之后一旦有人（比如 GC 之外的误写）改了缓冲，
 	 * 就没有修复路径。每次全量刷新，代价是三次几字节的位操作。 */
-	(void)Com_SendSignal((Com_SignalIdType)COM_SIG_TX_COUNTER, &c);
-	(void)Com_SendSignal((Com_SignalIdType)COM_SIG_TX_FLAG, &f);
-	(void)Com_SendSignal((Com_SignalIdType)COM_SIG_TX_LEVEL, &l);
+	(void)Com_SendSignal((Com_SignalIdType)COM_SID_TX_COUNTER, &c);
+	(void)Com_SendSignal((Com_SignalIdType)COM_SID_TX_FLAG, &f);
+	(void)Com_SendSignal((Com_SignalIdType)COM_SID_TX_LEVEL, &l);
 
 	s_comTxCounter = c;
 }
@@ -115,8 +119,8 @@ static void Com_DumpSignals(void)
 	Std_ReturnType r1;
 	Std_ReturnType r2;
 
-	r1 = Com_ReceiveSignal((Com_SignalIdType)COM_SIG_RX_COUNTER, &rxCnt);
-	r2 = Com_ReceiveSignal((Com_SignalIdType)COM_SIG_RX_TEMP, &rxTemp);
+	r1 = Com_ReceiveSignal((Com_SignalIdType)COM_SID_RX_COUNTER, &rxCnt);
+	r2 = Com_ReceiveSignal((Com_SignalIdType)COM_SID_RX_TEMP, &rxTemp);
 
 	Platform_Printf("[com] tx cnt=%u flag=%u level=0x%03X | rx cnt=%u(%s) temp=%u(%s) | grp=%u\n",
 	                (unsigned)s_comTxCounter, (unsigned)s_comTxFlag,
@@ -124,6 +128,86 @@ static void Com_DumpSignals(void)
 	                (unsigned)rxCnt, (r1 == E_OK) ? "ok" : "NG",
 	                (unsigned)rxTemp, (r2 == E_OK) ? "ok" : "NG",
 	                (unsigned)(s_comGroupOn ? 1u : 0u));
+}
+
+/**
+ * @brief CAN1 的 6 条发送报文（`com can1` 用）
+ * @note  PDU 号来自 `Com_Cfg.h` 的生成宏；名字用矩阵里的短名，
+ *        与 `CanIf_Cfg.h` 的 `CANIF_TX_CAN1_*` 后缀对齐。
+ */
+static const struct {
+	uint16_t    pdu;
+	const char *name;
+} s_can1Tx[] = {
+	{ COM_CAN1_BCM_LCSF_TX,      "LCSF" },
+	{ COM_CAN1_BCM_CTRL_TX,      "CTRL" },
+	{ COM_CAN1_BCM_OEL_TX,       "OEL"  },
+	{ COM_CAN1_BCM_OWW_TX,       "OWW"  },
+	{ COM_CAN1_BCM_DOOR_CTRL_TX, "DOOR" },
+	{ COM_CAN1_BCM_DM1_TX,       "DM1"  },
+};
+
+/**
+ * @brief 打印 CAN1 报文状态（`com can1`）
+ *
+ * @details 为什么要单开一条命令，而不是塞进 `com sig`：
+ *          `com sig` 打的是**测试报文**的信号值，用来验打包/解包；
+ *          CAN1 的 34 条接收 + 6 条发送是**整车矩阵**，关心的是
+ *          "有没有在发、下一拍还有多久、发送失败有没有重试"。
+ *          这两类信息在排查时不会同时需要，混在一起只会让输出更难读。
+ *
+ *          典型用法：总线上**看不到**某条报文时先跑这条命令。
+ *          - `t=` 一直不变（停在某个值）→ 该 IPdu 没被任何分组启动；
+ *            `t=` 周期在 `0..CycleTime` 之间回卷 → 正常在发；
+ *          - `retry=1` → `PduR_ComTransmit` 返回过失败，正在等
+ *            `Com_MainFunction_Fast()` 重发。**本工程没在主循环里调
+ *            `Com_MainFunction_Fast()`**，所以 `retry=1` 基本等于"卡死了"，
+ *            要看 CanIf 那一侧是不是把 PDU 号配错（`Can_Write` 返回 E_NOT_OK）。
+ */
+void ComCmd_DumpCan1(void)
+{
+	uint8_t i;
+	uint8_t doorSw  = 0u;
+	uint8_t parkBrk = 0u;
+	uint16_t tacho  = 0u;
+	Std_ReturnType r0;
+	Std_ReturnType r1;
+	Std_ReturnType r2;
+
+	Platform_Puts("  can1 tx pdus (t = 剩余拍数，10 ms/拍)\n");
+	for (i = 0u; i < (uint8_t)ARRAY_SIZE(s_can1Tx); i++) {
+		const Com_IPduConfigType *p = &Com_Config.IPduConfigs[s_can1Tx[i].pdu];
+
+		if (NULL == p->txConfig) {
+			Platform_Printf("   %-5s pdu=%-2u  <无 txConfig>\n",
+			                s_can1Tx[i].name, (unsigned)s_can1Tx[i].pdu);
+			continue;
+		}
+		Platform_Printf("   %-5s pdu=%-2u t=%-4u cycle=%-3u retry=%u len=%u\n",
+		                s_can1Tx[i].name, (unsigned)s_can1Tx[i].pdu,
+		                (unsigned)p->txConfig->context->timer,
+		                (unsigned)p->txConfig->CycleTime,
+#ifdef COM_USE_MAIN_FAST
+		                (unsigned)p->txConfig->context->bTxRetry,
+#else
+		                0u,
+#endif
+		                (unsigned)p->length);
+	}
+
+	/* 三条**已知布局**的接收信号，专供上板对拍：
+	 *   IC_MSG  0x18FF0917 byte1 bit4-5 → DoorOpenSw
+	 *   CCVS    0x18FEF121 byte0 bit2-3 → ParkingBrakeSwitch
+	 *   TCO1    0x18CFE6CEE byte6-7     → TachographVehicleSpeed（小端）
+	 * 注入 `32 00 00 00 00 00 34 12` 到 0x18FEF121 之类，就能一眼看出
+	 * 位偏移和字节序有没有配错 —— 这三条覆盖"位偏移""跨字节""16 位小端"。 */
+	r0 = Com_ReceiveSignal((Com_SignalIdType)COM_SID_DoorOpenSw, &doorSw);
+	r1 = Com_ReceiveSignal((Com_SignalIdType)COM_SID_ParkingBrakeSwitch, &parkBrk);
+	r2 = Com_ReceiveSignal((Com_SignalIdType)COM_SID_TachographVehicleSpeed, &tacho);
+	Platform_Printf("  can1 rx signals: DoorOpenSw=%u(%s) ParkBrake=%u(%s) TachoSpeed=%u(%s)\n",
+	                (unsigned)doorSw,  (r0 == E_OK) ? "ok" : "NG",
+	                (unsigned)parkBrk, (r1 == E_OK) ? "ok" : "NG",
+	                (unsigned)tacho,   (r2 == E_OK) ? "ok" : "NG");
 }
 
 /**
@@ -161,11 +245,11 @@ void ComCmd_DumpSignals(void)
 void ComCmd_GroupToggle(void)
 {
 	if (s_comGroupOn) {
-		Com_IpduGroupStop((Com_IpduGroupIdType)COM_GROUP_TEST);
+		Com_IpduGroupStop((Com_IpduGroupIdType)COM_GROUP_ID_CANTEST);
 		s_comGroupOn = false;
 		Platform_Puts("[com] group 0 STOPPED (TX/RX suspended)\n");
 	} else {
-		Com_IpduGroupStart((Com_IpduGroupIdType)COM_GROUP_TEST, TRUE);
+		Com_IpduGroupStart((Com_IpduGroupIdType)COM_GROUP_ID_CANTEST, TRUE);
 		s_comTxCounter = 0u;
 		s_comTick = COM_CONVERT_MS_TO_MAIN_CYCLES(100u);
 		s_comGroupOn = true;

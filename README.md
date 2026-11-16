@@ -2305,11 +2305,117 @@ app 有 TX 错误累积因为它在发心跳，boot 从不发帧）。
 都是基于当前 `-O0` 产物验证的，改优化等级要重跑 M0~M19 全套，代价与收益不成比例。
 
 
+### ✅ app 侧已关闭 0x34/0x36/0x37（D1 设计的最后一块）
+
+`Dcm_Cfg.h` 里三个下载服务的宏注释掉了，服务表项在 `#ifdef` 内，编译后 app 的
+Dcm 服务集只剩 `0x10/0x11/0x14/0x19/0x22/0x27/0x2E/0x31`。
+
+| 服务 | boot | app | 原因 |
+|---|---|---|---|
+| `0x31 FF00/FF01` | ✅ | ✅ | 校验镜像 / 请求切槽属于正常业务 |
+| `0x34/0x36/0x37` | ✅ | ❌ | **正在运行的 app 不该擦写自己脚下的 Flash** |
+| `0x11` | ✅ | ✅ | 复位无害，应用要能自己重启 |
+
+三个实际好处（不只是"设计更干净"）：
+
+1. 刷写过程中 app 被中断不会再污染非活动槽 —— 两套 Dcm 同时能写 Flash 等于
+   给了两条互相不知道对方进度的写路径；
+2. 上车后 ECU 一直在跑 app，关掉擦写能力把攻击面从"随时可刷"收缩到
+   "只有进 boot 的几秒窗口"；
+3. app 不再链接 `FlashLoader_RequestDownload/TransferData` 分支，
+   `202,896 → 200,608 B`（省 2.3 KB）。
+
+> ⚠ 现在 `uds_flash.py` **只能刷进 boot**。在 app 里跑刷写会收到 NRC 0x11
+> （serviceNotSupported），这是预期行为。
+
+### ✅ M22：CAN1 的 34 RX / 6 TX 进 Com/PduR（JSON 驱动）
+
+改动前 CAN1 的 34 条接收帧到 `CanIf` 就交给应用层调试回调，**没有进 PduR/Com**；
+Com 的配置也只有 2 条测试报文（0x200/0x201）。现在整条链路是：
+
+```
+CAN1 34 RX：CanIf → shim → PduR(PDUR_CAN1_<MSG>_RX) → Com(COM_CAN1_<MSG>_RX) → 信号
+CAN1  6 TX：Com(COM_CAN1_<MSG>_TX) → PduR(PDUR_CAN1_<MSG>_TX) → CanIf → 邮箱 2~7
+```
+
+#### 三个配置文件的分工（为什么不是"全生成"）
+
+| 文件 | 来源 | 理由 |
+|---|---|---|
+| `Com_Cfg.c/.h`（42 报文 / 377 信号） | **整体生成**（`Com/Com.json` → `GEN/` → 拷入） | 372 个矩阵信号手写不现实，生成器保证位偏移/字节序 |
+| `PduR_Cfg.c/.h` | **手写 9 条 + 注入 42 条** | 诊断/NM/测试路径有语义命名（`PDUR_CANTP_TO_DCM_RX`），换名会牵动 Dcm/CanIf 两侧 |
+| `CanIf_Cfg.c/.h` | **手写框架 + 注入 CAN1 区块** | CAN0 的分段邮箱架构（5 个邮箱承载 34 条）是 M14 验证过的，推倒重来等于重跑 M14 |
+
+#### 两个生成脚本（都可重复执行，幂等）
+
+```bash
+python tools/sync_pdur.py     # can1.dbc → PduR 的 42 条路径（35 RX / 7 TX）
+python tools/sync_canif.py    # can1.dbc → CanIf 的 34 条 RX 表 + 40 个回调 shim
+```
+
+`sync_canif.py` 现在会为每条报文生成一个 3 行 shim：
+
+```c
+static void CanIfCfg_RxPduR_CAN1_PEPS1(PduIdType RxPduId, const PduInfoType *p)
+{
+	App_CanIfRxIndication(RxPduId, p);   /* `!k` 的 pdu 计数（M19 判据） */
+	PduR_CanIfRxIndication((PduIdType)PDUR_CAN1_PEPS1_RX, p);
+}
+```
+
+为什么要"先统计再转发"：`CanIf_RxPduType` 只有函数指针、**没有 context 字段**，
+`pathId` 只能靠"每条一个函数"带进去；而 `App_CanIfRxIndication` 是 `!k` 的
+PDU 计数来源，M19 的 34 项判据全靠它 —— 不能为了架构好看把它删掉。
+
+#### 实测
+
+```
+# 发送：6 条报文都按矩阵周期在发（Kvaser ch1 @500k，6 秒窗口）
+0x18FE4021 n=122  周期 50 ms    0x18FF0C21 n=61  周期 100 ms
+0x0CFDCC21 n=61   周期 100 ms   0x18FE4E21 n=61  周期 100 ms
+0x18FDCD21 n=31   周期 200 ms   0x18FECA21 n=7   周期 1000 ms
+
+# 接收：注入 → Com 解包（覆盖位偏移 / 位段 / 跨字节小端）
+0x18FF0917 data=00 30 ... → DoorOpenSw=3        （byte1 bit4-5）
+0x18FEF121 data=0C ...    → ParkBrake=3         （byte0 bit2-3）
+0x18CFE6CEE data=.. 34 12 → TachoSpeed=4660     （byte6-7 小端 0x1234）
+```
+
+新增 `com can1` 命令一次看 6 条 TX 的 `timer/cycle/retry` 与 3 条已对拍的 RX 信号：
+
+```
+CVM014x >> com can1
+  can1 tx pdus (t = 剩余拍数，10 ms/拍)
+   LCSF  pdu=0  t=2    cycle=5   retry=0 len=8
+   CTRL  pdu=1  t=7    cycle=10  retry=0 len=8
+   ...
+  can1 rx signals: DoorOpenSw=3(ok) ParkBrake=3(ok) TachoSpeed=4660(ok)
+```
+
+判读方式：`t` 在 `0..cycle` 之间回卷 = 正常在发；`t` 停在某个值不动 = 该 IPdu
+没被任何分组启动；`retry=1` = `PduR_ComTransmit` 返回过失败且**卡住**
+（本工程主循环没调 `Com_MainFunction_Fast()`，这是已知限制）。
+
+#### 顺带修掉的两个坑
+
+1. **Com 生成器的信号级超时少了一次单位换算**（`tools/generator/Com.py`）：
+   `Com_SignalRxConfigType.Timeout` 的单位是"主函数周期数"，而 JSON 里写的是毫秒。
+   IPdu 级做了 `COM_CONVERT_MS_TO_MAIN_CYCLES()`，信号级直接裸写 —— 于是
+   JSON 写 1000 ms 变成 1000 个 10 ms 拍 = **10 秒**才超时，
+   表现为"信号超时像没实现"（M10 里苦等 2.6 s 读到的还是最后一帧的值）。
+2. **测试报文（0x200/0x201）搬进 `Com.json` 的第二个网络 `CANTEST`**：
+   生成物里 PDU 号变成 40/41（原来是 0/1），所以 `PduR_Cfg.c` 里手写那三条
+   测试路径的 `PduHandleId` 必须同步改成 `COM_CANTEST_*` —— 不改的症状很隐蔽：
+   0x201 的数据被投给 Com 的 PDU 1（现在是一条 CAN1 报文），
+   读 `RX_COUNTER` 永远超时替换值 0xEE。
+
 ### 尚未完成（下一步）
 
 1. **0x27 换成真算法**：现在 `27 01/02` 是桩（种子返回 0、key 任意），
    刷写链路的 `securityMask` 因此形同虚设 —— 上车前必须补 SWS 里的种子-密钥算法。
-2. **app 侧关掉 0x34/36/37**：刷写服务现在 boot 和 app 都有，
-   按 D1 设计应只留 boot，app 收到这三个服务直接回 NRC 0x11。
-3. **M22**：CAN1 的 34 RX / 6 TX 迁入 Com/PduR JSON。
+   **（本轮按决定暂不换，保持固定桩。）**
+2. **CAN1 的信号绑定层**：现在报文已经进 Com，但应用层还没有把 372 个信号
+   映射成业务语义（`BCM_LowBeamSts` → 灯光状态机）。这是 M23 的内容。
+3. **`Com_MainFunction_Fast()` 进主循环**：`bTxRetry` 目前没有推进者，
+   `PduR_ComTransmit` 失败一次就再也不会重发。
 4. 模块级 `cmd/` 目录约定。

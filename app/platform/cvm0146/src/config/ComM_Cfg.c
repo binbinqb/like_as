@@ -62,13 +62,21 @@ static const uint8_t ComM_Chl0Users[] = {
 };
 
 /**
- * @brief 通道 0 管理的 Com I-PDU 分组
- * @note  只挂组 0（测试信号报文）。将来加真实信号报文时，
- *        如果它们和测试报文在同一个组里，这里不用改；
- *        如果分了新组，要在这里加一行。
+ * @brief 通道 0 管理的 Com I-PDU 分组（M22：改为按网络分组）
+ * @note  Com 的分组是**按网络**建的（`Com.json` 里一个 network 一个组）：
+ *        - 组 0 = `CAN1`：34 条接收 + 6 条发送，整车通信矩阵
+ *        - 组 1 = `CANTEST`：0x200/0x201 机制验证帧
+ *
+ *        两个都挂：ComM 在 Nm 网络模式时一次把整车报文和测试帧都拉起来，
+ *        这是 BCM 上电后应有的行为（少挂一个 = 那组报文永远不发，
+ *        而且没有任何报错，只有 Kvaser 上"少了几个 ID"）。
+ *
+ *        `com group` 命令只停 **CANTEST**（组 1），不会连整车报文一起停 ——
+ *        否则调试一条测试帧会顺手让 BCM 在总线上"消失"。
  */
 static const Com_IpduGroupIdType Com_Chl0IpduGroupIds[] = {
-	(Com_IpduGroupIdType)COM_GROUP_TEST,
+	(Com_IpduGroupIdType)COM_GROUP_ID_CAN1,
+	(Com_IpduGroupIdType)COM_GROUP_ID_CANTEST,
 };
 
 /* ============================ [ 通道配置 ] ============================ */
