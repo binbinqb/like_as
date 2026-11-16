@@ -2623,6 +2623,57 @@ M9 有一条 `释放后: 状态落到 READY_SLEEP`，A1 固件上通过、A3 固
 真实时长由后续两条验证（对端停发 2 s 进 PREPARE、再 2 s 进 BUS_SLEEP），
 那两条一直 PASS。
 
+### ✅ A4 生成一致性：产物里带时间戳，等于永远不可复核
+
+原先每个生成文件的头部长这样：
+
+```c
+ * Generated at Mon Nov 16 13:35:59 2026
+```
+
+后果不是"文件丑"，而是**幂等判据直接不成立**：同一个 JSON 连跑两次，
+产物逐字节不同 → `git status` 永远有 diff → "重新生成"变成一个没法复核的
+动作，谁也不知道 `config/Com_Cfg.c` 是哪次生成的、有没有人手改过一行。
+
+改法只有一行（`tools/generator/helper.py GenHeader`）：去掉 wall-clock，
+换成机器可判定的标记：
+
+```c
+ * @generated
+ * 本文件由 tools/generator 自动生成，请勿手工修改。
+ * 改动请改配置源，然后重新生成；一致性由 tools/a4_gen_check.py 校验。
+```
+
+#### 三种产物形态（混在一起最容易出错）
+
+| 形态 | 模块 | 产物去哪 | 入库吗 |
+|---|---|---|---|
+| 就地生成 | `Board` / `Shell` | `GEN/Xxx_Cfg.c` 由 `GEN/SConscript` **直接编译** | 不入（`**/GEN/` 被 ignore） |
+| 生成后拷入 | `Com` | `GEN/` → 人工拷到 `config/Com_Cfg.c` | **入**（所以最容易长出差异） |
+| 注入区块 | `CanIf` / `PduR` | 手写文件里 `@generated BEGIN … END` 之间 | 入（整文件入，区块由脚本改写） |
+
+#### 判据（`tools/a4_gen_check.py`，7 项全 PASS）
+
+| 编号 | 判据 | 实测 |
+|---|---|---|
+| C1a | 首次重生成相对原始状态改动 | 0 个文件（入库副本已同步） |
+| C1b | **连跑两遍逐字节相同** | 14 个受检文件全同 |
+| C2 | 每个生成物都带 `@generated` | 10/10 |
+| C3 | 生成物里无 `Generated at <星期>` | 无 |
+| C4 | `GEN/` 与 `config/` 副本一致 | Com 两个文件一致 |
+| C5 | 注入区块 BEGIN/END 成对且非空 | CanIf/PduR 共 4 个文件通过 |
+| C6 | **反向断言**：应用层文件里不出现 `@generated` | `main.c`/`EcuM_Cfg.c`/`bcm_sig_cfg.c`/`CanTp_Cfg.c`/`Dcm_Cfg.c` 均干净 |
+
+```sh
+python tools/a4_gen_check.py           # 跑生成器两遍 + 注入脚本 + 全部断言
+python tools/a4_gen_check.py --static  # 只做 C2~C6，不动任何文件
+python tools/a4_gen_check.py --sync    # C4 的修复动作：GEN/ → config/
+```
+
+C6 为什么值得写：它拦的不是"忘了加标记"，而是**生成器越界**。
+哪天有人把 `bcm_sig_cfg.c` 也纳入生成范围，业务表就会被静默重写，
+而 `git diff` 里看起来只是"表变了一点"。
+
 ### 尚未完成（下一步）
 
 1. **0x27 换成真算法**：现在 `27 01/02` 是桩（种子返回 0、key 任意），
@@ -2634,9 +2685,8 @@ M9 有一条 `释放后: 状态落到 READY_SLEEP`，A1 固件上通过、A3 固
    + data status，RTE 才能区分 `RTE_E_INVALID`（对方说它坏了）与
    `RTE_E_NEVER_RECEIVED`（对方没告诉我）。当前是**应用侧**用"FAULT 从
    raw 值恢复 + 初值 0xFF"这个次优替代。要补就得先定 D9（`infras/` 改动权限）。
-3. **A4 生成一致性**：两个 sync 脚本已验证幂等，但 `Com_Cfg.c` 是**生成物
-   却被 git 跟踪**（`GEN/` 在 ignore 里、它不在），重新生成时是否覆盖了
-   某处手改无法自动发现。
+3. **A4 生成一致性**：已完成（见上一节）。`Com_Cfg.c` 仍是生成物入库，
+   靠 `tools/a4_gen_check.py` 的 C4 守"拷入副本与 GEN 一致"。
 4. **A5/A8 掉电安全**：Boot 异常恢复（镜像校验失败 / rollback / 双槽边界）
    可以软件构造，"擦除中断电""写入中断电"需要**程控电源**；
    NvM 的掉电写策略同样卡在这里。

@@ -1,8 +1,10 @@
 /**
  * SSAS - Simple Smart Automotive Software
- * Copyright (C) 2021-2026 Parai Wang <parai@foxmail.com>
+ * Copyright (C) 2021 Parai Wang <parai@foxmail.com>
  *
- * Generated at Mon Nov 16 13:23:07 2026
+ * @generated
+ * 本文件由 tools/generator 自动生成，请勿手工修改。
+ * 改动请改配置源，然后重新生成；一致性由 tools/a4_gen_check.py 校验。
  */
 /* ================================ [ INCLUDES  ] ============================================== */
 #include "Com_Cfg.h"

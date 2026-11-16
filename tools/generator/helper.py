@@ -50,15 +50,22 @@ def toPduSymbol(names):
 
 
 def GenHeader(f):
-    currentDateTime = datetime.datetime.now()
-    date = currentDateTime.date()
-    year = date.strftime("%Y")
-    GenTime = time.asctime(time.localtime(time.time()))
+    """写生成文件头。
+
+    @note 这里**不允许**出现生成时间、主机名、绝对路径等随运行环境变化的内容。
+          原因：产物要能"连跑两遍不产生 diff"（A4 判据）。一旦带上
+          `Generated at Mon Nov 16 13:35:59 2026`，每次重生成的字节都不同，
+          版本库里那份副本永远对不上，“重新生成”就变成一个不可复核的动作。
+          要知道产物是否过期，靠 `tools/a4_gen_check.py` 比对哈希，
+          而不是靠文件里的时间戳。
+    """
     f.write("/**\n")
     f.write(" * SSAS - Simple Smart Automotive Software\n")
-    f.write(" * Copyright (C) 2021-%s Parai Wang <parai@foxmail.com>\n" % (year))
+    f.write(" * Copyright (C) 2021 Parai Wang <parai@foxmail.com>\n")
     f.write(" *\n")
-    f.write(" * Generated at %s\n" % (GenTime))
+    f.write(" * @generated\n")
+    f.write(" * 本文件由 tools/generator 自动生成，请勿手工修改。\n")
+    f.write(" * 改动请改配置源，然后重新生成；一致性由 tools/a4_gen_check.py 校验。\n")
     f.write(" */\n")
     print("GEN %s" % (os.path.abspath(f.name)))
 
