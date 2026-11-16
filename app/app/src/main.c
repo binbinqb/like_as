@@ -103,6 +103,8 @@
  * 报文名、字节偏移 —— 那些都在 `bcm_sig_cfg.c` 的表里。 */
 #include "bcm_sig.h"
 #include "rx_mon.h"       /* A2：CAN 接收到达监视（清零必须在总线上线前） */
+#include "stack_mon.h"    /* A6：栈水位（main 第一条语句就要填图案） */
+#include "perf_mon.h"     /* A6：DWT 周期计数（SysTick 迟到量 / 单拍耗时） */
 
 /* ECU 状态管理（M11）。应用只碰标准接口：
  *   EcuM_Init / EcuM_StartupTwo / EcuM_RequestRUN / EcuM_RequestPOST_RUN
@@ -221,8 +223,19 @@ int main(void)
 	uint32_t nextExt  = 0u;
 	uint32_t nextBsw  = 0u;
 	uint32_t beat     = 0u;
+	uint32_t t0;
+
+	/* A6：先把未用的栈区填上图案 —— 必须是本函数的第一条语句。
+	 * 晚一步就少记一层调用，水位会偏低（偏低 = 报警偏晚）。 */
+	StackMon_Init();
 
 	Platform_Init();
+
+	/* A6：开 DWT 周期计数器。必须在 `Platform_InitTick()` 之前 ——
+	 * SysTick 一开就会进中断，而中断里要读 CYCCNT，顺序反了第一拍读到 0，
+	 * 会算出一次巨大的假"迟到量"。 */
+	PerfMon_Init();
+
 	Platform_InitTick();
 
 	/* A2 到达监视清零：必须在总线上线之前。
@@ -430,7 +443,11 @@ int main(void)
 			 *   被准时调用；放在 FEE 擦除之后会被拖出几毫秒抖动。
 			 * - NvM / Dem 在表尾：FEE 擦除是 1 KB 分片的，单次可能占用
 			 *   几毫秒，放前面会把 UDS 的 10 ms 节拍推歪。 */
+			/* A6：量这一拍要跑多久。与 `tick late` 配合看能区分
+			 * "被别人打断"（late 大、bsw 小）与"自己太慢"（bsw 接近 10 ms）。 */
+			t0 = PerfMon_Cycles();
 			EcuM_BswService();
+			PerfMon_RecordBswCycles(PerfMon_Cycles() - t0);
 
 			/* 状态机单独推进：负责 RUN / POST_RUN / SLEEP 的迁移，
 			 * 与 BSW 主函数是两件事（AUTOSAR 里也是两个入口），

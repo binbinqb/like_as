@@ -47,7 +47,10 @@ To use "new" operator with EWL in C++ project the following symbol shall be defi
 
 
 HEAP_SIZE  = DEFINED(__heap_size__)  ? __heap_size__  : 0x00000100;
-STACK_SIZE = DEFINED(__stack_size__) ? __stack_size__ : 0x00000800;
+/* A6 实测：2 KB 时水位 1332 B（65%，超过 60% 阈值）——
+ * printf/snprintf 的帧比预想大。改为 4 KB，水位降到 32%。
+ * RAM 有余量（m_data_2 里 heap 与 stack 之间还空着约 49 KB）。 */
+STACK_SIZE = DEFINED(__stack_size__) ? __stack_size__ : 0x00001000;
 
 /* If symbol __flash_vector_table__=1 is defined at link time
  * the interrupt vector will not be copied to RAM.

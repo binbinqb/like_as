@@ -29,6 +29,7 @@
 #include "platform_priv.h"
 #include "lwrb.h"            /* 控制台 RX 环形缓冲（UART 中断 → 主循环） */
 #include "Std_Critical.h"   /* imask_t + EnterCritical/ExitCritical 宏的底层类型 */
+#include "perf_mon.h"        /* A6：SysTick 迟到量统计（中断里 5 条指令） */
 
 #include <stdarg.h>
 #include <stdbool.h>
@@ -89,6 +90,11 @@ static void Console_PutChar(char c);
  */
 void SysTick_Handler(void)
 {
+	/* A6：量"这一拍迟到多久"。SysTick 是最低优先级（CMSIS 固定），
+	 * 所以入口时刻的偏移就等于"被更高优先级 ISR 或关中断推迟了多久"。
+	 * 开销约 5 条指令，常开 —— 关掉的测量等于没测。 */
+	PerfMon_TickIsr();
+
 	s_ms++;
 }
 
@@ -650,6 +656,7 @@ void Platform_InitTick(void)
 {
 	/* 失败说明重载值超出 24 位，通常意味着 CORE_CLOCK_HZ 写错了 */
 	(void)SysTick_Config(PLATFORM_CORE_CLOCK_HZ / 1000u);
+	PerfMon_TickResync();   /* 节拍首次启动：第一拍没有"上一拍"，不计迟到 */
 }
 
 uint32_t Platform_NowMs(void)
@@ -778,6 +785,10 @@ void Platform_StopTick(void)
 	 * 这里只保证"不会再产生 tick"，否则 WFI 会立刻被它叫醒。 */
 	SysTick->CTRL = 0u;
 	SysTick->VAL  = 0u;
+
+	/* A6：节拍停了，上一拍的基准作废。不作废的话，睡眠 N ms 之后
+	 * 第一拍会被记成"迟到 N ms"，且这个假峰值永久留在统计里。 */
+	PerfMon_TickResync();
 }
 
 void Platform_SetTickPeriodMs(uint32_t ms)
@@ -787,6 +798,7 @@ void Platform_SetTickPeriodMs(uint32_t ms)
 	}
 
 	(void)SysTick_Config((PLATFORM_CORE_CLOCK_HZ / 1000u) * ms);
+	PerfMon_TickResync();   /* 周期变了，1 ms 的基准不再成立（见 perf_mon.h） */
 }
 
 void Platform_StartTick(void)
@@ -796,6 +808,7 @@ void Platform_StartTick(void)
 	 * （它们要的是"运行了多久"，不是"过了多久"）。
 	 * 需要墙钟时间必须另配 RTC —— 这是设计选择，不是遗漏。 */
 	(void)SysTick_Config(PLATFORM_CORE_CLOCK_HZ / 1000u);
+	PerfMon_TickResync();   /* 从别的周期（或停机）恢复到 1 ms，基准同样作废 */
 }
 
 void Platform_EnterStopMode(void)
