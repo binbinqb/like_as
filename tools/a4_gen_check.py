@@ -135,6 +135,33 @@ def snapshot():
 	return s
 
 
+def missing_inputs():
+	"""检查生成器的外部输入（DBC / xlsx / py）是否齐全。
+
+	@note 为什么要这一层：通信矩阵导出的 `*.dbc` 属于**客户资料，不入库**
+	      （见 `.gitignore` 的说明）。公开仓库里克隆下来是没有 DBC 的，
+	      这时强行跑生成器会抛异常，看起来像"框架坏了"。
+	      实际上缺的是**输入**，不是代码 —— 所以这里明确报 SKIP。
+	"""
+	import json
+	missing = []
+	for cfg in GEN_JSON:
+		if not os.path.isfile(cfg):
+			missing.append(cfg)
+			continue
+		with io.open(cfg, encoding="utf-8") as f:
+			con = json.load(f)
+		for net in con.get("networks", []) or []:
+			for key in ("dbc", "ldf"):
+				p = net.get(key)
+				if p is None:
+					continue
+				full = p if os.path.isfile(p) else os.path.join(os.path.dirname(cfg), p)
+				if not os.path.isfile(full):
+					missing.append(full)
+	return sorted(set(missing))
+
+
 def run_generate():
 	"""按顺序跑五个模块的生成器（force=True，不吃缓存）。"""
 	sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -297,14 +324,20 @@ def main():
 	if static:
 		results.append(("C1", True, "跳过（--static）"))
 	else:
-		s0 = snapshot()
-		run_generate()
-		run_inject()
-		s1 = snapshot()
-		run_generate()
-		run_inject()
-		s2 = snapshot()
-		check_c1(s0, s1, s2, verbose)
+		lack = missing_inputs()
+		if lack:
+			results.append(("C1a", True, "跳过生成（缺少外部输入：%s）"
+							% ", ".join(sorted(set(rel(p) for p in lack)))))
+			results.append(("C1b", True, "跳过幂等检查（无 DBC 无法重生成）"))
+		else:
+			s0 = snapshot()
+			run_generate()
+			run_inject()
+			s1 = snapshot()
+			run_generate()
+			run_inject()
+			s2 = snapshot()
+			check_c1(s0, s1, s2, verbose)
 
 	if "--sync" in sys.argv:
 		print("== 把 GEN/ 产物拷入 config/ ==")
