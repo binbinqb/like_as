@@ -105,6 +105,7 @@
 #include "rx_mon.h"       /* A2：CAN 接收到达监视（清零必须在总线上线前） */
 #include "stack_mon.h"    /* A6：栈水位（main 第一条语句就要填图案） */
 #include "perf_mon.h"     /* A6：DWT 周期计数（SysTick 迟到量 / 单拍耗时） */
+#include "bcm_biz.h"      /* A9：业务骨架（驻车制动 → 制动灯） */
 
 /* ECU 状态管理（M11）。应用只碰标准接口：
  *   EcuM_Init / EcuM_StartupTwo / EcuM_RequestRUN / EcuM_RequestPOST_RUN
@@ -346,6 +347,11 @@ int main(void)
 	 * 而这一步已在上面 `EcuM_StartupTwo()` 之前完成。 */
 	BcmSig_Init();
 
+	/* 业务骨架（A9）：必须在 BcmSig_Init 之后（它只清自己的状态，不碰信号）。
+	 * 默认**不接管**输出 —— 理由见 bcm_biz.h 的 BcmBiz_SetEnabled：
+	 * `bcm all on|off` 这类验收命令与业务会抢同一个发送 shadow。 */
+	BcmBiz_Init();
+
 	Platform_Puts("========================================\n\n");
 
 	PrintfSelfTest();
@@ -432,6 +438,11 @@ int main(void)
 			/* 车身信号绑定层（M23）先跑：把业务语义翻成 raw 写进 Com。
 			 * 必须排在任何消费信号的业务逻辑之前（读到的是本拍输入）。 */
 			BcmSig_MainFunction();
+
+			/* 业务骨架（A9）：读上一行更新好的 shadow 做决策，再写回发送 shadow。
+			 * 顺序反了就会用上一拍的输入做决策（见 bcm_biz.h）。 */
+			BcmBiz_MainFunction();
+
 			ComApp_Tick();
 
 			/* BSW 调度交给 EcuM：按 `EcuM_DriverMainList` 的顺序跑一遍

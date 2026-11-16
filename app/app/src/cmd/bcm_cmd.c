@@ -39,6 +39,7 @@
 
 #include "sh_cfg.h"          /* SH_EXPORT_CMD / SH_OK / SH_ERR_PARAM */
 #include "bcm_sig.h"         /* 绑定层公共接口（业务侧唯一该 include 的头） */
+#include "bcm_biz.h"         /* A9：业务骨架（bcm biz） */
 #include "platform_cvm0146.h" /* Platform_Printf */
 #include "Com.h"             /* Com_SignalIdType / Com_ConfigType（Com_Priv.h 依赖它） */
 #include "Com_Cfg.h"         /* COM_CAN1_BCM_LCSF_TX */
@@ -226,6 +227,27 @@ static void dumpRx(void)
 }
 
 /**
+ * @brief 打印业务骨架（A9）的状态
+ *
+ * @details 打三样：接管开关、健康状态、以及"输入值/有效性"。
+ *          为什么要把输入也打出来：光看健康状态无法区分
+ *          `LOST`（真的掉线）与 `PEER_ERROR`（对方报错）先后顺序，
+ *          现场排查时这两条路的处置完全不同。
+ */
+static void dumpBiz(void)
+{
+	Bcm_SwStateType st = BCM_SW_STATE_UNKNOWN;
+	Bcm_SigValidityType v = BcmSig_RxRead(BCM_SIG_RX_PARK_BRAKE, &st);
+
+	Platform_Printf("  biz   : brake-follow-park = %s\n",
+	                BcmBiz_IsEnabled() ? "on (接管制动灯)" : "off (不接管)");
+	Platform_Printf("  biz   : health = %s\n",
+	                BcmBiz_HealthName(BcmBiz_BrakeHealth()));
+	Platform_Printf("  biz   : input = %s / %s\n",
+	                stateName(st), validityName(v));
+}
+
+/**
  * @brief dump 全部灯状态 + 手刹输入 + LCSF 字节
  */
 static void dumpAll(void)
@@ -280,6 +302,31 @@ static int sh_cmd_bcm(int argc, char *argv[])
 	if (strcmp(argv[1], "rx") == 0)
 	{
 		dumpRx();
+		return SH_OK;
+	}
+
+	/* `bcm biz` 看业务状态；`bcm biz on|off` 切换接管 */
+	if (strcmp(argv[1], "biz") == 0)
+	{
+		if (argc < 3)
+		{
+			dumpBiz();
+			return SH_OK;
+		}
+		if (strcmp(argv[2], "on") == 0)
+		{
+			BcmBiz_SetEnabled(TRUE);
+		}
+		else if (strcmp(argv[2], "off") == 0)
+		{
+			BcmBiz_SetEnabled(FALSE);
+		}
+		else
+		{
+			Platform_Puts("  biz takes: on | off\n");
+			return SH_ERR_PARAM;
+		}
+		dumpBiz();
 		return SH_OK;
 	}
 
