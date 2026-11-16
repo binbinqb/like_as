@@ -98,4 +98,26 @@ void CanAc_ClearBusOffInfo(uint8_t controller);
  */
 void CanAc_DbgDump(uint8_t controller);
 
+/**
+ * @brief 主动发帧自检：把"收不到"拆成"发得出去吗"
+ *
+ * @details @section CANAC_PROBE_WHY 为什么需要它
+ *          `ECR=0` + `IFLAG1=0` 这一组证据只能说明"控制器没在总线上看到任何活动"，
+ *          但**不能区分**下面两种原因，而它们的修法完全相反：
+ *
+ *          | 现象 | 真实原因 | 怎么修 |
+ *          |------|----------|--------|
+ *          | 发不出去（TEC 一路涨） | 收发器没上总线 / 接线 / 终端电阻 | 硬件：STB、EN、供电、线束 |
+ *          | 发得出去但收不到 | RX 通路（RXD 引脚、邮箱配置、对端没发） | 软件：引脚 MUX / 邮箱 / 掩码 |
+ *
+ *          本函数做三件事，一次运行就能定性：
+ *          1. 打印诊断收/发邮箱的 `CS` 字 —— `CODE=0000` 说明邮箱根本没配上；
+ *          2. 用诊断响应句柄**连发 8 帧**；
+ *          3. 回读 `TEC/REC/ESR1/IFLAG1` —— `TEC` 涨 = 没有节点给 ACK。
+ *
+ * @param[in] controller 通道号
+ * @note  只在 bring-up / 现场排查时调用；正常刷写流程不要调（会在总线上插帧）。
+ */
+void CanAc_DbgProbe(uint8_t controller);
+
 #endif /* CAN_CFG_H */

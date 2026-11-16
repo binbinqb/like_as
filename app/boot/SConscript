@@ -97,6 +97,29 @@ class ApplicationBoot(Application):
         # ⚠ 量产构建**不要**设这个环境变量，否则永远停在 boot。
         if os.environ.get("BOOT_FORCE_UDS") == "1":
             self.Append(CPPDEFINES=["BOOT_FORCE_UDS=1"])
+
+        # ------------------------------------------------------------------
+        # boot 单独开 -Os（app 保持 -O0）
+        #
+        # 为什么：boot 区只有 127 KB（0x00000~0x1FBFF），D1 第二步把
+        # CanIf/CanTp/PduR/Dcm + 存储栈全部塞进来之后一直卡在"剩 1 KB"，
+        # 加几行排查代码就链接失败。`-O0` 下这种"刚好不够"是常态。
+        #
+        # 实测：`-O0` 130,008 B（只剩 40 B）→ `-Os` 后有 30 KB 余量。
+        #
+        # 只对 boot 生效，不动 app：
+        #   - app 的时序/回归全部基于当前 -O0 的产物，改优化等级要重跑
+        #     M0~M19 全套，代价与收益不成比例；
+        #   - boot 的逻辑是"读 Flash → 校验 CRC → 跳转 / 刷写"，
+        #     没有依赖 -O0 时序的紧密循环（Flash 等待都由厂商驱动里的
+        #     volatile 轮询实现）。
+        #
+        # @warning 这套工程默认是 -O0（`building.py` 只加了 `-std=gnu99`，
+        #          没给 `-O`），所以这里的 `-Os` 是**唯一**的优化开关。
+        #          如果将来全工程统一优化等级，删掉这两行即可。
+        # ------------------------------------------------------------------
+        self.Append(CCFLAGS=["-Os"])
+        self.Append(CFLAGS=["-Os"])
         self.Append(LINKFLAGS=[
             # 启动由厂商 startup_M014x_gcc.S 提供，不要 newlib 的 crt0
             "-nostartfiles",

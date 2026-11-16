@@ -1111,6 +1111,113 @@ void CanAc_DbgDump(uint8_t controller)
 	                (unsigned)((ctrl1 & FLEXCAN_CTRL1_ERRMSK_MASK) >> FLEXCAN_CTRL1_ERRMSK_SHIFT));
 }
 
+/* ============================ [ 主动发帧自检（bring-up） ] ============================ */
+
+/**
+ * @brief 忙等若干轮（约 30 ns/轮 @120 MHz）
+ *
+ * @details @section CANAC_PROBE_SPIN 为什么不用 `Platform_NowMs()`
+ *          boot 的精简初始化里 SysTick 未必已经跑起来，用毫秒接口等一个
+ *          "可能永远不前进"的计数会直接挂死。忙等的代价是时间不准，
+ *          而这里只需要"发出去了、等一会儿"，不需要精确。
+ */
+static void CanAc_DbgSpin(uint32_t loops)
+{
+	volatile uint32_t i;
+
+	for (i = 0u; i < loops; i++) {
+		__asm volatile ("nop");
+	}
+}
+
+/**
+ * @brief 在一次调用里完成"看配置 → 发帧 → 看错误计数"三步
+ *
+ * @details 判读方法（一次运行就能定性，不必再猜）：
+ *
+ *          | 串口输出 | 含义 | 下一步 |
+ *          |----------|------|--------|
+ *          | `mbN cs=...0` 低 4 位为 `0` | 邮箱没被配置 | 查 `Can_Init`/`CanAc_Init` 是否真的跑过 |
+ *          | `TEC` 一路上涨到 128+ | 帧发出去了但**没有节点 ACK** | 收发器没上总线 / 线束 / 终端电阻 |
+ *          | `TEC` 保持 0，`IFLAG1` 的 TX 位被置起 | 发送完全正常 | 问题在 RX 侧（RXD、PE4、对端没发） |
+ *          | `REC` 上涨、`FLTCONF` 变成 1 | 收到过波形但**位错误** | 波特率对不上（时钟或位时序） |
+ *
+ * @param[in] controller 通道号
+ * @note  发送用的 ID/DLC 来自 `Can_HwCfg.h` 的诊断响应句柄，
+ *        所以**只能在诊断邮箱已经配好之后**调用（即 `Can_Init` 之后）。
+ */
+void CanAc_DbgProbe(uint8_t controller)
+{
+	FlexCanDrvType *obj;
+	const FlexCanRegType *r;
+	const CanHw_HohType *hoh;
+	Can_PduType pdu;
+	uint8_t data[8];
+	uint32_t mbRx = 0xFFFFFFFFu;
+	uint32_t mbTx;
+	uint32_t i;
+
+	if (controller >= CAN_CFG_NUM_CHANNELS) {
+		return;
+	}
+	obj = CanAc_GetObj(controller);
+	if (obj == NULL) {
+		return;
+	}
+	r = obj->flexCanReg;
+
+	/* 从翻译后的邮箱表里反查"哪个邮箱在收 0x7E0" ——
+	 * 不写死 mb5：改了 `Can_Cfg.c` 的邮箱分配，这里自动跟着走 */
+	for (i = 0u; i < (uint32_t)s_flexCfgNum[controller]; i++) {
+		if ((s_flexCfgs[controller][i].msgId == CAN_HW_ID_DIAG_REQ) &&
+		    (s_flexCfgs[controller][i].msgType == FLEXCANDRV_MSGTYPE_RX)) {
+			mbRx = (uint32_t)s_flexCfgs[controller][i].msgBufId;
+			break;
+		}
+	}
+	hoh  = &CanHw_Hohs[CAN_HW_HTH_DIAG_RESP];
+	mbTx = (uint32_t)hoh->msgBufId;
+
+	/* 单个邮箱占 4 个 32 位字：CS / ID / DATA0-3 / DATA4-7 */
+	if (mbRx < 128u) {
+		Platform_Printf("[probe] mb%u RX(0x7E0) cs=%08x id=%08x imr=%08x\n",
+		                (unsigned)mbRx,
+		                (unsigned)r->MSGBUF[mbRx * 4u],
+		                (unsigned)r->MSGBUF[(mbRx * 4u) + 1u],
+		                (unsigned)r->RXIMR[mbRx]);
+	} else {
+		Platform_Printf("[probe] 邮箱表里没有 0x7E0 的 RX 项！\n");
+	}
+	Platform_Printf("[probe] mb%u TX(0x7E8) cs=%08x id=%08x imr=%08x\n",
+	                (unsigned)mbTx,
+	                (unsigned)r->MSGBUF[mbTx * 4u],
+	                (unsigned)r->MSGBUF[(mbTx * 4u) + 1u],
+	                (unsigned)r->RXIMR[mbTx]);
+
+	/* 数据填一个容易在示波器/上位机上认出来的图案 */
+	for (i = 0u; i < 8u; i++) {
+		data[i] = (uint8_t)(0xA0u + i);
+	}
+
+	pdu.swPduHandle = 0u;
+	pdu.length      = 8u;
+	pdu.id          = CAN_HW_ID_DIAG_RESP;
+	pdu.sdu         = data;
+
+	for (i = 0u; i < 8u; i++) {
+		(void)Can_Write((Can_HwHandleType)CAN_HW_HTH_DIAG_RESP, &pdu);
+		CanAc_DbgSpin(40000u);      /* 约 1.2 ms，够发完 8 帧 */
+	}
+
+	Platform_Printf("[probe] after TX x8: ecr=%08x tec=%u rec=%u fltconf=%u\n",
+	                (unsigned)r->ECR,
+	                (unsigned)((r->ECR >> FLEXCAN_ECR_TXERRCNT_SHIFT) & 0xFFu),
+	                (unsigned)((r->ECR >> FLEXCAN_ECR_RXERRCNT_SHIFT) & 0x7Fu),
+	                (unsigned)((r->ESR1 & FLEXCAN_ESR1_FLTCONF_MASK) >> FLEXCAN_ESR1_FLTCONF_SHIFT));
+	Platform_Printf("[probe] IFLAG1=%08x（bit4=TX完成 bit5=RX0x7E0 命中）\n",
+	                (unsigned)r->IFLAG1);
+}
+
 
 /* ============================ [ 压测接口（M14） ] ============================ */
 

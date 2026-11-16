@@ -53,6 +53,8 @@
 
 /* D1 第二步：刷写协议栈（无镜像 / 有刷写请求时停在 UDS，不跳 app） */
 #include "Port.h"       /* Port_Init：引脚 MUX（CAN/STB） */
+#include "Dio.h"        /* Dio_ReadChannel：回读收发器 STB 实际电平 */
+#include "Dio_Cfg.h"    /* DIO_CHANNEL_CAN0_STB */
 #include "Can.h"
 #include "Can_Cfg.h"
 #include "CanIf.h"
@@ -97,6 +99,26 @@ extern const Dcm_ConfigType Dcm_Config;
  */
 #ifndef BOOT_FORCE_UDS
 #define BOOT_FORCE_UDS 0
+#endif
+
+/**
+ * @brief bring-up 开关：进刷写模式时主动发 8 帧自检（默认开）
+ *
+ * @details @section BOOT_PROBE_WHY 为什么需要主动发帧
+ *          "Kvaser 发 0x7E0 → boot 一声不响"这一条现象，软件层能查的
+ *          都已经查完了（`MCR/CTRL1/IMASK1/NVIC` 与 app 逐位相同、`ECR=0`）。
+ *          剩下两种可能**修法完全相反**，必须先用一次主动发送把它们分开：
+ *
+ *          | 探针结果 | 结论 | 方向 |
+ *          |----------|------|------|
+ *          | `TEC` 涨 / `FLTCONF` 变 1 | 帧没被 ACK，收发器没真正上总线 | 硬件：STB 电平、EN、供电、线束 |
+ *          | `TEC=0` 且 `IFLAG1` bit4 置起 | 发送链路完全正常 | 软件：RX 引脚 / 邮箱 / 对端 |
+ *
+ *          @warning 定位完就把它置 0：正常刷写时它会在总线上插 8 帧
+ *          `0xA0..0xA7` 的 0x7E8，上位机会把它们当成诊断响应。
+ */
+#ifndef BOOT_CAN_PROBE
+#define BOOT_CAN_PROBE 1
 #endif
 
 /**
@@ -417,6 +439,23 @@ static void Boot_UdsLoop(void)
 	/* 寄存器快照：CAN 起不来的现场只有这里能看出来
 	 * （MCR 的 MDIS、CTRL0 的 HALT、ECR 的错误计数） */
 	CanAc_DbgDump(0u);
+
+#if BOOT_CAN_PROBE
+	/**
+	 * @brief 主动发帧自检：只在能进刷写模式时执行，约 30 ms
+	 *
+	 * @note  为什么放在这里而不是 `Boot_UdsInit()` 里：Init 失败会走
+	 *        `Boot_Halt()`，而探针本身要打印的正是"为什么失败"，
+	 *        放在 Init 内部会被那条错误路径跳过。
+	 *
+	 *        收发器 STB 的实际电平也一起打出来 —— `PDOR` 读到 0
+	 *        只说明引脚为低，**不说明它被驱动为低**（输入模式下
+	 *        `PDOR` 反映的是外部电平）。所以同时看 `Dio_ReadChannel`。
+	 */
+	Platform_Printf("[boot] STB(CAN0) = %u（0=低=Normal，1=高=Standby）\n",
+	                (unsigned)Dio_ReadChannel(DIO_CHANNEL_CAN0_STB));
+	CanAc_DbgProbe(0u);
+#endif
 
 	for (;;) {
 		if ((uint32_t)(Platform_NowMs() - next) >= DCM_MAIN_FUNCTION_PERIOD) {
