@@ -2409,13 +2409,126 @@ CVM014x >> com can1
    0x201 的数据被投给 Com 的 PDU 1（现在是一条 CAN1 报文），
    读 `RX_COUNTER` 永远超时替换值 0xEE。
 
+### ✅ M23 第一步：信号绑定层（灯光一族，已上板 24/24）
+
+M22 打通之后，`Com_ReceiveSignal()` 能取到值了，但取到的是**原始位值**。
+中间还缺一层翻译，缺的是三件具体的事（不是"某个函数没写"）：
+
+| 缺什么 | 实证 |
+|---|---|
+| **raw → 语义** | 2 bit 灯状态有 4 个取值 = 灭/亮/故障/无效。按 `raw != 0 → 亮` 写，会把"回路故障"当成"正常点亮" |
+| **词表归一** | 全矩阵 281 个 `VAL_` 表、**89 种写法**：同一个"亮"有 `Active`/`On`/`有效`/`lamp on 灯亮；`；同一张 `BCM_LCSF` 里 `BCM_LowBeamSts` 用 `Fault`、`BCM_HighBeamSts` 用 `Error` |
+| **命令型不是状态** | `CentralLockSw` 是 `off/lock/unlock/not used`，`MRightFrontWinSw` 是 `off/up/down/not used` —— 是**动作**。套开关枚举，`unlock`（raw 2）会被读成"故障" |
+
+#### 分层与依赖方向
+
+```
+业务功能（灯光/雨刮/车窗…145 项）
+     ↓ 只 include bcm_sig.h（只依赖 Std_Types.h）
+绑定层 bcm_sig.c / bcm_sig_cfg.c   ← 唯一知道 COM_SID_xxx 的地方
+     ↓
+Com（Com_ReceiveSignal / Com_SendSignal）
+```
+
+`bcm_sig_priv.h` 里放表结构与 `extern`，**公共头零 Com 类型** ——
+和 HAL 一样：接口头不引 SDK，否则"业务层看不见 Com"这条约束立刻失效。
+
+#### 文件
+
+| 文件 | 职责 | 行数 |
+|---|---|---|
+| `app/app/src/bcm_sig.h` | 业务侧契约：`Bcm_SwStateType` + 两个编号枚举 + 4 个接口 | 约 210 |
+| `app/app/src/bcm_sig_priv.h` | 表结构（含 `Com_SignalIdType`），仅实现目录可见 | 约 80 |
+| `app/app/src/bcm_sig.c` | 通用逻辑，**零信号名硬编码** | 约 210 |
+| `app/app/src/bcm_sig_cfg.c` | 纯数据表：11 条发送 + 1 条接收 | 约 200 |
+| `app/app/src/cmd/bcm_cmd.c` | `bcm` 命令：设置与回读 | 约 250 |
+
+#### 为什么是四档而不是 bool
+
+| 取值 | 业务后果 |
+|---|---|
+| `UNKNOWN` | 保持上次动作，**不报 DTC** |
+| `OFF` / `ON` | 关/开输出 |
+| `FAULT` | 关输出 + **可以报 DTC** |
+
+把 `FAULT` 并进 `UNKNOWN`，业务层就答不出"是它没告诉我，还是它告诉我坏了"——
+前者不该报故障，后者必须报。反过来把 `raw != 0` 一律当 `ON`，最坏情况是
+雾灯该亮时不亮而仪表显示正常。
+
+#### 表怎么组织：默认表 + 覆盖表
+
+11 个灯信号的枚举写法不同（8 个 `Inactive/Active`、3 个 `Off/On`），但
+**raw 数值语义完全一致**，所以两条默认表就够：
+
+| 方向 | 下标 | 取值 |
+|---|---|---|
+| 上行 raw→语义 | raw 0/1/2/3 | OFF / ON / FAULT / UNKNOWN |
+| 下行 语义→raw | UNKNOWN/OFF/ON/FAULT | 3 / 0 / 1 / 2 |
+
+`map == NULL` 用默认表，例外信号才给覆盖表。本版 12 条**全部用默认表**——
+这本身就是对"89 种词表其实同构"的验证。
+
+留 `map` 字段而不是以后再加：改表结构要动全部 372 行，加字段只要 48 B。
+
+#### 验收：判据是**整帧 8 字节精确相等**
+
+映射方向搞反了编译不报错、运行也不报错，只会让 `ON` 出现在 `Fault` 位上。
+所以四档各给一组手算期望值，`bcm all <state>` 一条命令同时验证
+11 个信号的位偏移 + 位序 + 映射方向：
+
+| 命令 | 期望 8 字节 | Kvaser 实测 |
+|---|---|---|
+| `bcm all off` | `00 00 00 00 00 00 00 00` | 一致 |
+| `bcm all on` | `50 51 00 41 01 50 01 00` | 一致 |
+| `bcm all fault` | `A0 A2 00 82 02 A0 02 00` | 一致 |
+| `bcm all unknown` | `F0 F3 00 C3 03 F0 03 00` | 一致 |
+
+`tools/m23_check.py` 同时核对三处：业务侧回读（`BcmSig_TxGet`）、
+Com 发送缓冲（`IPduConfigs[].ptr`）、总线帧（Kvaser）。三者对上才算过。
+
+```
+PASS 24 / 24
+```
+
+接收侧用 `ParkingBrakeSwitch`（`CCVS` 0x18FEF121，`2|2@1+`）做通路对照，
+注入 raw 0/1/2/3 → 读到 `OFF/ON/FAULT/UNKNOWN`，4 档全通。
+
+#### 两个坑
+
+1. **`Com_ReceiveSignal()` 的返回值不携带"收到过没有"的信息**。
+   `Com.c:137 comReceiveSignal()` 只要参数合法就返回 `E_OK`，读到的可能只是
+   报文缓冲的 `InitialValue`。所以本层**不提供** `RxIsValid()` ——
+   那会给出一个看起来可信、实际永远为真的标志，比没有更危险。
+   要判断对方掉线，用 Com 的 IPdu 超时（`Com_IPduRxConfigType.Timeout` +
+   `RxDataTimeoutAction`）。
+2. **上电没收到帧时读到的是 `InitialValue`**。矩阵里 CCVS 的初值填的是
+   `0xFF`（J1939 "不可用"），所以手刹信号上电读出来正是 `UNKNOWN` ——
+   语义正确。但如果某条报文初值是 `0x00`，就会被读成 `OFF` 而不是 `UNKNOWN`，
+   这是矩阵初值的既定含义，绑定层无法区分。
+
+#### 尺寸
+
+| 项 | 之前 | 之后 |
+|---|---|---|
+| text | 233,924 | **236,032**（+2,108） |
+| data | 1,712 | 1,712 |
+| bss | 12,616 | **12,632**（+16：12 字节影子） |
+
+#### 回归
+
+M10 22/22、M11 18/18、M19 34/34、M23 24/24，全绿。
+
 ### 尚未完成（下一步）
 
 1. **0x27 换成真算法**：现在 `27 01/02` 是桩（种子返回 0、key 任意），
    刷写链路的 `securityMask` 因此形同虚设 —— 上车前必须补 SWS 里的种子-密钥算法。
    **（本轮按决定暂不换，保持固定桩。）**
-2. **CAN1 的信号绑定层**：现在报文已经进 Com，但应用层还没有把 372 个信号
-   映射成业务语义（`BCM_LowBeamSts` → 灯光状态机）。这是 M23 的内容。
-3. **`Com_MainFunction_Fast()` 进主循环**：`bTxRetry` 目前没有推进者，
-   `PduR_ComTransmit` 失败一次就再也不会重发。
+2. **M23 余下部分**：绑定层骨架已落地（灯光 11 条 + 手刹 1 条），还剩
+   - 命令型信号需要**动作枚举**（`CentralLockSw` 的 `lock`/`unlock`、
+     `_WinSw` 的 `up`/`down`），塞进开关枚举会把 `unlock` 读成"故障"
+   - 模拟量需要 `物理值 = raw × factor + offset`（`TachographVehicleSpeed`
+     的 factor 是 1/256，Com 返回 raw 4660 = 18.2 km/h），表结构要扩字段
+   - 其余 360 个信号的语义，以及 14 个矩阵**没给枚举表**的接收信号
+     （如 `IC_MSG.DoorOpenSw`）需要向福田确认
+3. 业务功能 145 项（设计评审第 4 步），消费绑定层。
 4. 模块级 `cmd/` 目录约定。

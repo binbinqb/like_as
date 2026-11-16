@@ -98,6 +98,11 @@
 #include "Com.h"
 #include "Com_Cfg.h"
 
+/* 车身信号绑定层（M23）。业务侧**只** include 这一个头：
+ * 它看得见 `Bcm_SwStateType` 与 `BCM_SIG_xxx`，看不见 `COM_SID_xxx`、
+ * 报文名、字节偏移 —— 那些都在 `bcm_sig_cfg.c` 的表里。 */
+#include "bcm_sig.h"
+
 /* ECU 状态管理（M11）。应用只碰标准接口：
  *   EcuM_Init / EcuM_StartupTwo / EcuM_RequestRUN / EcuM_RequestPOST_RUN
  * 初始化顺序与 BSW 调度全在 `EcuM_Cfg.c` 的表里。 */
@@ -314,6 +319,12 @@ int main(void)
 
 	CanTest_Init();
 
+	/* 车身信号绑定层（M23）：把 11 个灯状态置 OFF 并写进 Com 发送缓冲。
+	 * 放在这里而不是 `EcuM_Init` 的表里，理由和 `CanTest_Init` 一样 ——
+	 * 它依赖 Com 已经 `Com_Init()` 完毕（`EcuM_Cfg.c` 的 DriverInitOne），
+	 * 而这一步已在上面 `EcuM_StartupTwo()` 之前完成。 */
+	BcmSig_Init();
+
 	Platform_Puts("========================================\n\n");
 
 	PrintfSelfTest();
@@ -373,6 +384,10 @@ int main(void)
 			 * 它要抢在 `Com_MainFunction()` 前面把新值写进报文缓冲，
 			 * 否则第一帧发出去的是上一拍的旧值（差一帧）。
 			 * 这一步是应用逻辑，不属于 BSW 调度表。 */
+			/* 车身信号绑定层（M23）先跑：它把业务语义翻成 raw 写进 Com。
+			 * 必须排在任何消费信号的业务逻辑**之前**（读到的是本拍的输入），
+			 * 也必须排在 `EcuM_BswService()` 之前（否则发送再晚一帧）。 */
+			BcmSig_MainFunction();
 			ComApp_Tick();
 
 			/* BSW 调度交给 EcuM：按 `EcuM_DriverMainList` 的顺序跑一遍
