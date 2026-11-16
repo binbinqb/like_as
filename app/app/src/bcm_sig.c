@@ -33,6 +33,7 @@
  */
 
 #include "bcm_sig_priv.h"
+#include "rx_mon.h"      /* A2：PDU 到达时刻（判 NEVER_RECEIVED / TIMEOUT） */
 
 #include <string.h>
 
@@ -51,6 +52,14 @@ static uint8_t s_txState[BCM_SIG_TX_NUM];
  * @note  下标是 `Bcm_SigRxIdType`。
  */
 static uint8_t s_rxState[BCM_SIG_RX_NUM];
+
+/**
+ * @brief 接收侧影子：上次解出来的**原始位值**
+ * @note  留着它是为了回答"无效到底是因为没收到，还是因为对方发了
+ *        raw=3（无效）"。只存语义的话两者都会变成 `UNKNOWN`，
+ *        现场无法区分 —— 而这两件事的处置完全不同（一个查线，一个查对方）。
+ */
+static uint8_t s_rxRaw[BCM_SIG_RX_NUM];
 
 /* ============================ [ 内部辅助 ] ============================ */
 
@@ -130,6 +139,7 @@ void BcmSig_MainFunction(void)
 		(void)Com_ReceiveSignal(BcmSig_RxCfg[i].comId, &raw32);
 
 		raw = (uint8_t)raw32;
+		s_rxRaw[i] = raw;
 		if (raw > 3u)
 		{
 			/* 不该发生（绑的都是 2 bit），但保底：越界值一律当无效，
@@ -164,6 +174,62 @@ Bcm_SwStateType BcmSig_RxGet(Bcm_SigRxIdType id)
 	}
 
 	return st;
+}
+
+Bcm_SigValidityType BcmSig_RxRead(Bcm_SigRxIdType id, Bcm_SwStateType *st)
+{
+	const BcmSig_RxCfgType *cfg;
+	Bcm_SigValidityType validity = BCM_SIG_NEVER_RECEIVED;
+	Bcm_SwStateType state = BCM_SW_STATE_UNKNOWN;
+	uint32_t age;
+
+	if ((uint32_t)id < (uint32_t)BCM_SIG_RX_NUM)
+	{
+		cfg = &BcmSig_RxCfg[id];
+		age = RxMon_AgeMs(cfg->canIfPduId);
+
+		/* 判定顺序就是语义，不能换：先"从没到过"，再"超时"，
+		 * 最后才看数据本身。理由见 bcm_sig.h 的 BcmSig_RxRead 注释。 */
+		if (RXMON_NEVER_MS == age)
+		{
+			validity = BCM_SIG_NEVER_RECEIVED;
+		}
+		else if ((0u != cfg->timeoutMs) && (age > (uint32_t)cfg->timeoutMs))
+		{
+			validity = BCM_SIG_TIMEOUT;
+		}
+		else if ((s_rxRaw[id] > 3u) ||
+		         ((uint8_t)BCM_SW_STATE_UNKNOWN == s_rxState[id]))
+		{
+			/* raw 越界不该发生（绑的都是 2 bit），但保底归到"无效"，
+			 * 让问题以"值无效"的形式暴露，而不是被当成 OFF 用掉。 */
+			validity = BCM_SIG_INVALID;
+		}
+		else
+		{
+			validity = BCM_SIG_VALID;
+			state = (Bcm_SwStateType)s_rxState[id];
+		}
+	}
+
+	if (NULL != st)
+	{
+		*st = state;
+	}
+
+	return validity;
+}
+
+uint32_t BcmSig_RxAgeMs(Bcm_SigRxIdType id)
+{
+	uint32_t age = RXMON_NEVER_MS;
+
+	if ((uint32_t)id < (uint32_t)BCM_SIG_RX_NUM)
+	{
+		age = RxMon_AgeMs(BcmSig_RxCfg[id].canIfPduId);
+	}
+
+	return age;
 }
 
 Std_ReturnType BcmSig_TxSet(Bcm_SigIdType id, Bcm_SwStateType st)

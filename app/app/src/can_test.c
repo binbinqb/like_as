@@ -15,6 +15,7 @@
 
 #include "platform_cvm0146.h"
 #include "can_test.h"
+#include "rx_mon.h"     /* A2：RX 到达监视（中断里记时刻） */
 
 #include "Can.h"
 #include "Can_Cfg.h"
@@ -113,6 +114,19 @@ void App_CanIfRxIndication(PduIdType RxPduId, const PduInfoType *PduInfoPtr)
 	if (RxPduId < (PduIdType)CANIF_RX_PDU_NUM) {
 		s_rxPerPdu[RxPduId]++;
 	}
+
+	/* A2 到达监视：记下这条 PDU 最后一次到达的时刻。
+	 *
+	 * 放在这里而不是等 PduR 消费之后：PduR 可能因为路径没启用、
+	 * Com 可能因为 IPdu 模式是 OFFLINE 而丢掉这一帧，但"总线上来过"
+	 * 这个事实与"上层要不要"无关 —— 它回答的是物理层有没有人说话。
+	 *
+	 * @note 覆盖范围 = 所有 `rxInd` 指向本函数的 PDU（CAN0 的段掩码组 +
+	 *       CAN1 全部 34 条）。CAN0 的 0x201 走 `CanIfCfg_ComRxIndication`，
+	 *       不在监视范围内 —— 那条是 Com 的信号测试夹具，不是整车信号，
+	 *       而且它由平台 config 层直接接 PduR，让 config 反向依赖 app 的
+	 *       监视模块会破坏分层（config 只向下依赖）。 */
+	RxMon_OnRx(RxPduId);
 
 	s_rxFlag  = true;
 }

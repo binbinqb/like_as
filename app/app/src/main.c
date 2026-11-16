@@ -102,6 +102,7 @@
  * 它看得见 `Bcm_SwStateType` 与 `BCM_SIG_xxx`，看不见 `COM_SID_xxx`、
  * 报文名、字节偏移 —— 那些都在 `bcm_sig_cfg.c` 的表里。 */
 #include "bcm_sig.h"
+#include "rx_mon.h"       /* A2：CAN 接收到达监视（清零必须在总线上线前） */
 
 /* ECU 状态管理（M11）。应用只碰标准接口：
  *   EcuM_Init / EcuM_StartupTwo / EcuM_RequestRUN / EcuM_RequestPOST_RUN
@@ -223,6 +224,13 @@ int main(void)
 
 	Platform_Init();
 	Platform_InitTick();
+
+	/* A2 到达监视清零：必须在总线上线之前。
+	 *
+	 * 清在这里而不是 `BcmSig_Init()`：`BcmSig_Init()` 在 RUN 之后才跑，
+	 * 那时 CAN1 可能已经收到过帧，清零会把"真的来过"抹掉，于是上电后
+	 * 头 300 ms 的信号全被判成 NEVER_RECEIVED（比不判还误导）。 */
+	RxMon_Init();
 
 	Platform_Puts("\n");
 	Platform_Puts("========================================\n");

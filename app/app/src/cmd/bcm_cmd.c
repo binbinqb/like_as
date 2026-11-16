@@ -180,6 +180,52 @@ static void dumpLcsfBytes(void)
 }
 
 /**
+ * @brief 有效性状态的可读名字
+ * @param[in] v 有效性
+ * @return 静态字符串（永不返回 NULL）
+ */
+static const char *validityName(Bcm_SigValidityType v)
+{
+	static const char *const s_names[] = { "VALID", "INVALID", "TIMEOUT", "NEVER" };
+
+	return ((uint32_t)v <= (uint32_t)BCM_SIG_NEVER_RECEIVED) ? s_names[v] : "?";
+}
+
+/**
+ * @brief 打印接收侧的"值 + 有效性 + 到达年龄"
+ *
+ * @details 这三项一起打是有原因的：只看值无法区分四种情况，
+ *          而它们的排查方向完全不同 ——
+ *
+ *          | 看到 | 说明 | 下一步查什么 |
+ *          |------|------|--------------|
+ *          | `VALID` | 正常 | — |
+ *          | `INVALID`（age 很小） | 帧在，但对方的值落在无效枚举 | 查发送方状态 |
+ *          | `TIMEOUT`（age 很大） | 收到过，后来断了 | 查线束/发送方掉电 |
+ *          | `NEVER`（age = --） | 上电至今没收到 | 查波特率/终端电阻/该节点在不在 |
+ */
+static void dumpRx(void)
+{
+	Bcm_SwStateType st;
+	Bcm_SigValidityType v;
+	uint32_t age;
+
+	v = BcmSig_RxRead(BCM_SIG_RX_PARK_BRAKE, &st);
+	age = BcmSig_RxAgeMs(BCM_SIG_RX_PARK_BRAKE);
+
+	if (0xFFFFFFFFu == age)
+	{
+		Platform_Printf("  bcm rx park brake = %-7s [%-7s age=--]\n",
+		                stateName(st), validityName(v));
+	}
+	else
+	{
+		Platform_Printf("  bcm rx park brake = %-7s [%-7s age=%u ms]\n",
+		                stateName(st), validityName(v), (unsigned)age);
+	}
+}
+
+/**
  * @brief dump 全部灯状态 + 手刹输入 + LCSF 字节
  */
 static void dumpAll(void)
@@ -197,8 +243,7 @@ static void dumpAll(void)
 		Platform_Printf("   %-6s %s\n", s_lampNameById[i], stateName(st));
 	}
 
-	Platform_Printf("  bcm rx park brake = %s\n",
-	                stateName(BcmSig_RxGet(BCM_SIG_RX_PARK_BRAKE)));
+	dumpRx();
 
 	dumpLcsfBytes();
 }
@@ -214,6 +259,7 @@ static void dumpAll(void)
  *
  * @note  用法：
  *        - `bcm`                  → dump 全部状态 + LCSF 字节
+ *        - `bcm rx`               → 只打接收侧的值/有效性/到达年龄（A2）
  *        - `bcm all on`           → 11 个灯全设 ON
  *        - `bcm low on`           → 只设近光灯
  *        - `bcm low on  high off` → 不支持，一次只处理一个灯
@@ -226,6 +272,14 @@ static int sh_cmd_bcm(int argc, char *argv[])
 	if (argc < 2)
 	{
 		dumpAll();
+		return SH_OK;
+	}
+
+	/* 单参数形式：`bcm rx` 只回答"输入到底有没有来"
+	 * （验收脚本里测四态时只想要这一行，不想要 11 个灯刷屏） */
+	if (strcmp(argv[1], "rx") == 0)
+	{
+		dumpRx();
 		return SH_OK;
 	}
 

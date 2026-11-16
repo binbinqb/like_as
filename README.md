@@ -2674,17 +2674,76 @@ C6 为什么值得写：它拦的不是"忘了加标记"，而是**生成器越�
 哪天有人把 `bcm_sig_cfg.c` 也纳入生成范围，业务表就会被静默重写，
 而 `git diff` 里看起来只是"表变了一点"。
 
+### ✅ A2 信号有效性：一个枚举答不了两个问题
+
+`Com_ReceiveSignal()` 的 `E_OK` 是**恒真**的（`Com.c:137`，只有 UpdateBit
+未置位才失败），它不携带"这一帧来过没有"。所以旧版 `bcm_sig.h` 明确写了
+"本层不提供 `RxIsValid()`" —— 那时这个判断是对的：没有到达时刻，
+"是否有效"只能从 Com 的返回值猜，注定恒真，比没有更危险。
+
+问题在于一个枚举维度装不下两件事：
+
+| 现场情况 | 旧版唯一能给的答案 | 业务真正需要知道的 |
+|---|---|---|
+| 对方还没启动 | `OFF`（读到 `InitialValue`） | "它没说话"，不能当"它说灭" |
+| 对方断电 3 秒 | `OFF`（读到最后一帧） | "它掉线了"，要报通信丢失 |
+| 对方发了 raw=3 | `UNKNOWN` | "它说这个值现在不可用" |
+| 对方发了 raw=2 | `FAULT` | "它报错了"，要关输出 |
+
+**做法：拆成两个维度，都放在应用侧（不动 `infras/`）。**
+
+```c
+Bcm_SwStateType      BcmSig_RxGet(id);              /* 值是什么 */
+Bcm_SigValidityType  BcmSig_RxRead(id, &st);        /* 这个值算不算数 */
+```
+
+- **到达时刻**由新增的 `rx_mon.c` 在 CanIf 回调里记（`App_CanIfRxIndication`，
+  中断上下文，只写时间戳 + 置位，不判断不打印）；
+- **值是否无效**由绑定层按映射表回答（raw 落在"无效"档即 `INVALID`）。
+
+判定顺序（顺序本身是语义）：
+
+| 顺序 | 判据 | 返回 | `*st` |
+|---|---|---|---|
+| 1 | 上电至今没收到过该 PDU | `NEVER_RECEIVED` | `UNKNOWN` |
+| 2 | 距最后到达 > `timeoutMs`（手刹 300 ms = 3×100 ms 周期） | `TIMEOUT` | `UNKNOWN` |
+| 3 | raw 落在映射表"无效"档 | `INVALID` | `UNKNOWN` |
+| 4 | 其余 | `VALID` | 映射出的语义 |
+
+先判"没收到"再判"超时"是必须的：上电瞬间所有信号都"超时"（从没更新过），
+若先判超时，BCM 会在别人还没启动的几百毫秒里把通信丢失 DTC 刷满。
+
+#### 与 AUTOSAR 的差异（写出来，不藏）
+
+| 项 | AUTOSAR | 本实现 |
+|---|---|---|
+| "对方说它坏了" | 发送方置 data invalid，Com 通知 RTE | 接收方解读 raw 落在无效枚举 |
+| 时间基准 | Com 的 IPdu 超时（BSW 定时器） | `Platform_NowMs()`（1 ms SysTick） |
+| 覆盖范围 | 全部信号 | 走 `App_CanIfRxIndication` 的 PDU（CAN1 全部 34 条 + CAN0 段组） |
+| 未覆盖 | — | CAN0 0x201（Com 信号测试夹具，走平台 config 的 shim，让 config 反向依赖 app 会破分层） |
+
+要做到与 AUTOSAR 一致，仍需 D9（`infras/` 改动权限）与 `Com_ComSignalDataStatus` 落地。
+
+#### 验收（`tools/a2_validity_check.py`，19/19 上板）
+
+| 构造 | 期望 | 实测 |
+|---|---|---|
+| 复位后一帧不发 | `NEVER` / `UNKNOWN` / `age=--` | 一致 |
+| raw 1 / 0 / 2 | `VALID` / `ON` / `OFF` / `FAULT` | 一致 |
+| raw 3 | `INVALID` / `UNKNOWN` | 一致 |
+| 停发 500 ms | `TIMEOUT` / `UNKNOWN` / age > 300 | age=1072 ms |
+| 再发一帧 | 回 `VALID` / `FAULT`，age < 100 | age=72 ms |
+| 同总线 LCSF 持续在发 | CCVS 仍 `TIMEOUT`，age 单调增 | 1227 → 1879 ms |
+
+最后一条是隔离性判据：证明"到达时刻按 PDU 计"，不是"总线有帧就算新鲜"。
+
 ### 尚未完成（下一步）
 
 1. **0x27 换成真算法**：现在 `27 01/02` 是桩（种子返回 0、key 任意），
    刷写链路的 `securityMask` 因此形同虚设 —— 上车前必须补 SWS 里的种子-密钥算法。
    **（本轮按决定暂不换，保持固定桩。）**
-2. **A2 信号有效性接口**：`Com_ReceiveSignal()` 的 `E_OK` 是恒真的
-   （`Com.c:137`，只有 UpdateBit 未置位才失败），**不携带"收到过没有"**。
-   标准做法是 Com 支持 `ComSignalDataInvalidValue` + `InvalidNotification`
-   + data status，RTE 才能区分 `RTE_E_INVALID`（对方说它坏了）与
-   `RTE_E_NEVER_RECEIVED`（对方没告诉我）。当前是**应用侧**用"FAULT 从
-   raw 值恢复 + 初值 0xFF"这个次优替代。要补就得先定 D9（`infras/` 改动权限）。
+2. **A2 信号有效性接口**：已完成（见上一节，应用侧四态，19/19 上板）。
+   与 AUTOSAR 的差异在于"谁判定数据无效"与时间基准，要完全对齐仍需 D9。
 3. **A4 生成一致性**：已完成（见上一节）。`Com_Cfg.c` 仍是生成物入库，
    靠 `tools/a4_gen_check.py` 的 C4 守"拷入副本与 GEN 一致"。
 4. **A5/A8 掉电安全**：Boot 异常恢复（镜像校验失败 / rollback / 双槽边界）

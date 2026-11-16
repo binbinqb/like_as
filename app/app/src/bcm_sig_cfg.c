@@ -32,6 +32,7 @@
  */
 
 #include "bcm_sig_priv.h"
+#include "CanIf_Cfg.h"   /* CANIF_RX_CAN1_CCVS：接收项的到达监视要知道 PDU 号 */
 
 /* ============================ [ 默认映射表 ] ============================ */
 
@@ -121,9 +122,29 @@ const BcmSig_TxCfgType BcmSig_TxCfg[BCM_SIG_TX_NUM] =
  */
 const BcmSig_RxCfgType BcmSig_RxCfg[BCM_SIG_RX_NUM] =
 {
-	/* Com 信号号                                 覆盖表 */
-	{ (Com_SignalIdType)COM_SID_ParkingBrakeSwitch, NULL } /* 手刹开关 */
+	/* Com 信号号                                覆盖表  CanIf PDU 号                  超时(ms) */
+	{ (Com_SignalIdType)COM_SID_ParkingBrakeSwitch, NULL, CANIF_RX_CAN1_CCVS,      300u } /* 手刹开关 */
 };
+
+/**
+ * @brief 超时门限为什么是 300 ms
+ *
+ * @details `CCVS`（0x18FEF121）在 `dbc/can1.dbc` 里的 `GenMsgCycleTime`
+ *          是 **100 ms**（第 509 行）。300 ms = 3 个周期 —— 允许丢两帧
+ *          再判超时。
+ *
+ *          为什么不用 2 倍：车身总线上一次仲裁拥塞 + 一次 FEE 擦除抖动
+ *          （`NvM` 单次写可达几毫秒）就可能连丢一帧，2 倍门限会在正常
+ *          工况下偶发误报。
+ *
+ *          为什么不用 5 倍：`ParkingBrakeSwitch` 参与起步/驻车判断，
+ *          500 ms 才认掉线太迟；对端真正断电时，300 ms 内必须让业务
+ *          知道"这个值不再可信"。
+ *
+ *          门限写成每信号一项而不是每 PDU 一项：同一帧里不同信号的
+ *          容忍度不一样（比如未来绑 `WheelBasedVehicleSpeed`，它参与
+ *          车速计算，门限就该更紧）。代价是每条多 2 字节。
+ */
 
 /* ============================ [ 编译期自检 ] ============================ */
 

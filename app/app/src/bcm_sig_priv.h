@@ -39,8 +39,10 @@ typedef struct
  */
 typedef struct
 {
-	Com_SignalIdType comId; /**< Com 信号号（`COM_SID_xxx`） */
-	const uint8_t *map;     /**< raw→语义 覆盖表，`NULL` = 用默认表 */
+	Com_SignalIdType comId;  /**< Com 信号号（`COM_SID_xxx`） */
+	const uint8_t *map;      /**< raw→语义 覆盖表，`NULL` = 用默认表 */
+	PduIdType canIfPduId;    /**< 该信号所在 PDU 的 CanIf 编号（到达监视用） */
+	uint16_t timeoutMs;      /**< 超过这个时长没收到就判超时（0 = 不判） */
 } BcmSig_RxCfgType;
 
 /* ============================ [ 表（bcm_sig_cfg.c 定义） ] ============================ */
