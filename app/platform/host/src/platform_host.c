@@ -84,6 +84,21 @@ void Platform_EnterStopMode(void)
 
 /* ============================== [ 控制台 ] ============================== */
 
+/** @brief `Platform_Reset()` 被调用的次数（Host 上不真复位，只计数） */
+static uint32_t s_resetCount;
+
+uint32_t Host_GetResetCount(void)
+{
+	return s_resetCount;
+}
+
+void Platform_Reset(void)
+{
+	/* Host 上**不能真复位**：那等于 abort() 掉测试进程，"到底有没有请求
+	 * 复位"这个最关键的断言就永远看不到结果。这里只计数，由用例断言。 */
+	s_resetCount++;
+}
+
 void Platform_Init(void)
 {
 	s_ms = 0u;

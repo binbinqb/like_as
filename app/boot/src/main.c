@@ -354,6 +354,17 @@ static void Boot_Halt(const char *reason)
 /* ============================ [ UDS 刷写模式（D1 第二步） ] ============================ */
 
 /**
+ * @brief App 请求刷写后，多久没有诊断仪进编程会话就放弃（ms）
+ *
+ * @details 30000 的依据：诊断仪点"开始刷写"到发出 `10 02` 通常 < 3 s；
+ *          30 s 足够覆盖"连错通道、重连、重选文件"这类人为操作，
+ *          又不至于让车停在 boot 太久被用户当成故障。
+ *
+ * @note 一旦进了编程会话就不再计时（见 `Boot_UdsLoop` 的 `engaged`）。
+ */
+#define BOOT_FLASH_IDLE_TIMEOUT_MS      (30000u)
+
+/**
  * @brief 刷写模式初始化：自下而上拉起 CAN 协议栈
  * @retval E_OK     就绪
  * @retval E_NOT_OK CAN 控制器起不来（硬件故障）
@@ -448,9 +459,11 @@ static Std_ReturnType Boot_UdsInit(void)
  *        折成 tick 的。扔进自由循环的话，100 tick 的 N_Bs 会在几百微秒内
  *        耗尽 —— **单帧全通、多帧一律失败**（单帧不依赖定时器）。
  */
-static void Boot_UdsLoop(void)
+static uint8_t Boot_UdsLoop(uint32_t idleTimeoutMs)
 {
 	uint32_t next = Platform_NowMs();
+	uint32_t start = Platform_NowMs();
+	uint8_t  engaged = 0u;   /* 诊断仪已进非默认会话 → 正在刷，不再超时 */
 #if BOOT_CAN_PROBE
 	uint32_t nextSt = Platform_NowMs();
 	uint32_t stCnt  = 0u;
@@ -481,10 +494,40 @@ static void Boot_UdsLoop(void)
 #endif
 
 	for (;;) {
+		Dcm_SesCtrlType sesNow = DCM_DEFAULT_SESSION;
+
 		if ((uint32_t)(Platform_NowMs() - next) >= DCM_MAIN_FUNCTION_PERIOD) {
 			next = Platform_NowMs();
 			CanTp_MainFunction();
 			Dcm_MainFunction();
+		}
+
+		/* ---- 空闲超时回退 ----
+		 *
+		 * 为什么需要：进入刷写模式有两类原因，性质完全不同 ——
+		 *
+		 * | 原因 | 有镜像可跑吗 | 超时退出安全吗 |
+		 * |------|--------------|----------------|
+		 * | App 请求（`10 02`） | 有，而且刚确认过能跑 | **必须**：诊断仪放弃/掉线时不能把车锁死在 boot |
+		 * | 没有有效镜像 | 没有 | 不能：退出也没东西可跳 |
+		 *
+		 * 场景：诊断仪发了 `10 02`，App 写完标志复位，然后工具崩了 / 线掉了 /
+		 * 用户关钥匙。下次上电车就停在 boot —— 现场表现是"整车不工作"，
+		 * 而且没有任何故障码。所以这里必须有退路。
+		 *
+		 * `engaged` 的作用：一旦诊断仪进了编程会话就**永不再超时**，否则
+		 * 刷到一半（比如正在等人点确认）会被踢出去，比不刷更危险。 */
+		if (idleTimeoutMs != 0u) {
+			if ((Dcm_GetSesCtrlType(&sesNow) == E_OK) &&
+			    (sesNow != DCM_DEFAULT_SESSION)) {
+				engaged = 1u;
+			}
+
+			if ((0u == engaged) &&
+			    ((uint32_t)(Platform_NowMs() - start) >= idleTimeoutMs)) {
+				Platform_Puts("[boot] no tester, leaving flash mode\n");
+				return 1u;
+			}
 		}
 #if BOOT_CAN_PROBE
 		/* 接收侧状态行：每秒一次，最多 12 行。
@@ -505,7 +548,7 @@ static void Boot_UdsLoop(void)
  *
  * @note  CAN 起不来时退化成 `Boot_Halt()` —— 至少串口还能告诉人"是硬件问题"。
  */
-static void Boot_EnterUds(const char *reason)
+static uint8_t Boot_EnterUds(const char *reason, uint32_t idleTimeoutMs)
 {
 	Platform_Printf("\n[boot] %s\n", reason);
 	Platform_Puts("[boot] entering UDS flash mode ...\n");
@@ -514,7 +557,7 @@ static void Boot_EnterUds(const char *reason)
 		Boot_Halt("CAN controller failed to start");
 	}
 
-	Boot_UdsLoop();
+	return Boot_UdsLoop(idleTimeoutMs);
 }
 
 /**
@@ -608,8 +651,48 @@ int main(void)
 
 #if BOOT_FORCE_UDS
 	/* 调试：不跳 app，直接进刷写模式（验证 UDS 链路用） */
-	Boot_EnterUds("BOOT_FORCE_UDS=1 (debug build, not for production)");
+	(void)Boot_EnterUds("BOOT_FORCE_UDS=1 (debug build, not for production)", 0u);
 #endif
+
+	/* ---- 第 0 步：App 请求的刷写交接 ----
+	 *
+	 * 诊断仪发 `10 02`（编程会话）时，App 写 `reserved[0] = REQ_FLASH` 再复位；
+	 * 这里读到就停在 UDS，而不是跳 App。
+	 *
+	 * 放在选槽之前：此时刚读完 meta，不需要算镜像 CRC（几十万字节、十几毫秒）；
+	 * 而"要不要进 UDS"与"哪个槽的镜像有效"无关 —— 刷写就是要覆盖它。
+	 *
+	 * **清除必须在进 UDS 之前**：否则刷完复位又读到标志、又进 UDS，App 永远
+	 * 起不来（现场表现是"升级成功但一直停在 boot"）。清除失败则正常启动 ——
+	 * 宁可这次刷不了，也不能把板子变成只能刷机的砖。 */
+	{
+		uint8_t reqSlot = BootMeta_GetActiveSlot();
+
+		if (reqSlot != BOOT_NO_ACTIVE_SLOT) {
+			const Boot_SlotInfoType *reqInfo = BootMeta_GetSlot(reqSlot);
+
+			if ((reqInfo != NULL) && (reqInfo->metaValid != 0u) &&
+			    (reqInfo->meta.reserved[0] == (uint8_t)BOOT_META_REQ_FLASH)) {
+				Boot_MetaType reqMeta = reqInfo->meta;
+
+				reqMeta.reserved[0] = (uint8_t)BOOT_META_REQ_NONE;
+
+				if (BootMeta_Write(reqSlot, &reqMeta) == E_OK) {
+					/* 30 s：够诊断仪连上、进编程会话、开始擦除；
+					 * 超时说明"只是发了 10 02 然后什么都没做"，
+					 * 这时必须回退到正常启动，否则整车无法工作。 */
+					if (Boot_EnterUds("flash requested by app (10 02 programming session)",
+					                  BOOT_FLASH_IDLE_TIMEOUT_MS) == 0u) {
+						Boot_Halt("flash mode returned without timeout");
+					}
+					Platform_Puts("[boot] resume normal boot after idle timeout\n");
+				} else {
+					Platform_Puts("[boot] flash request found but cannot clear; "
+					              "booting normally\n");
+				}
+			}
+		}
+	}
 
 	/* ---- 第一步：按 meta 选活动槽 ---- */
 	slot = BootMeta_GetActiveSlot();
@@ -662,7 +745,7 @@ int main(void)
 	if (chosen == BOOT_NO_ACTIVE_SLOT) {
 		/* 没有可启动镜像 —— 这是 D1 第二步的核心场景：
 		 * app 被擦掉了，boot 停在 UDS 等诊断仪刷写，而不是死等 J-Link。 */
-		Boot_EnterUds("no valid image in slot A or B, waiting for flash");
+		(void)Boot_EnterUds("no valid image in slot A or B, waiting for flash", 0u);
 	}
 
 	/* ---- 第三步：跳转前的尝试计数（回滚触发点） ---- */
@@ -675,7 +758,7 @@ int main(void)
 
 		if (BootMeta_CheckImage(other) != E_OK) {
 			/* 回滚目标也坏了 —— 同样进 UDS，让诊断仪能救回来 */
-			Boot_EnterUds("rollback target also invalid, waiting for flash");
+			(void)Boot_EnterUds("rollback target also invalid, waiting for flash", 0u);
 		}
 		chosen = other;
 	}

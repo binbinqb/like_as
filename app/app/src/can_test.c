@@ -14,6 +14,7 @@
  */
 
 #include "platform_cvm0146.h"
+#include "boot_app.h"   /* BootApp_RequestFlashMode：10 02 → 交棒给 boot */
 #include "can_test.h"
 #include "rx_mon.h"     /* A2：RX 到达监视（中断里记时刻） */
 
@@ -252,6 +253,17 @@ void Dcm_SessionChangeIndication(Dcm_SesCtrlType sesActive, Dcm_SesCtrlType sesN
 	Platform_Printf("[dcm] session %u -> %u (%s)\n",
 	                (unsigned)sesActive, (unsigned)sesNew,
 	                (TRUE == timeout) ? "S3 timeout" : "requested");
+
+	/* 编程会话 = 诊断仪要刷写。App 没有 0x34/0x36/0x37，必须把控制权
+	 * 交给 boot —— 这里只**请求**，不动手（正响应还没发出去，见
+	 * `boot_app.h` 的说明）。
+	 *
+	 * 排除 S3 超时：那条路径也会走到本函数（`Dcm_Dsl.c:243` 用 TRUE 调用，
+	 * 从任何会话跳回 DEFAULT）。若不排除，会话超时 6.5 s 后也会请求复位，
+	 * 表现为"刷写工具一空闲 ECU 就重启"。 */
+	if ((FALSE == timeout) && (DCM_PROGRAMMING_SESSION == sesNew)) {
+		BootApp_RequestFlashMode();
+	}
 }
 
 /**

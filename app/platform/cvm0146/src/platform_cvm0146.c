@@ -424,6 +424,24 @@ static void Console_PutChar(char c)
 	}
 }
 
+void Platform_Reset(void)
+{
+	Platform_Puts("[platform] reset now\n");
+
+	/* 关中断再复位：SysTick 还在跑，若在 NVIC_SystemReset() 前的几条指令
+	 * 之间来中断，可能又打出半行日志，看起来像"复位前还在跑别的代码"。
+	 * 这里没有需要保存的状态，直接断。 */
+	__asm volatile ("cpsid i");
+
+	NVIC_SystemReset();
+
+	/* NVIC_SystemReset 的 AIRCR 写入要几个周期才生效，编译器不知道它不返回，
+	 * 不加这个死循环会继续往下执行（并可能被优化成 fall-through 到下一个函数）。 */
+	for (;;) {
+		__asm volatile ("nop");
+	}
+}
+
 void Platform_SetConsoleSink(void (*fn)(char c))
 {
 	s_consoleSink = fn;

@@ -17,7 +17,8 @@
 
 #include "boot_app.h"
 
-#include "platform_cvm0146.h"
+#include "platform.h"          /* Platform_NowMs / Platform_Reset（芯片无关契约） */
+#include "platform_cvm0146.h"  /* Platform_FlashWrite：BootMeta 依赖 */
 #include "boot_meta.h"
 #include "Crc.h"
 
@@ -153,4 +154,86 @@ void BootApp_Confirm(void)
 	} else {
 		Platform_Puts("[app] boot confirm failed (meta write error)\n");
 	}
+}
+
+/* ==================== [ App → Boot 刷写交接 ] ==================== */
+
+/**
+ * @brief 等正响应发出去的时间（ms）
+ *
+ * @details 为什么不是 0：`Dcm_SessionChangeIndication()` 是在**正响应组包之前**
+ *          被调用的（见 `Dcm_Dsp.c` 的调用点），此刻复位会让诊断仪收不到
+ *          `50 03`，工具报超时。
+ *          为什么不是 1000：刷写工具那边本来就要等 ECU 重启，多等 1 s 只是
+ *          让整个刷写流程变慢，没有收益。
+ *          150 ms 覆盖"单帧响应 + 总线仲裁失败重传几次"。
+ */
+#define BOOTAPP_FLASH_DELAY_MS      (150u)
+
+/** @brief 交接状态：0=空闲 1=已请求（等响应） 2=已处理（不再动作） */
+static uint8_t  s_flashReq;
+
+/** @brief 请求时刻（`Platform_NowMs()`） */
+static uint32_t s_flashReqAt;
+
+void BootApp_RequestFlashMode(void)
+{
+	if (0u != s_flashReq) {
+		return;   /* 幂等：重复进编程会话不重置计时 */
+	}
+
+	s_flashReq   = 1u;
+	s_flashReqAt = Platform_NowMs();
+
+	Platform_Puts("[app] programming session -> will reboot into bootloader\n");
+}
+
+void BootApp_MainFunction(void)
+{
+	const Boot_SlotInfoType *info;
+	Boot_MetaType meta;
+
+	if (1u != s_flashReq) {
+		return;
+	}
+
+	/* 等 `50 03` 上总线。这里不能用"进入本函数就说明响应已发"这种假设 ——
+	 * Dcm 的 indication 回调发生在响应组包之前。 */
+	if ((uint32_t)(Platform_NowMs() - s_flashReqAt) < BOOTAPP_FLASH_DELAY_MS) {
+		return;
+	}
+
+	/* 先置 2 再写 Flash：写失败也**不重试**。理由见 boot_app.h 的说明 ——
+	 * 重试会反复擦 meta 扇区（每次擦都是一次寿命 + 一次掉电风险窗口），
+	 * 而失败原因基本只有"Flash 坏"，重试不会改变结果。 */
+	s_flashReq = 2u;
+
+	info = BootMeta_GetSlot(s_slot);
+	if ((info == NULL) || (0u == info->metaValid)) {
+		Platform_Puts("[app] meta invalid, cannot hand over to bootloader\n");
+		return;
+	}
+
+	/* 只改 reserved[0]，其余字段（含 rollingCounter / state / CRC）原样保留：
+	 * boot 用 rollingCounter 选槽，这里动了它等于改变"谁是活动槽"。 */
+	meta = info->meta;
+	meta.reserved[0] = (uint8_t)BOOT_META_REQ_FLASH;
+
+	if (BootMeta_Write(s_slot, &meta) != E_OK) {
+		Platform_Puts("[app] write flash request FAILED, staying in app\n");
+		return;
+	}
+
+	Platform_Puts("[app] flash request written, resetting into boot\n");
+
+	/* 让串口那行字发完（115200 下约 1 ms / 10 字节，这里给足余量）。
+	 * 不能用 Platform_NowMs() 等：SysTick 可能已被下面的复位流程影响，
+	 * 而且这是最后几毫秒，忙等最简单可靠。 */
+	{
+		volatile uint32_t d = 40000u;
+		while (d-- > 0u) {
+		}
+	}
+
+	Platform_Reset();
 }

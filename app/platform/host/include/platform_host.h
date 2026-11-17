@@ -56,6 +56,14 @@ void Host_AdvanceMs(uint32_t ms);
  */
 void Host_ResetClock(void);
 
+/**
+ * @brief `Platform_Reset()` 被调用过几次
+ * @return 次数
+ * @note  Host 版 `Platform_Reset()` 不真复位（否则测试进程直接没了），
+ *        只累加这个计数，用例据此断言"写完标志后确实请求了复位"。
+ */
+uint32_t Host_GetResetCount(void);
+
 #ifdef __cplusplus
 }
 #endif

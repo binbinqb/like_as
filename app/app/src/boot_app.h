@@ -70,4 +70,35 @@ void BootApp_Confirm(void);
  */
 uint8_t BootApp_GetSlot(void);
 
+/**
+ * @brief 请求下次上电进 boot 的 UDS 刷写模式（由 `10 03` 触发，**不阻塞**）
+ *
+ * @details 只置一个静态标志 + 记时间戳，真正的写 Flash 与复位在
+ *          `BootApp_MainFunction()` 里做。**不能在 Dcm 的回调里直接写**：
+ *          那时 `50 03` 正响应还没发出去，复位会让诊断仪收不到响应，
+ *          工具侧报"session control timeout"，看不出真实原因。
+ *
+ * @note 重复调用是幂等的（已请求过就不再记时间戳）。
+ */
+void BootApp_RequestFlashMode(void);
+
+/**
+ * @brief 刷写交接的周期处理（主循环调用，10 ms 拍）
+ *
+ * @details 状态机很小，只有三态：
+ *          @code
+ *          0 空闲 ──RequestFlashMode()──▶ 1 等待响应发出
+ *                                            │ 150 ms
+ *                                            ▼
+ *                                      写 meta.reserved[0]=0x01
+ *                                            │ 成功
+ *                                            ▼
+ *                                      2 已写（不再动作）→ Platform_Reset()
+ *          @endcode
+ *
+ *          写失败时停在 2，**不复位** —— 否则 App 反复重启，诊断仪看到的是
+ *          "每次进编程会话就掉线"，比"进不去"更难查。
+ */
+void BootApp_MainFunction(void);
+
 #endif /* BOOT_APP_H */

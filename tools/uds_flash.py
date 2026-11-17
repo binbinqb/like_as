@@ -301,8 +301,29 @@ def main():
 	f = Flash(tp, a.verbose)
 
 	try:
-		print("\n-- 1/7 extended session")
-		f.session(0x03)
+		print("\n-- 1/7 programming session（App 会把控制权交给 boot）")
+		# 0x02 = programming session，不是 0x03（extended）。
+		#
+		# 为什么必须是 0x02：App 的服务表里**没有** 0x34/0x36/0x37，进编程
+		# 会话是它"申请刷写"的唯一表达方式 —— `Dcm_SessionChangeIndication()`
+		# 收到编程会话就写 meta 标志并复位，boot 上电读到标志停在 UDS。
+		# 用 0x03 则只是普通扩展会话，App 不会交接，后面的 0x34 必然
+		# 被回 NRC 0x11（serviceNotSupported）。
+		f.session(0x02)
+
+		# App 的顺序是：回 `50 02` → 等 150 ms → 写 meta（擦两个扇区）→ 复位
+		# → boot 初始化（Flash 自检 + 打印两个槽信息）。2.5 s 是实测余量：
+		# 少于 1.5 s 会偶尔在 boot 还没起来时发 0x27，工具报"无响应"。
+		time.sleep(2.5)
+
+		# 复位后 Dcm 回到 DEFAULT 会话，而 boot 的 0x27/0x31/0x34 都要求
+		# 编程会话（见 app/boot/config/Dcm_Cfg.c 的 Dcm_SecLevels[].sessionMask）。
+		# 所以必须**再进一次** —— 这一次由 boot 应答。
+		#
+		# 如果交接没成功（第二次仍是 App 处理），会再复位一次，随后 0x27
+		# 拿到 NRC 0x7E —— 那句报错就等价于"没进 boot，检查 meta 标志"。
+		print("-- 1b/7 programming session（复位后重进会话，此时由 boot 应答）")
+		f.session(0x02)
 
 		print("-- 2/7 security access (level 1)")
 		f.unlock()

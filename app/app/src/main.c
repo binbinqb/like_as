@@ -473,6 +473,12 @@ int main(void)
 			 * 与 BSW 主函数是两件事（AUTOSAR 里也是两个入口），
 			 * 所以它**不在** `EcuM_DriverMainList` 里。 */
 			EcuM_MainFunction();
+
+			/* A/B 刷写交接：平时只做一次状态比较（状态 0 直接返回），
+			 * 只有在 App 收到 `10 03` 之后才有动作（等 150 ms → 写 meta
+			 * → 复位）。放在节拍里而不是独立定时器，是因为它本来就
+			 * 只在"即将复位"的瞬间有事做。 */
+			BootApp_MainFunction();
 		}
 
 		/* 6) 心跳 */

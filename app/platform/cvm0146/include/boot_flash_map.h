@@ -167,6 +167,28 @@ typedef enum {
 /** @brief meta 魔数：`'M' 'E' 'T' 'A'`（小端存储后读出即 0x4154454D） */
 #define BOOT_META_MAGIC             (0x4154454Du)
 
+/* ============================ [ 刷写请求 ] ============================ */
+
+/**
+ * @brief `Boot_MetaType.reserved[0]` 的取值：App → boot 的一次性刷写请求
+ *
+ * @details 用途：诊断仪发 `10 03`（进编程会话）时，App **没有** 0x34/0x36/0x37
+ *          的实现（那是 boot 的服务），必须把控制权交给 boot。做法就是在这里
+ *          放一个标志再复位；boot 上电读到它就停在 UDS，而不是跳 App。
+ *
+ *          | 值 | 含义 |
+ *          |----|------|
+ *          | `0xFF` | 无请求 —— **同时也是 Flash 擦除态**，所以旧镜像写的 meta（reserved 全 0xFF）天然被解释成"无请求"，不需要版本兼容分支 |
+ *          | `0x01` | App 请求：下次上电停在 boot 的 UDS 刷写模式 |
+ *
+ *          @warning 一次性。boot 读到 `0x01` 后**先清成 0xFF 再进 UDS**，
+ *          否则刷完复位又会进 UDS，App 永远起不来（表现为"刷成功了但一直停
+ *          在 boot"）。清除失败时 boot 选择**正常启动**而不是进 UDS ——
+ *          宁可刷不了，也不能把板子变成只能刷机的砖。
+ */
+#define BOOT_META_REQ_NONE          (0xFFu)
+#define BOOT_META_REQ_FLASH         (0x01u)
+
 /**
  * @brief 槽尾元数据（主备各存一份，共 32 字节）
  *
@@ -188,7 +210,8 @@ typedef struct {
 	uint8_t  slot;               /**< 槽索引（0=A / 1=B），防 meta 被搬错槽 */
 	uint8_t  state;              /**< Boot_SlotStateType */
 	uint8_t  bootAttempts;       /**< 本次 TESTING 已尝试启动次数 */
-	uint8_t  reserved[2];        /**< 对齐 + 未来扩展，写 0xFF */
+	uint8_t  reserved[2];        /**< reserved[0] = BOOT_META_REQ_*（刷写请求）；
+	                                  reserved[1] 保留。擦除态 0xFF = 无请求 */
 	uint32_t crc;                /**< 本结构 CRC32（计算时本字段置 0） */
 } Boot_MetaType;
 

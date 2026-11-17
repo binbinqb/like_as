@@ -393,6 +393,18 @@ Dcm_Nvm_SecurityAccessType Dcm_NvmSecurityAccess_Ram;
 /** @brief 本 ECU 支持的会话列表 */
 static const Dcm_SesCtrlType Dcm_SesCtrls[] = {
 	DCM_DEFAULT_SESSION,
+	/* 编程会话：**App 不实现 0x34/0x36/0x37**，但必须承认这个会话 ——
+	 * 否则诊断仪发 `10 02` 会被回 NRC 0x12，连"我要刷写"都表达不出来。
+	 *
+	 * 语义：进编程会话 = 请求把控制权交给 boot。实际动作在
+	 * `Dcm_SessionChangeIndication()`（见 `can_test.c`）→
+	 * `BootApp_RequestFlashMode()`：等 150 ms 让 `50 02` 发出去，写
+	 * meta 标志，然后复位。boot 上电读到标志就停在 UDS。
+	 *
+	 * 注意这里**不做**"进编程会话就停应用报文"（AUTOSAR 常规做法）：
+	 * 本工程还没有独立的诊断 CAN 通道，停报文会连诊断响应一起停掉。
+	 * 真有需求时加到 `Dcm_GetSesChgPermission()` 里。 */
+	DCM_PROGRAMMING_SESSION,
 	DCM_EXTENDED_SESSION,
 };
 

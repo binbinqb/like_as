@@ -93,6 +93,18 @@ uint32_t Platform_NowMs(void);
  */
 int Platform_GetChar(void);
 
+/**
+ * @brief 立即复位整个 MCU（不返回）
+ *
+ * @details 目前只有一个使用者：`BootApp_MainFunction()` 写完刷写请求标志后
+ *          复位进 boot。放在本头（芯片无关契约）而不是 `platform_cvm0146.h`，
+ *          是因为 Host 上也需要一个"可观察的复位"——Host 版只累加计数，
+ *          测试可以断言"确实请求过复位"，而不是让 PC 进程真的退出。
+ *
+ * @warning 调用前必须保证 Flash 写已经返回（本函数不做任何同步）。
+ */
+void Platform_Reset(void);
+
 #ifdef __cplusplus
 }
 #endif
