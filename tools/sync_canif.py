@@ -75,9 +75,20 @@ BEGIN_MARK = "/* @generated BEGIN: CAN1 real matrix */"
 END_MARK = "/* @generated END: CAN1 real matrix */"
 
 # PF → 硬件邮箱号（必须与 Can_Cfg.c 的 CanHw_MsgCfgs1[] 一致）
-# PF → 邮箱号。键在 JSON 里是字符串（"0xEB"），这里转成 int 再用。
-# 必须与 Can_Cfg.c 的 CanHw_MsgCfgs1[] 一致，由 config.py validate 对账。
-PF_TO_MB = {int(k, 0): v for k, v in _CAN["rxPfToMb"].items()}
+# PF → 邮箱号：**从邮箱表推导，不再有独立的 rxPfToMb**（02.6）。
+#
+# 为什么合并：`rxPfToMb` 和 `channels[].mailboxes[]` 描述的是同一件事（这个 PF
+# 落在哪个邮箱），两处各写一份，改一处忘一处就会生成一组指向错误邮箱的
+# CanIf 过滤项 —— 而 CanIf 只按 canid&mask 匹配，邮箱号错了根本不会报错。
+PF_TO_MB = {}
+for _ch in _CAN.get("channels", []):
+	if _ch.get("index") != 1:
+		continue          # 只有 CAN1 用 PF 分段收
+	for _e in _ch["mailboxes"]:
+		if "pf" in _e:
+			PF_TO_MB[int(_e["pf"], 0)] = _e["mb"]
+if not PF_TO_MB:
+	raise SystemExit("Can.json 的 channels[1] 里没有任何带 pf 标签的 RX 邮箱")
 
 
 def generate():

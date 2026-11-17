@@ -91,7 +91,7 @@ def main():
 		return 1
 
 	cfg = json.load(io.open(CAN_JSON, encoding="utf-8"))
-	for key in ("canIfPduIdBase", "pdurIdBase", "rxPfToMb", "txPdus"):
+	for key in ("canIfPduIdBase", "pdurIdBase", "txPdus", "channels"):
 		check(key in cfg, "Can.json 含 %s" % key)
 
 	# 3) 宏存在性：JSON 说的名字必须真在生成头里
@@ -108,10 +108,13 @@ def main():
 	# 4) 邮箱号必须真实存在于 Can_Cfg.c 的邮箱表
 	can_c = read("app/platform/cvm0146/src/config/Can_Cfg.c")
 	miss_mb = []
-	for pf, mb in cfg.get("rxPfToMb", {}).items():
-		if not re.search(r"\{\s*%du?\s*," % mb, can_c):
-			miss_mb.append("%s→mb%d" % (pf, mb))
-	check(not miss_mb, "rxPfToMb 的邮箱号都在 Can_Cfg.c", ", ".join(miss_mb))
+	# PF 标签的邮箱号必须在 Can_Cfg.c 的 CAN1 邮箱表里真实存在
+	pf_mbs = [(e["pf"], e["mb"]) for c in cfg.get("channels", []) if c.get("index") == 1
+	          for e in c["mailboxes"] if "pf" in e]
+	miss_mb = ["%s->mb%d" % (pf, mb) for pf, mb in pf_mbs
+	           if not re.search(r"\{\s*%du,.*?CAN_HW_MB_RX" % mb, can_c)]
+	check(not miss_mb, "PF 标签的邮箱号都在 Can_Cfg.c 的 CAN1 表里", ", ".join(miss_mb))
+	check(len(pf_mbs) == 7, "CAN1 有 7 个 PF 段邮箱", str(len(pf_mbs)))
 
 	# 5) 波特率唯一来源：Can_Cfg 不许再有自己的一份 define
 	can_h = read("app/platform/cvm0146/src/config/Can_Cfg.h")

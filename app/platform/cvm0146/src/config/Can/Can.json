@@ -2,21 +2,320 @@
   "class": "Can",
   "canIfPduIdBase": 23,
   "pdurIdBase": 9,
-  "rxPfToMb": {
-    "0xEB": 8,
-    "0xEC": 9,
-    "0xEE": 10,
-    "0xF0": 11,
-    "0xFD": 12,
-    "0xFE": 13,
-    "0xFF": 14
-  },
   "txPdus": [
-    {"dbc": "BCM_LCSF", "short": "LCSF", "canIfMacro": "CANIF_TX_CAN1_LCSF", "pdurMacro": "PDUR_CAN1_BCM_LCSF_TX"},
-    {"dbc": "BCM_Ctrl", "short": "CTRL", "canIfMacro": "CANIF_TX_CAN1_CTRL", "pdurMacro": "PDUR_CAN1_BCM_CTRL_TX"},
-    {"dbc": "BCM_OEL", "short": "OEL", "canIfMacro": "CANIF_TX_CAN1_OEL", "pdurMacro": "PDUR_CAN1_BCM_OEL_TX"},
-    {"dbc": "BCM_OWW", "short": "OWW", "canIfMacro": "CANIF_TX_CAN1_OWW", "pdurMacro": "PDUR_CAN1_BCM_OWW_TX"},
-    {"dbc": "BCM_DoorCtrl", "short": "DOOR", "canIfMacro": "CANIF_TX_CAN1_DOOR", "pdurMacro": "PDUR_CAN1_BCM_DOOR_CTRL_TX"},
-    {"dbc": "BCM_DM1", "short": "DM1", "canIfMacro": "CANIF_TX_CAN1_DM1", "pdurMacro": "PDUR_CAN1_BCM_DM1_TX"}
+    {
+      "dbc": "BCM_LCSF",
+      "short": "LCSF",
+      "canIfMacro": "CANIF_TX_CAN1_LCSF",
+      "pdurMacro": "PDUR_CAN1_BCM_LCSF_TX"
+    },
+    {
+      "dbc": "BCM_Ctrl",
+      "short": "CTRL",
+      "canIfMacro": "CANIF_TX_CAN1_CTRL",
+      "pdurMacro": "PDUR_CAN1_BCM_CTRL_TX"
+    },
+    {
+      "dbc": "BCM_OEL",
+      "short": "OEL",
+      "canIfMacro": "CANIF_TX_CAN1_OEL",
+      "pdurMacro": "PDUR_CAN1_BCM_OEL_TX"
+    },
+    {
+      "dbc": "BCM_OWW",
+      "short": "OWW",
+      "canIfMacro": "CANIF_TX_CAN1_OWW",
+      "pdurMacro": "PDUR_CAN1_BCM_OWW_TX"
+    },
+    {
+      "dbc": "BCM_DoorCtrl",
+      "short": "DOOR",
+      "canIfMacro": "CANIF_TX_CAN1_DOOR",
+      "pdurMacro": "PDUR_CAN1_BCM_DOOR_CTRL_TX"
+    },
+    {
+      "dbc": "BCM_DM1",
+      "short": "DM1",
+      "canIfMacro": "CANIF_TX_CAN1_DM1",
+      "pdurMacro": "PDUR_CAN1_BCM_DM1_TX"
+    }
+  ],
+  "channels": [
+    {
+      "index": 0,
+      "mailboxes": [
+        {
+          "mb": 0,
+          "name": "HEARTBEAT",
+          "id": "0x123",
+          "ext": false,
+          "dir": "TX",
+          "hth": 0
+        },
+        {
+          "mb": 1,
+          "name": "TESTRX",
+          "id": "0x321",
+          "ext": false,
+          "dir": "RX",
+          "mask": "0xFFFFFFFF"
+        },
+        {
+          "mb": 2,
+          "name": "J1939_SEG_FF",
+          "id": "0x18FF0000",
+          "ext": true,
+          "dir": "RX",
+          "mask": "0x1FFF0000"
+        },
+        {
+          "mb": 3,
+          "name": "EXT_TX",
+          "id": "0x18FF0002",
+          "ext": true,
+          "dir": "TX",
+          "hth": 1
+        },
+        {
+          "mb": 4,
+          "name": "DIAG_RESP",
+          "id": "0x7E8",
+          "ext": false,
+          "dir": "TX",
+          "hth": 3
+        },
+        {
+          "mb": 5,
+          "name": "DIAG_REQ",
+          "id": "0x7E0",
+          "ext": false,
+          "dir": "RX",
+          "mask": "0xFFFFFFFF"
+        },
+        {
+          "mb": 6,
+          "name": "J1939_SEG_FE",
+          "id": "0x18FE0000",
+          "ext": true,
+          "dir": "RX",
+          "mask": "0x1FFF0000"
+        },
+        {
+          "mb": 7,
+          "name": "STD_FAST",
+          "id": "0xA0",
+          "ext": false,
+          "dir": "RX",
+          "mask": "0x7F8"
+        },
+        {
+          "mb": 8,
+          "name": "STD_LIGHT",
+          "id": "0x100",
+          "ext": false,
+          "dir": "RX",
+          "mask": "0x7F8"
+        },
+        {
+          "mb": 9,
+          "name": "STD_BODY",
+          "id": "0x110",
+          "ext": false,
+          "dir": "RX",
+          "mask": "0xFFFFFFFF"
+        },
+        {
+          "mb": 11,
+          "name": "NM_TX",
+          "id": "0x500",
+          "ext": false,
+          "dir": "TX",
+          "hth": 4,
+          "int": false,
+          "note": "NM 发送：与 mb12 同一 ID，方向不同（FlexCAN 邮箱方向配置期定死）。"
+        },
+        {
+          "mb": 12,
+          "name": "NM_RX",
+          "id": "0x500",
+          "ext": false,
+          "dir": "RX",
+          "mask": "0xFFFFFFFF"
+        },
+        {
+          "mb": 13,
+          "name": "COM_TX",
+          "id": "0x200",
+          "ext": false,
+          "dir": "TX",
+          "hth": 5,
+          "int": false,
+          "note": "Com 测试报文：与 mb14 配对，避免注入测试与自发报文撞车。"
+        },
+        {
+          "mb": 14,
+          "name": "COM_RX",
+          "id": "0x201",
+          "ext": false,
+          "dir": "RX",
+          "mask": "0xFFFFFFFF"
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "mailboxes": [
+        {
+          "mb": 0,
+          "name": "TEST_TX",
+          "id": "0x124",
+          "ext": false,
+          "dir": "TX",
+          "hth": 2
+        },
+        {
+          "mb": 1,
+          "name": "TEST_RX",
+          "id": "0x322",
+          "ext": false,
+          "dir": "RX",
+          "mask": "0xFFFFFFFF"
+        },
+        {
+          "mb": 2,
+          "name": "TX_LCSF",
+          "id": "0x18FE4021",
+          "ext": true,
+          "dir": "TX",
+          "hth": 6
+        },
+        {
+          "mb": 3,
+          "name": "TX_CTRL",
+          "id": "0x18FF0C21",
+          "ext": true,
+          "dir": "TX",
+          "hth": 7
+        },
+        {
+          "mb": 4,
+          "name": "TX_OEL",
+          "id": "0xCFDCC21",
+          "ext": true,
+          "dir": "TX",
+          "hth": 8
+        },
+        {
+          "mb": 5,
+          "name": "TX_OWW",
+          "id": "0x18FDCD21",
+          "ext": true,
+          "dir": "TX",
+          "hth": 9
+        },
+        {
+          "mb": 6,
+          "name": "TX_DOOR",
+          "id": "0x18FE4E21",
+          "ext": true,
+          "dir": "TX",
+          "hth": 10
+        },
+        {
+          "mb": 7,
+          "name": "TX_DM1",
+          "id": "0x18FECA21",
+          "ext": true,
+          "dir": "TX",
+          "hth": 11
+        },
+        {
+          "mb": 8,
+          "name": "RX_PF_EB",
+          "id": "0x18EB0000",
+          "ext": true,
+          "dir": "RX",
+          "mask": "0xFF0000",
+          "pf": "0xEB"
+        },
+        {
+          "mb": 9,
+          "name": "RX_PF_EC",
+          "id": "0x18EC0000",
+          "ext": true,
+          "dir": "RX",
+          "mask": "0xFF0000",
+          "pf": "0xEC"
+        },
+        {
+          "mb": 10,
+          "name": "RX_PF_EE",
+          "id": "0x18EE0000",
+          "ext": true,
+          "dir": "RX",
+          "mask": "0xFF0000",
+          "pf": "0xEE"
+        },
+        {
+          "mb": 11,
+          "name": "RX_PF_F0",
+          "id": "0x18F00000",
+          "ext": true,
+          "dir": "RX",
+          "mask": "0xFF0000",
+          "pf": "0xF0"
+        },
+        {
+          "mb": 12,
+          "name": "RX_PF_FD",
+          "id": "0x18FD0000",
+          "ext": true,
+          "dir": "RX",
+          "mask": "0xFF0000",
+          "pf": "0xFD"
+        },
+        {
+          "mb": 13,
+          "name": "RX_PF_FE",
+          "id": "0x18FE0000",
+          "ext": true,
+          "dir": "RX",
+          "mask": "0xFF0000",
+          "pf": "0xFE"
+        },
+        {
+          "mb": 14,
+          "name": "RX_PF_FF",
+          "id": "0x18FF0000",
+          "ext": true,
+          "dir": "RX",
+          "mask": "0xFF0000",
+          "pf": "0xFF"
+        }
+      ]
+    }
+  ],
+  "_comment": [
+    "CAN 硬件资源与项目参数的唯一来源（02.6 起由 tools/sync_can.py 注入 Can_Cfg.c）。",
+    "",
+    "canIfPduIdBase / pdurIdBase：生成段的 PDU 编号起点（前面留给手工配置）。",
+    "txPdus：DBC 报文名 → (短名, CanIf 宏, PduR 宏)。不能按报文名自动推 ——",
+    "        BCM_DoorCtrl 在 CanIf 里叫 CANIF_TX_CAN1_DOOR，自动推会拼出不存在的宏。",
+    "",
+    "channels[].mailboxes[] 字段：",
+    "  mb    邮箱号（0..63）。**允许空洞**（CAN0 的 mb10 就空着），不按数组下标自动分配",
+    "  name  语义名，只用于生成注释与交叉校验",
+    "  id    归一化后的报文 ID（扩展帧直接写 29 位值，不要带 0x80000000）",
+    "  ext   true=扩展帧。**不能用 id>0x7FF 推断**：扩展帧 ID 可以是 0x123",
+    "  dir   TX / RX",
+    "  mask  RX 的独立掩码；默认 0xFFFFFFFF（完全匹配）。TX 必须为 0",
+    "  pf    仅 CAN1 的 RX 段邮箱：该段对应的 PF，sync_canif 据此推导 PF_TO_MB",
+    "  hth   仅 TX：HTH 编号。**这是 CanIf_Cfg.c 的 hoh 字段引用的外部契约**，不能重排",
+    "  len   邮箱深度，默认 1（分帧由 CanTp 做，不靠邮箱深度）",
+    "  dlc   默认 8（经典 CAN）",
+    "  int   邮箱中断。默认 true；例外：NM/Com 的 TX 不开（见各条目的 note）",
+    "  note  可选，生成到条目上方",
+    "",
+    "改这张表后必须跑：python tools/sync_can.py && python tools/can_table_check.py"
   ]
 }

@@ -151,13 +151,15 @@ def cmd_generate(args):
 	sys.path.insert(0, HERE)
 	from generator import Generate  # noqa: E402
 
-	print("\n[1/4] 生成（force=%s）" % args.force)
+	print("\n[1/5] 生成（force=%s）" % args.force)
 	for p in GEN_JSON:
 		Generate([p], force=args.force)
 		print("  - %s" % rel(p))
 
-	print("\n[2/4] 注入手写配置的 @generated 区块")
-	for name in ("sync_canif.py", "sync_pdur.py"):
+	print("\n[2/5] 注入手写配置的 @generated 区块")
+	# 顺序有依赖：sync_can 先把邮箱表写进 Can_Cfg.c，sync_canif 再按
+	# Can.json 的邮箱表生成软件过滤（PF→邮箱号从同一份 JSON 推导）。
+	for name in ("sync_can.py", "sync_canif.py", "sync_pdur.py"):
 		script = os.path.join(HERE, name)
 		if not os.path.isfile(script):
 			print("  [SKIP] %s 不存在" % name)
@@ -168,7 +170,7 @@ def cmd_generate(args):
 			print("[ERROR] %s 失败，停止" % name)
 			return 3
 
-	print("\n[3/4] 把 Com 产物拷入 config/（唯一“生成后入库”的模块）")
+	print("\n[3/5] 把 Com 产物拷入 config/（唯一“生成后入库”的模块）")
 	for src_dir, dst_dir in GEN_COPY:
 		for fn in ("Com_Cfg.c", "Com_Cfg.h"):
 			src = os.path.join(src_dir, fn)
@@ -179,11 +181,20 @@ def cmd_generate(args):
 			shutil.copyfile(src, dst)
 			print("  - %s → %s" % (rel(src), rel(dst)))
 
-	print("\n[4/4] 静态复核（幂等标记 / 无时间戳 / 副本一致）")
+	print("\n[4/5] 静态复核（幂等标记 / 无时间戳 / 副本一致）")
 	chk = os.path.join(HERE, "a4_gen_check.py")
 	rc = subprocess.run([PYTHON, chk, "--static"], cwd=ROOT).returncode
 	if rc != 0:
 		print("[FAIL] a4 静态断言未通过，产物不可信")
+		return 1
+
+	print("\n[5/5] 邮箱表 / HTH 表逐字段对账（Can.json ↔ Can_Cfg.c）")
+	# 这一条不能省：a4 只检查"生成物看起来像生成物"（标记、无时间戳），
+	# 不知道表里的字段值对不对。can_table_check 才验语义。
+	chk = os.path.join(HERE, "can_table_check.py")
+	rc = subprocess.run([PYTHON, chk], cwd=ROOT).returncode
+	if rc != 0:
+		print("[FAIL] 邮箱表与 Can.json 不一致")
 		return 1
 
 	print("\n[PASS] 生成完成且通过静态断言。下一步：cmd //c \"build.bat --app=App\"")

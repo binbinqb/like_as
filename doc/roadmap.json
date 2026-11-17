@@ -106,8 +106,8 @@
  "current": {
   "module": 2,
   "task": 5,
-  "text": "02.6 第一步：Can_Cfg.c 的邮箱表 / HOH / 过滤器由 Can.json 生成",
-  "next": "先盘点 CanHw_MsgCfgs1[] / Hoh 表里哪些字段能由 JSON 推导、哪些必须手写（IDE 位、掩码极性），再决定新增 Can.py 还是扩 Board.py"
+  "text": "02.6 第二步：CanIf / PduR 去掉二次注入（把 sync_*.py 的补丁变成生成器输出）",
+  "next": "先确认 CanIf 的 34 条 RX / PduR 的 51 条路径里，哪些字段是 DBC 推不出来的项目参数，再决定是扩 CanIf.py 还是保留注入"
  },
  "modules": [
   {
@@ -226,14 +226,14 @@
     {
      "text": "迁移 PF 邮箱、TX 映射及 ID_BASE",
      "check": "项目参数不再写死在通用脚本",
-     "state": "PARTIAL",
-     "evidence": "Can.json 承接编号/TX 映射/邮箱号；波特率收敛到 Board.json（逐通道宏）；两脚本重跑产物零差异；hardcode_check 9/9 且证伪过。剩余：Can_Cfg.c 的邮箱/HOH 表仍是手写（02.6 的输入）"
+     "state": "PASS",
+     "evidence": "Can.json 承接编号/TX 映射/邮箱表；rxPfToMb 合并进 channels[].pf，sync_canif 重跑零差异；波特率收敛到 Board.json；hardcode_check 10/10"
     },
     {
      "text": "生成 Can/CanIf/PduR/Com 全配置",
      "check": "保留诊断/NM 路由；替代注入脚本",
-     "state": "TODO",
-     "evidence": ""
+     "state": "PARTIAL",
+     "evidence": "Can 的邮箱表 29 条 + HTH 12 个已由 Can.json 生成（sync_can.py），53 项逐字段对账 + 3/3 缺陷注入；App text 241,084 逐字节不变；上板 m3 18/18、m23 24/24。剩余：CanIf/PduR 的二次注入仍在，Com 仍是拷 GEN"
     },
     {
      "text": "生成幂等性",

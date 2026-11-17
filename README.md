@@ -3278,6 +3278,85 @@ App 的会话表相应加了 `DCM_PROGRAMMING_SESSION`（原来只有 DEFAULT + 
 
 回归：上板 `m3` 18/18、`a9` 18/18、`m23` 24/24；Host 2/2 suites。
 
+### ✅ 02.6 第一步：邮箱表 / HTH 表由 `Can.json` 生成（二进制等价）
+
+`Can_Cfg.c` 里 29 条邮箱、12 个 HTH 原来全是手写。手写这张表有两个"不报错、只失效"
+的坑，这也是它必须先被生成的原因：
+
+| 坑 | 手写时的表现 | 生成后 |
+|---|---|---|
+| HTH 的 `mb` 与邮箱表对不上 | `Can_Write` 只校验 ID、**不校验邮箱号** → 发出去的是别人的报文，或者根本发不出 | 生成时强制一致 |
+| 掩码位位置写错 | 某个邮箱变成全收，把排在它后面的段全截走（M14 踩过） | 掩码来自 JSON 的语义值，且做越界检查 |
+
+#### 做法：`Can.json` 增加 `channels[].mailboxes[]`
+
+```json
+{ "mb": 11, "name": "NM_TX", "id": "0x500", "ext": false, "dir": "TX",
+  "hth": 4, "int": false, "note": "NM 发送：与 mb12 同一 ID，方向不同" }
+```
+
+| 字段 | 说明 |
+|---|---|
+| `mb` | 邮箱号，**允许空洞**（CAN0 的 mb10 就空着），不按数组下标自动分配 |
+| `ext` | 必须显式写，**不能用 `id > 0x7FF` 推断**（扩展帧 ID 可以是 0x123） |
+| `hth` | TX 必填。这是 `CanIf_Cfg.c` 的 `hoh` 引用的**外部契约**，不能重排 |
+| `pf` | 仅 CAN1 的 RX 段：`sync_canif` 据此推导 `PF_TO_MB` |
+| `len`/`dlc`/`int` | 默认 1 / 8 / true（TX 也要开中断，见下） |
+
+**顺带合并了一处重复定义**：原来 `Can.json` 既有 `rxPfToMb` 又有邮箱表，两者描述的
+是同一件事。现在只保留邮箱表里的 `pf` 标签，`sync_canif.py` 从它推导——重跑后
+`CanIf_Cfg.c` **零差异**，证明推导结果与原表完全一致。
+
+#### 等价性怎么证明（两步，顺序不能反）
+
+| 步骤 | 跑什么 | 证明了什么 |
+|---|---|---|
+| 1 | `can_table_check.py`（C 仍手写） | JSON 忠实反映了现状 —— 迁移没漏条目、没抄错数 |
+| 2 | `can_table_check.py`（C 已生成） | 生成物与 JSON 一致 —— 生成器没写错 |
+
+**53 项逐字段对账**（字段值相等，不是文本 diff：手写用 `CAN_HW_ID_PF_EB` 宏、
+生成物用 `0x18EB0000u`，文本必然不同）。
+
+最硬的判据是**二进制**：`text 241,084 / data 1,712 / bss 15,040` 与改动前逐字节一致。
+
+#### 检查器必须能失败
+
+`can_table_selftest.py` 往临时副本注入三类会破坏硬件行为的缺陷，要求检查器报出来：
+
+```
+  PASS  bad-mask    → 报出 字段一致        （mb2 段掩码改 0xFFFFFFFF，邮箱变全收）
+  PASS  drop-hth    → 报出 HTH 条目数一致  （删一条 HTH）
+  PASS  bad-hoh-num → 报出 CAN_HW_HOH_NUM （12 改 13）
+3/3 cases detected
+```
+
+#### 盘点时发现的两个坑
+
+1. **`intEnable` 的注释是错的**。`Can_HwCfg.h` 写"TX 恒为 false"，实际表里 TX 也是
+   true —— 因为 TX 完成中断是 `CanIf_TxConfirmation()` 的触发源，CanTp 的分段发送
+   依赖它（`CanAc.c:810` 有说明）。只有 NM/Com 两条 TX 例外。注释已改。
+2. **`CAN_HW_HOH_NUM` 偏大不会报错**。数组尾部补 0 条目，而 0 条目正好是
+   `{ctrl0, mb0, id0}`，等于把 HTH0 覆盖成空邮箱 —— 表现为"心跳帧发不出去"。
+   已加进 `can_table_check.py` 做一致性校验。
+
+#### 接入 `config.py generate`
+
+```
+[2/5] 注入手写配置的 @generated 区块
+  - sync_can.py rc=0        ← 新增，排在 sync_canif 之前（后者要用邮箱表）
+  - sync_canif.py rc=0
+  - sync_pdur.py rc=0
+[5/5] 邮箱表 / HTH 表逐字段对账（Can.json ↔ Can_Cfg.c）
+```
+
+第 5 步不能省：`a4_gen_check` 只检查"生成物看起来像生成物"（标记、无时间戳），
+不知道字段值对不对。
+
+**生成幂等**：连续两次 `sync_can.py`，`Can_Cfg.c` 哈希一致。
+
+回归：上板 `m3` 18/18、`m23` 24/24、`a9` 18/18；`hardcode_check` 10/10、
+`pdu_selftest` 3/3、`dbc_parser_check` 25/25。
+
 ### 尚未完成（下一步）
 
 1. **0x27 换成真算法**：现在 `27 01/02` 是桩（种子返回 0、key 任意），

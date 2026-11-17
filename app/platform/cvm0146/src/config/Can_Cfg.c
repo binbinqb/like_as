@@ -81,99 +81,67 @@ const Can_ConfigType Can_Config = {
 
 /**
  * @brief CAN0 邮箱表
- * @note  顺序即邮箱号顺序，`CanAc` 初始化时按本表逐条写硬件。
- *        改本表 = 改这块板子的硬件资源分配，不需要动 `CanAc.c`。
  *
- * @warning ID、扩展位、DLC 三者在 `CfgMsgObj` 时写死，运行期改不了
- *          （厂商 `SetTxMsg` 只写数据区），所以一条报文一个邮箱。
+ * @warning **本表由 `tools/sync_can.py` 从 `Can/Can.json` 生成，不要手改。**
+ *          区间内的任何手工修改都会在下次生成时被覆盖；要加/改邮箱请改 JSON，
+ *          然后 `python tools/sync_can.py && python tools/can_table_check.py`。
+ *
+ * @details @section CANCFG_MB0_14 按段分组，不是一条报文一个邮箱
+ *
+ * | mb | 方向 | 覆盖范围 | 承载报文数 |
+ * |----|------|----------|-----------|
+ * | 2 | RX | `0x18FFxxxx` 全段（PGN 0xFF00~0xFFFF） | 车辆/灯光/门锁/雨刮/报警… |
+ * | 6 | RX | `0x18FExxxx` 全段（PGN 0xFE00~0xFEFF） | 车速/里程/… |
+ * | 7 | RX | `0x0A0~0x0A7` | 快变模拟量段 |
+ * | 8 | RX | `0x100~0x107` | 灯光控制段 |
+ * | 9 | RX | `0x110` | 车身状态 |
+ *
+ * 49 条报文的 Foton 矩阵用这套结构也是 **6 个接收邮箱**就够。
+ *
+ * @warning **真正要小心的不是邮箱号，是掩码的位位置。**
+ *
+ *          M14 在这里误判过一次：把标准帧段配到 mb7/8/9 后，mb8/mb9 一条都收不到
+ *          （连带 mb12/mb14 的 NM、Com 也哑了）。当时读到 `MCR[MAXMB]=96`
+ *          却只有 mb0~mb7 有计数，就判断成"这颗芯片只实现了 8 个邮箱"——
+ *          **这个结论是错的**。真相是 `CAN_HW_MASK_STD_FAST` 少了 18 位移位：
+ *          11 位的 `0x7F8` 落在 bit[10:3]，而那几位在 ID 域里恒为 0，于是
+ *          mb7 变成**全收邮箱**，把排在它后面的所有标准帧都截走了。
+ *          推翻"8 邮箱"的证据是：早前 mb15 配同一套掩码时**它自己是好的**
+ *          （只有它后面的 mb16/17 收不到）——说明 mb15 完全可用。
+ *
+ *          教训：**"某个邮箱收不到"优先怀疑掩码/邮箱序号配错，而不是先怀疑
+ *          硬件容量。** 全收邮箱没有任何报错，只表现为"后面的报文全丢"。
+ *
+ * @note  邮箱 10、15 空着不用，留给"某条报文必须独占邮箱"的场合
+ *        （将来接 CAN FD 或需要独立时间戳的报文）。
+ * @note  ID、扩展位、DLC 三者在 `CfgMsgObj` 时写死，运行期改不了
+ *        （厂商 `SetTxMsg` 只写数据区），所以一条报文一个邮箱。
  */
+/* @generated BEGIN: CAN0 mailboxes */
 static const CanHw_MsgCfgType CanHw_MsgCfgs0[] = {
-	/**
-	 * @section CANCFG_MB0_14 M14：15 个邮箱承载 20+ 条报文
-	 *
-	 * 邮箱分配的核心思路是**按段分组**，不是一条报文一个邮箱：
-	 *
-	 * | mb | 方向 | 覆盖范围 | 承载报文数 |
-	 * |----|------|----------|-----------|
-	 * | 2 | RX | `0x18FFxxxx` 全段（PGN 0xFF00~0xFFFF） | 车辆/灯光/门锁/雨刮/报警… |
-	 * | 6 | RX | `0x18FExxxx` 全段（PGN 0xFE00~0xFEFF） | 车速/里程/… |
-	 * | 7 | RX | `0x0A0~0x0A7` | 快变模拟量段 |
-	 * | 8 | RX | `0x100~0x107` | 灯光控制段 |
-	 * | 9 | RX | `0x110` | 车身状态 |
-	 *
-	 * 49 条报文的 Foton 矩阵用这套结构也是 **6 个接收邮箱**就够。
-	 *
-	 * @warning **真正要小心的不是邮箱号，是掩码的位位置。**
-	 *
-	 *          M14 在这里误判过一次，值得记下来：把标准帧段配到 mb7/8/9 后，
-	 *          mb8/mb9 一条都收不到（连带 mb12/mb14 的 NM、Com 也哑了）。
-	 *          当时读到 `MCR[MAXMB]=96` 却只有 mb0~mb7 有计数，就判断成
-	 *          "这颗芯片只实现了 8 个邮箱"——**这个结论是错的**。
-	 *
-	 *          真相是 `CAN_HW_MASK_STD_FAST` 少了 18 位移位（见
-	 *          `Can_HwCfg.h` 的 `CAN_HW_STD_ID_SHIFT` 说明）：11 位的 `0x7F8`
-	 *          落在 bit[10:3]，而那几位在 ID 域里恒为 0，于是 mb7 变成
-	 *          **全收邮箱**，把排在它后面的所有标准帧都截走了。
-	 *          推翻"8 邮箱"判断的证据是：早前 mb15 配同一套掩码时**它自己是好的**
-	 *          （只有它后面的 mb16/17 收不到）——说明 mb15 完全可用。
-	 *
-	 *          教训：**"某个邮箱收不到"优先怀疑掩码/邮箱序号配错，
-	 *          而不是先怀疑硬件容量。** 全收邮箱的隐蔽性在于它没有任何报错，
-	 *          只表现为"后面的报文全丢"。
-	 *
-	 * @note 邮箱 10、15 空着不用，留给"某条报文必须独占邮箱"的场合
-	 *       （比如将来接 CAN FD 或需要独立时间戳的报文）。
-	 */
-
-	/* mb0：TX 心跳 0x123。TX 也开中断：发送完成回调 CanIf_TxConfirmation()，
-	 *      CanTp 的分段发送依赖这个信号 */
-	{ 0u,  1u, CAN_HW_ID_HEARTBEAT,     false, CAN_HW_MB_TX, 8u, true,  0u },
-
-	/* mb1：RX 0x321 标准帧，全掩码（M1 回归项） */
-	{ 1u,  1u, CAN_HW_ID_TESTRX,        false, CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
-
-	/* mb2：RX J1939 段 0x18FFxxxx（PGN 0xFF00~0xFFFF 全部） */
-	{ 2u,  1u, CAN_HW_ID_J1939_SEG_FF,  true,  CAN_HW_MB_RX, 8u, true,  CAN_HW_MASK_J1939_SEG },
-
-	/* mb3：TX 0x18FF0002 扩展帧 */
-	{ 3u,  1u, CAN_HW_ID_EXT_TX,        true,  CAN_HW_MB_TX, 8u, true,  0u },
-
-	/* mb4：TX 诊断响应 0x7E8 */
-	{ 4u,  1u, CAN_HW_ID_DIAG_RESP,     false, CAN_HW_MB_TX, 8u, true,  0u },
-
-	/* mb5：RX 诊断请求 0x7E0（CanTp 从这里取 N-PDU） */
-	{ 5u,  1u, CAN_HW_ID_DIAG_REQ,      false, CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
-
-	/* mb6：RX J1939 段 0x18FExxxx（PGN 0xFE00~0xFEFF 全部） */
-	{ 6u,  1u, CAN_HW_ID_J1939_SEG_FE,  true,  CAN_HW_MB_RX, 8u, true,  CAN_HW_MASK_J1939_SEG },
-
-	/* mb7~mb9：RX 标准帧段（M14）—— 三段覆盖 BCM 私有报文区 0x0A0~0x11F */
-	{ 7u,  1u, CAN_HW_ID_STD_FAST,      false, CAN_HW_MB_RX, 8u, true,  CAN_HW_MASK_STD_FAST },
-	{ 8u,  1u, CAN_HW_ID_STD_LIGHT,     false, CAN_HW_MB_RX, 8u, true,  CAN_HW_MASK_STD_LIGHT },
-	{ 9u,  1u, CAN_HW_ID_STD_BODY,      false, CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
-
-	/**
-	 * @section CANCFG_NM M9：网络管理报文 0x500
-	 *
-	 * TX 与 RX 各占一个邮箱，**同一个 ID**。FlexCAN 的邮箱方向配置期定死
-	 * （`CS.CODE`），想"发完还能收别人的"就必须两个邮箱。
-	 *
-	 * @note 本机发出的 0x500 不会被自己的 mb12 收到 —— `MCR.SRXDIS` 默认禁用自收，
-	 *       所以不会出现"自己叫醒自己"（否则 CanNm 永远进不了 ReadySleep）。
-	 */
-	{ 11u, 1u, CAN_HW_ID_NM,            false, CAN_HW_MB_TX, 8u, false, 0u },
-	{ 12u, 1u, CAN_HW_ID_NM,            false, CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
-
-	/**
-	 * @section CANCFG_COM M10：Com 信号层测试报文
-	 * 发 0x200 / 收 0x201（不同 ID，避免注入测试与自发报文撞车）。
-	 */
-	{ 13u, 1u, CAN_HW_ID_COM_TX,        false, CAN_HW_MB_TX, 8u, false, 0u },
-	{ 14u, 1u, CAN_HW_ID_COM_RX,        false, CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
+	{  0u, 1u,       0x123u, false, CAN_HW_MB_TX, 8u, true ,         0x0u },   /**< mb0  HEARTBEAT    TX 0x123 */
+	{  1u, 1u,       0x321u, false, CAN_HW_MB_RX, 8u, true ,  0xFFFFFFFFu },   /**< mb1  TESTRX       RX 0x321 */
+	{  2u, 1u,  0x18FF0000u, true , CAN_HW_MB_RX, 8u, true ,  0x1FFF0000u },   /**< mb2  J1939_SEG_FF RX 0x18FF0000 */
+	{  3u, 1u,  0x18FF0002u, true , CAN_HW_MB_TX, 8u, true ,         0x0u },   /**< mb3  EXT_TX       TX 0x18FF0002 */
+	{  4u, 1u,       0x7E8u, false, CAN_HW_MB_TX, 8u, true ,         0x0u },   /**< mb4  DIAG_RESP    TX 0x7E8 */
+	{  5u, 1u,       0x7E0u, false, CAN_HW_MB_RX, 8u, true ,  0xFFFFFFFFu },   /**< mb5  DIAG_REQ     RX 0x7E0 */
+	{  6u, 1u,  0x18FE0000u, true , CAN_HW_MB_RX, 8u, true ,  0x1FFF0000u },   /**< mb6  J1939_SEG_FE RX 0x18FE0000 */
+	{  7u, 1u,        0xA0u, false, CAN_HW_MB_RX, 8u, true ,       0x7F8u },   /**< mb7  STD_FAST     RX 0xA0 */
+	{  8u, 1u,       0x100u, false, CAN_HW_MB_RX, 8u, true ,       0x7F8u },   /**< mb8  STD_LIGHT    RX 0x100 */
+	{  9u, 1u,       0x110u, false, CAN_HW_MB_RX, 8u, true ,  0xFFFFFFFFu },   /**< mb9  STD_BODY     RX 0x110 */
+	/* NM 发送：与 mb12 同一 ID，方向不同（FlexCAN 邮箱方向配置期定死）。 */
+	{ 11u, 1u,       0x500u, false, CAN_HW_MB_TX, 8u, false,         0x0u },   /**< mb11 NM_TX        TX 0x500 */
+	{ 12u, 1u,       0x500u, false, CAN_HW_MB_RX, 8u, true ,  0xFFFFFFFFu },   /**< mb12 NM_RX        RX 0x500 */
+	/* Com 测试报文：与 mb14 配对，避免注入测试与自发报文撞车。 */
+	{ 13u, 1u,       0x200u, false, CAN_HW_MB_TX, 8u, false,         0x0u },   /**< mb13 COM_TX       TX 0x200 */
+	{ 14u, 1u,       0x201u, false, CAN_HW_MB_RX, 8u, true ,  0xFFFFFFFFu },   /**< mb14 COM_RX       RX 0x201 */
 };
+/* @generated END: CAN0 mailboxes */
 
 /**
  * @brief CAN1 邮箱表：**实车整车网**（Foton L1 通信矩阵）
+ *
+ * @warning **本表由 `tools/sync_can.py` 从 `Can/Can.json` 生成，不要手改。**
  *
  * @details @section CANCFG_CAN1_LAYOUT 15 个邮箱承载 M8 测试 + 真实矩阵
  *
@@ -190,54 +158,25 @@ static const CanHw_MsgCfgType CanHw_MsgCfgs0[] = {
  * @warning **邮箱号从 0 重新开始**：每个控制器有自己的邮箱 RAM，互不干扰。
  *          CAN0 用 mb0~mb14，CAN1 也从 mb0 开始，不冲突。
  */
+/* @generated BEGIN: CAN1 mailboxes */
 static const CanHw_MsgCfgType CanHw_MsgCfgs1[] = {
-	/* ---- M8 测试报文（保留）---- */
-
-	/** mb0：TX `0x124` 标准帧，首字节递增 —— Kvaser 侧可肉眼确认发送节奏 */
-	{ 0u, 1u, CAN_HW_ID_CAN1_TX, false, CAN_HW_MB_TX, 8u, true,  0u },
-
-	/** mb1：RX `0x322` 标准帧，全掩码 —— 与 CAN0 的 0x321 配对，验两路独立 */
-	{ 1u, 1u, CAN_HW_ID_CAN1_RX, false, CAN_HW_MB_RX, 8u, true,  0xFFFFFFFFu },
-
-	/* ---- M19：真实矩阵的 6 条发送报文 ---- */
-	/*
-	 * @note 每条报文独占一个邮箱，因为厂商 `FlexCanDrv_SetTxMsg()` 只写数据区，
-	 *       **不回写 ID 与 DLC** —— 那两项在 `CfgMsgObj()` 时就烧进邮箱了。
-	 *       这条约束决定了 N 条 TX 报文必须有 N 个邮箱 + N 个 HTH。
-	 */
-	{ 2u, 1u, CAN_HW_ID_TX_LCSF,  true, CAN_HW_MB_TX, 8u, true,  0u },
-	{ 3u, 1u, CAN_HW_ID_TX_CTRL,  true, CAN_HW_MB_TX, 8u, true,  0u },
-	{ 4u, 1u, CAN_HW_ID_TX_OEL,   true, CAN_HW_MB_TX, 8u, true,  0u },
-	{ 5u, 1u, CAN_HW_ID_TX_OWW,   true, CAN_HW_MB_TX, 8u, true,  0u },
-	{ 6u, 1u, CAN_HW_ID_TX_DOOR,  true, CAN_HW_MB_TX, 8u, true,  0u },
-	{ 7u, 1u, CAN_HW_ID_TX_DM1,   true, CAN_HW_MB_TX, 8u, true,  0u },
-
-	/* ---- M19：真实矩阵的 7 个接收 PF 段 ---- */
-	/*
-	 * @details @section CANCFG_PF_WHY 为什么按 PF 分组而不是一条报文一个邮箱
-	 *
-	 *          34 条接收报文的 **PGN 全不相同**（PS 字节各异），若一条一个邮箱要
-	 *          34 个；按 PF（bit23:16，即 EDP+PF）分组只要 **7 个**。
-	 *
-	 *          代价是硬件层放行得比实际需要更宽（同一个 PF 下可能有本工程不用的
-	 *          PGN），由 CanIf 的软件掩码 `0x1FFFFF00` 再精确到 PGN。
-	 *          这正是"硬件宽、软件窄"——**反过来做不到**：硬件不放行的帧
-	 *          连中断都不会有，软件配得再对也没机会执行。
-	 *
-	 * @warning 掩码必须用 `CAN_HW_MASK_J1939_PF`（`0x00FF0000`），
-	 *          **不能用 CAN0 测试通道的 `0x1FFF0000`**。区别在 bit28:26：
-	 *          `0x1FFF0000` 要求优先级也匹配，而真实矩阵里 `0x0CFDCC21` 是 P=3、
-	 *          `0x18FEF100` 是 P=6 —— 用含优先级的掩码会让 P 不一致的帧被硬件
-	 *          静默丢弃，症状是"某些 PGN 收得到、某些收不到"。
-	 */
-	{ 8u,  1u, CAN_HW_ID_PF_EB, true, CAN_HW_MB_RX, 8u, true, CAN_HW_MASK_J1939_PF },
-	{ 9u,  1u, CAN_HW_ID_PF_EC, true, CAN_HW_MB_RX, 8u, true, CAN_HW_MASK_J1939_PF },
-	{ 10u, 1u, CAN_HW_ID_PF_EE, true, CAN_HW_MB_RX, 8u, true, CAN_HW_MASK_J1939_PF },
-	{ 11u, 1u, CAN_HW_ID_PF_F0, true, CAN_HW_MB_RX, 8u, true, CAN_HW_MASK_J1939_PF },
-	{ 12u, 1u, CAN_HW_ID_PF_FD, true, CAN_HW_MB_RX, 8u, true, CAN_HW_MASK_J1939_PF },
-	{ 13u, 1u, CAN_HW_ID_PF_FE, true, CAN_HW_MB_RX, 8u, true, CAN_HW_MASK_J1939_PF },
-	{ 14u, 1u, CAN_HW_ID_PF_FF, true, CAN_HW_MB_RX, 8u, true, CAN_HW_MASK_J1939_PF },
+	{  0u, 1u,       0x124u, false, CAN_HW_MB_TX, 8u, true ,         0x0u },   /**< mb0  TEST_TX      TX 0x124 */
+	{  1u, 1u,       0x322u, false, CAN_HW_MB_RX, 8u, true ,  0xFFFFFFFFu },   /**< mb1  TEST_RX      RX 0x322 */
+	{  2u, 1u,  0x18FE4021u, true , CAN_HW_MB_TX, 8u, true ,         0x0u },   /**< mb2  TX_LCSF      TX 0x18FE4021 */
+	{  3u, 1u,  0x18FF0C21u, true , CAN_HW_MB_TX, 8u, true ,         0x0u },   /**< mb3  TX_CTRL      TX 0x18FF0C21 */
+	{  4u, 1u,   0xCFDCC21u, true , CAN_HW_MB_TX, 8u, true ,         0x0u },   /**< mb4  TX_OEL       TX 0xCFDCC21 */
+	{  5u, 1u,  0x18FDCD21u, true , CAN_HW_MB_TX, 8u, true ,         0x0u },   /**< mb5  TX_OWW       TX 0x18FDCD21 */
+	{  6u, 1u,  0x18FE4E21u, true , CAN_HW_MB_TX, 8u, true ,         0x0u },   /**< mb6  TX_DOOR      TX 0x18FE4E21 */
+	{  7u, 1u,  0x18FECA21u, true , CAN_HW_MB_TX, 8u, true ,         0x0u },   /**< mb7  TX_DM1       TX 0x18FECA21 */
+	{  8u, 1u,  0x18EB0000u, true , CAN_HW_MB_RX, 8u, true ,    0xFF0000u },   /**< mb8  RX_PF_EB     RX 0x18EB0000 */
+	{  9u, 1u,  0x18EC0000u, true , CAN_HW_MB_RX, 8u, true ,    0xFF0000u },   /**< mb9  RX_PF_EC     RX 0x18EC0000 */
+	{ 10u, 1u,  0x18EE0000u, true , CAN_HW_MB_RX, 8u, true ,    0xFF0000u },   /**< mb10 RX_PF_EE     RX 0x18EE0000 */
+	{ 11u, 1u,  0x18F00000u, true , CAN_HW_MB_RX, 8u, true ,    0xFF0000u },   /**< mb11 RX_PF_F0     RX 0x18F00000 */
+	{ 12u, 1u,  0x18FD0000u, true , CAN_HW_MB_RX, 8u, true ,    0xFF0000u },   /**< mb12 RX_PF_FD     RX 0x18FD0000 */
+	{ 13u, 1u,  0x18FE0000u, true , CAN_HW_MB_RX, 8u, true ,    0xFF0000u },   /**< mb13 RX_PF_FE     RX 0x18FE0000 */
+	{ 14u, 1u,  0x18FF0000u, true , CAN_HW_MB_RX, 8u, true ,    0xFF0000u },   /**< mb14 RX_PF_FF     RX 0x18FF0000 */
 };
+/* @generated END: CAN1 mailboxes */
 
 /** @brief 每个通道一张邮箱表，下标 = 通道号 */
 const CanHw_MsgTableType CanHw_MsgTables[CAN_CFG_NUM_CHANNELS] = {
@@ -249,37 +188,19 @@ const CanHw_MsgTableType CanHw_MsgTables[CAN_CFG_NUM_CHANNELS] = {
  * @brief 硬件发送对象表：下标即 `Can_Write()` 的 `Hth`
  * @note  `CanIf_Cfg.c` 的 `hoh` 字段引用 `CAN_HW_HTH_*` 宏，不要写裸数字。
  */
+/* @generated BEGIN: HTH table */
 const CanHw_HohType CanHw_Hohs[CAN_HW_HOH_NUM] = {
-	/* HTH 0 → CAN0 邮箱 0，发 0x123 */
-	{ 0u, 0u, CAN_HW_ID_HEARTBEAT, 8u },
-	/* HTH 1 → CAN0 邮箱 3，发 0x18FF0002 */
-	{ 0u, 3u, CAN_HW_ID_EXT_TX,    8u },
-	/* HTH 2 → CAN1 邮箱 0，发 0x124 */
-	{ 1u, 0u, CAN_HW_ID_CAN1_TX,   8u },
-	/* HTH 3 → CAN0 邮箱 4，发 0x7E8（诊断响应，M3） */
-	{ 0u, 4u, CAN_HW_ID_DIAG_RESP, 8u },
-	/* HTH 4 → CAN0 邮箱 11，发 0x500（NM，M9） */
-	{ 0u, 11u, CAN_HW_ID_NM,       8u },
-	/* HTH 5 → CAN0 邮箱 13，发 0x200（Com 信号，M10） */
-	{ 0u, 13u, CAN_HW_ID_COM_TX,   8u },
-
-	/* ---- M19：CAN1 真实矩阵的 6 条发送报文 ---- */
-	/*
-	 * @warning 这里的 `msgBufId` 必须与 `CanHw_MsgCfgs1[]` 的邮箱号**逐条对应**。
-	 *          对错了不会报错，只会"发出去的是别的 ID"或者"发不出去" ——
-	 *          `Can_Write()` 里有 ID 校验（`CanAc.c:962` 比对 `hoh->canId`），
-	 *          所以 ID 错会返回 `E_NOT_OK`，但**邮箱号错不会**被它发现。
-	 */
-	/* HTH 6  → CAN1 邮箱 2，发 0x18FE4021 BCM_LCSF */
-	{ 1u,  2u, CAN_HW_ID_TX_LCSF,  8u },
-	/* HTH 7  → CAN1 邮箱 3，发 0x18FF0C21 BCM_CTRL */
-	{ 1u,  3u, CAN_HW_ID_TX_CTRL,  8u },
-	/* HTH 8  → CAN1 邮箱 4，发 0x0CFDCC21 BCM_OEL */
-	{ 1u,  4u, CAN_HW_ID_TX_OEL,   8u },
-	/* HTH 9  → CAN1 邮箱 5，发 0x18FDCD21 BCM_OWW */
-	{ 1u,  5u, CAN_HW_ID_TX_OWW,   8u },
-	/* HTH 10 → CAN1 邮箱 6，发 0x18FE4E21 BCM_DOOR_CTRL */
-	{ 1u,  6u, CAN_HW_ID_TX_DOOR,  8u },
-	/* HTH 11 → CAN1 邮箱 7，发 0x18FECA21 BCM_DM1 */
-	{ 1u,  7u, CAN_HW_ID_TX_DM1,   8u },
+	{ 0u,  0u,       0x123u, 8u },   /**< HTH0  CAN0 mb0  HEARTBEAT    0x123 */
+	{ 0u,  3u,  0x18FF0002u, 8u },   /**< HTH1  CAN0 mb3  EXT_TX       0x18FF0002 */
+	{ 1u,  0u,       0x124u, 8u },   /**< HTH2  CAN1 mb0  TEST_TX      0x124 */
+	{ 0u,  4u,       0x7E8u, 8u },   /**< HTH3  CAN0 mb4  DIAG_RESP    0x7E8 */
+	{ 0u, 11u,       0x500u, 8u },   /**< HTH4  CAN0 mb11 NM_TX        0x500 */
+	{ 0u, 13u,       0x200u, 8u },   /**< HTH5  CAN0 mb13 COM_TX       0x200 */
+	{ 1u,  2u,  0x18FE4021u, 8u },   /**< HTH6  CAN1 mb2  TX_LCSF      0x18FE4021 */
+	{ 1u,  3u,  0x18FF0C21u, 8u },   /**< HTH7  CAN1 mb3  TX_CTRL      0x18FF0C21 */
+	{ 1u,  4u,   0xCFDCC21u, 8u },   /**< HTH8  CAN1 mb4  TX_OEL       0xCFDCC21 */
+	{ 1u,  5u,  0x18FDCD21u, 8u },   /**< HTH9  CAN1 mb5  TX_OWW       0x18FDCD21 */
+	{ 1u,  6u,  0x18FE4E21u, 8u },   /**< HTH10 CAN1 mb6  TX_DOOR      0x18FE4E21 */
+	{ 1u,  7u,  0x18FECA21u, 8u },   /**< HTH11 CAN1 mb7  TX_DM1       0x18FECA21 */
 };
+/* @generated END: HTH table */

@@ -320,7 +320,11 @@ typedef struct {
 	bool           isExt;           /**< true=29 位扩展帧 */
 	CanHw_MbDirType dir;            /**< 发送 / 接收 */
 	uint8_t        dlc;             /**< 数据长度 0..8（经典 CAN） */
-	bool           intEnable;       /**< RX 是否使能邮箱中断；TX 恒为 false */
+	bool           intEnable;       /**< 是否使能邮箱中断。
+	                                     **TX 也要开**：发送完成中断是
+	                                     `CanIf_TxConfirmation()` 的触发源，
+	                                     CanTp 的分段发送依赖它（`CanAc.c:810`）。
+	                                     仅 NM/Com 的 TX 两条例外，见 `Can.json` */
 	uint32_t       individualMask;  /**< RX 独立掩码；0xFFFFFFFF = ID 必须完全一致 */
 } CanHw_MsgCfgType;
 
@@ -402,7 +406,12 @@ typedef struct {
 /** @brief HTH 11：CAN1 `0x18FECA21` BCM_DM1（诊断信息） */
 #define CAN_HW_HTH_CAN1_DM1         (11u)
 
-/** @brief HTH 表长度 */
+/** @brief HTH 表长度
+ *  @warning 必须等于 `Can/Can.json` 里所有 TX 邮箱的条数。
+ *          偏大不会报错——数组尾部补 0 条目，而 0 条目恰好是
+ *          `{ctrl0, mb0, id0}`，等于**把 HTH0 覆盖成空邮箱**，表现为
+ *          "心跳帧发不出去"；偏小是编译错误。
+ *          一致性由 `tools/can_table_check.py` 校验。 */
 #define CAN_HW_HOH_NUM              (12u)
 
 /* ============================ [ 表 ] ============================ */
