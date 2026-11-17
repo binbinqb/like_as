@@ -17,6 +17,7 @@
          | `import-dbc` | 解析 DBC 并统计，核对三份 JSON 的引用 | 只读 |
          | `validate` | 矩阵 vs 硬件邮箱 vs CanIf 过滤 vs Hoh 对账 | 只读 |
          | `generate` | 跑生成器 + 注入 + 拷入 config，再用 a4 静态断言复核 | **会写** |
+         | `sync` | 先算指纹：配置变了才跑 `generate` 那五步 | 按需写 |
          | `check-pdu` | 三方 PDU 注册一致性：重复 / 悬空引用 / ID 冲突 / 路由索引错位 | 只读 |
 
          @note @section CFGTOOL_GAPS `validate` 判据的来源
@@ -33,12 +34,13 @@
          并打印补齐方法，**不会**退回"跳过=通过"——那是最危险的假绿。
 
 @author  binbina
-@version V1.0.0
+@version V1.1.0
 
 @par 修改记录
 | 版本   | 日期       | 作者    | 变更说明 |
 |--------|------------|---------|----------|
 | V1.0.0 | 2026-11-17 | binbina | 首版：validate / generate / import-dbc |
+| V1.1.0 | 2026-11-17 | binbina | 加 sync：构建前置的生成门禁（见 gen_gate.py） |
 """
 
 import argparse
@@ -199,6 +201,69 @@ def cmd_generate(args):
 
 	print("\n[PASS] 生成完成且通过静态断言。下一步：cmd //c \"build.bat --app=App\"")
 	return 0
+
+
+# ================================ [ sync ] ================================
+
+
+def cmd_sync(args):
+	"""构建前置门禁：配置没变就跳过，变了就生成。
+
+	@details 与 `generate` 的分工：`generate` 是"无条件跑五步"，
+	          `sync` 是"先算指纹，该跑才跑"。构建链（`build.bat`）调的是后者，
+	          所以日常构建不会为没改过的配置白花 7 秒。
+
+	          判定逻辑全在 `gen_gate.check()`，本函数只负责输出与加锁 ——
+	          判据只有一处实现，自测脚本才能证伪它。
+	"""
+	import gen_gate
+
+	action, reason, detail = gen_gate.check(ROOT, force=args.force)
+	if args.check:
+		print("[%s] %s" % (action.upper(), reason))
+		return 0
+
+	if action == "skip":
+		print("[SKIP] %s" % reason)
+		if detail:
+			print("       %s" % "、".join(detail))
+		return 0
+
+	if action == "degrade":
+		print("[DEGRADED] %s" % reason)
+		print("           缺：%s" % "、".join(detail))
+		print("           补齐方法见 .gitignore 的「客户（OEM）资料」一段。")
+		return 0
+
+	if action == "blocked":
+		print("[BLOCKED] %s" % reason)
+		for d in detail:
+			print("  - %s" % d)
+		print("\n修法：把客户 DBC 放回 %s，或把上述改动撤回。"
+		      % rel(os.path.join(CFG, "dbc")))
+		print("      缺输入时**不会**退回\"跳过=通过\"——那正是本工程禁止的假绿。")
+		return 2
+
+	# action == "run"
+	print("[GEN] %s" % reason)
+	if not gen_gate.acquire_lock(ROOT):
+		print("[ERROR] 等生成锁超时：%s 被另一个构建占用超过 %d s。"
+		      % (gen_gate.LOCK_REL, gen_gate.LOCK_STALE_SEC))
+		return 3
+	try:
+		# 拿到锁后再判一次：等锁期间另一个进程可能已经把生成做完了。
+		# 不加这一判，App / AppB 并发时会白跑两遍 7 秒，还会互相覆盖产物。
+		if not args.force:
+			action2, reason2, _ = gen_gate.check(ROOT)
+			if action2 in ("skip", "degrade"):
+				print("[SKIP] 另一个构建已完成生成（%s）" % reason2)
+				return 0
+		rc = cmd_generate(argparse.Namespace(force=args.force))
+		if rc == 0:
+			gen_gate.save_state(ROOT)
+		return rc
+	finally:
+		gen_gate.release_lock(ROOT)
 
 
 # ============================== [ check-pdu ] ==============================
@@ -398,6 +463,11 @@ def main():
 	g = sub.add_parser("generate", help="生成 + 注入 + 拷入 + 静态复核")
 	g.add_argument("--force", action="store_true", help="忽略缓存强制重新生成")
 	g.set_defaults(func=cmd_generate)
+
+	s = sub.add_parser("sync", help="构建前置门禁：配置未变则跳过生成")
+	s.add_argument("--force", action="store_true", help="忽略指纹强制重新生成")
+	s.add_argument("--check", action="store_true", help="只报告判定，不生成、不写状态")
+	s.set_defaults(func=cmd_sync)
 
 	c = sub.add_parser("check-pdu", help="三方 PDU 注册一致性（只读）")
 	c.add_argument("--warn", action="store_true", help="有不一致也返回 0")

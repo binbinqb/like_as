@@ -48,6 +48,14 @@ config.log
 # 对外是"配置变更检测缓存"（记 JSON 的 md5），换机器就该重建。
 /.gendb.pkl
 tools/generator/.gendb.pkl
+# 生成门禁（tools/gen_gate.py）的本地状态：记"上次生成时输入与产物各是什么
+# md5"。它描述的是**本机上一次构建**，换机器必须重算，所以不入库。
+# 缺了它的效果是"下次构建重新生成一遍"，不会错，只是慢一次。
+/.genstate.json
+/.genstate.json.tmp
+/.gendb.pkl.*.tmp
+# 生成锁：App / AppB 并发构建时串行化生成，进程崩溃会留下残留（超时自动清）。
+/.genlock
 tools/generator/dbc/parsetab.py
 tools/generator/dbc/parser.out
 tools/generator/dbc/*.out

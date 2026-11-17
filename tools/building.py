@@ -4,6 +4,7 @@
 import os
 import glob
 import shutil
+import subprocess
 import SCons
 from SCons.Script import *
 import re
@@ -35,6 +36,14 @@ AddOption("--release", dest="release", type=str, default=None, help="release ssa
 AddOption("--cfg", dest="cfg", type=str, default=None, help="the directory path to config")
 
 AddOption("--gen", dest="gen", action="store_true", default=False, help="force to generate config")
+
+AddOption(
+    "--generate",
+    dest="generate_only",
+    action="store_true",
+    default=False,
+    help="sync configs from JSON/DBC then exit, no compile",
+)
 
 AddOption("--strip", dest="strip", action="store_true", default=False, help="strip symbols")
 
@@ -2595,9 +2604,57 @@ class Qemu:
         RunCommand(cmd)
 
 
+def _is_passive_build():
+    """判断这次 scons 调用会不会写文件：不写的（清理/干跑/帮助）不触发生成。
+
+    为什么要判：`scons -c` 把生成链也跑一遍，等于"清理时顺手改配置"，
+    之后 `git status` 一片脏；`scons -n` 更是名义上的 dry-run。
+    """
+    passive = ("-c", "--clean", "-n", "--dry-run", "-h", "--help", "-H")
+    return any(a in sys.argv[1:] for a in passive)
+
+
+def ConfigSync(force=False):
+    """(02.8) 构建前置门禁：配置变了才生成，没变直接过。
+
+    实测：五步全跑 7.2 s；`config.py sync` 在"无事可做"时 0.5 s（判定本身
+    36 ms，其余是解释器启动与模块导入）。判据与实现在 `tools/gen_gate.py`，
+    本函数只负责"起子进程 + 把返回码翻译成构建的生死"。
+
+    为什么起子进程而不是 import：生成链有全局副作用（写 config/、拷 Com、
+    跑 a4 断言），放在独立进程里失败就是返回码，不会把 SCons 的异常栈糊到
+    用户脸上；也顺带保证生成用的是和构建同一个解释器。
+
+    @return 0 继续构建；非 0 必须停（拿旧配置继续编 = 假绿）
+    """
+    cmd = [sys.executable, os.path.join(RootDir, "tools", "config.py"), "sync"]
+    if force:
+        cmd.append("--force")
+    return subprocess.call(cmd, cwd=RootDir)
+
+
 def Building():
     appName = GetOption("application")
     libName = GetOption("library")
+
+    # ------------------------------------------------------------------
+    # (02.8) 配置生成门禁
+    #
+    # 位置很关键：必须在**任何库的 config() 之前**。`RegisterConfig()` 在
+    # 那里调 `Generate()`，它按 `.gendb.pkl` 的哈希决定要不要重生成 ——
+    # 但注入（sync_can/sync_canif/sync_pdur）与 Com 拷入不在那条链上，
+    # 只靠它就会出现"GEN/ 是新的、config/ 是旧的"。
+    #
+    # `--generate`（只生成不编译）在 SConstruct 里就短路了，不走这里：
+    # 那个模式不能带 --app，一旦进到 SConscript 解析就会撞 variant_dir。
+    # ------------------------------------------------------------------
+    if not _is_passive_build():
+        rc = ConfigSync(force=GetOption("gen"))
+        if rc != 0:
+            print("scons: *** 配置生成链未通过（config.py sync rc=%d），停止构建" % rc)
+            print("scons: *** 拿旧配置继续编会得到一个'看起来成功'的镜像，不做。")
+            sys.exit(rc)
+
     if appName not in __apps__ and libName not in __libraries__:
         print("avaliable apps:", [k for k in __apps__.keys()])
         print("avaliable libraries:", [k for k in __libraries__.keys()])

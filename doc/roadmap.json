@@ -101,13 +101,20 @@
    "title": "RTE 读一致性",
    "decision": "RTE 不建读缓存：一致性快照已由 BcmSig_MainFunction 的 s_rxState 提供；Com_RxIndication 在中断里改的是底层 IPdu 缓冲，不是业务读到的值。",
    "impact": "应用层执行顺序从\"Com 之前\"移到\"Com 之后\"（端到端 2 拍→1 拍）；同帧多信号的撕裂风险记为已知边界。"
+  },
+  {
+   "id": "D-GATE",
+   "date": "2026-11-17",
+   "title": "配置生成怎么接进构建",
+   "decision": "不把 JSON 塞进 RegisterConfig（按库触发，表达不了五步顺序，且会冲掉手写文件@generated 区块外的人工内容）；改为构建前门禁：输入+产物指纹未变则跳过，变了跑完整五步，缺 DBC 且输入有变则 rc=2 停构建。",
+   "impact": "build.bat 无事时 +0.5 s、有变化时 +7.2 s；新增 --generate（只生成不编译）；无 DBC 的机器可正常构建但不能改配置。"
   }
  ],
  "current": {
-  "module": 2,
-  "task": 7,
-  "text": "02.8 SCons 自动生成集成（配置变化触发增量生成，无变化不重生成）",
-  "next": "先确认 SCons 能否把 JSON/DBC/Generator 声明为生成依赖；缺客户 DBC 时要能走预生成构建"
+  "module": 22,
+  "task": 2,
+  "text": "复位恢复：Boot 在 meta 损坏 / CRC 失配 / App 无效时的停靠行为",
+  "next": "先盘点 Boot 现有的启动判定分支（meta 读取、镜像 CRC、槽有效性），把\"必然停在 UDS\"这条写成可复现的上板脚本，再补缺失分支。"
  },
  "modules": [
   {
@@ -244,8 +251,8 @@
     {
      "text": "SCons 自动生成集成",
      "check": "配置改动触发重编，无需手工跑生成器",
-     "state": "TODO",
-     "evidence": "当前由人工调 Generate()；SCons 未挂生成步骤"
+     "state": "PASS",
+     "evidence": "tools/gen_gate.py（输入指纹：4 JSON + 2 DBC + generator/**/*.py + 3 注入脚本 + config.py；产物指纹：7 个入库文件，LF 归一比对）；SConstruct 在 SConscript 之前短路 --generate，building.py 在 Building() 开头跑 config.py sync，-c/-n/-h 不触发；未变 0.5 s 跳过、变了跑完五步（7.2 s）；缺 DBC 三态：无状态→degrade 用入库产物、输入变→blocked rc=2、产物漂移→告警。自测 gen_gate_check 15/15（含证伪：手改产物、删产物、输入集变化、并发锁）。实测链路：给 Com.py 插探针 → [GEN] → 只重编 1 个 TU → 镜像 241084/1712/15040 不变；撤探针后回到基线、git diff 为空。顺带修：.gendb.pkl 缓存键漏了生成器源码（改生成器不生效）、Com_Cfg.c 工作区 CRLF 与仓库 LF 不一致（527384 vs 510550 B）、.gendb.pkl 原子落盘。三镜像全量重建：App 241084/1712/15040、AppB 241084/1716/15040、Boot 51896/168/9328。"
     },
     {
      "text": "按需接入原版 JSON Editor",
