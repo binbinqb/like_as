@@ -133,9 +133,9 @@
  ],
  "current": {
   "module": 22,
-  "task": 3,
-  "text": "失败启动恢复：D1/D2/D3 已修、Host 双模式全过；02.8 依赖边已上 SCons 图",
-  "next": "① 上板跑 H1~H3（bootfault meta-crc → 连续复位 4 次看回滚；meta-blank 看兜底/停 UDS）与选槽耗时；② 之后按顺序转 02.6 的 PduR 收口。"
+  "task": 1,
+  "text": "验证镜像及 metadata：损坏镜像拒绝（量产）与 meta-blank 兜底尚未上板",
+  "next": "刷 --app=Boot --prod 跑 H3'，再用 bootfault meta-blank 跑 H3；H4/H5 用 10 03 起刷写后不连诊断仪看 30 s 回退。跑完 M22 任务 1 可转 PASS。"
  },
  "modules": [
   {
@@ -1016,8 +1016,8 @@
     {
      "text": "失败启动恢复",
      "check": "镜像校验失败进入回滚",
-     "state": "PARTIAL",
-     "evidence": "D1 已修：DemoteToTesting 不再清零 bootAttempts，降级路径也能累加到 4 次判 INVALID 回滚（B4：1→2→3→第4次 INVALID；修复前恒为 1、永不回滚）。选槽判定抽到 boot_choice.c，同一份源码按 BOOT_MODE_PRODUCTION=0/1 各编一次：开发 9/9、量产 9/9，覆盖「陈旧 meta 降级」与「量产直接判 INVALID 回滚」两条策略。尺寸：Boot 开发 51,996 / 量产 51,896（与基线一致）；App 量产 241,084 与基线逐字节一致。**待上板**：H1/H2（bootfault meta-crc + 连续复位看回滚）、H3（meta-blank）以及分段 CRC 的选槽耗时。"
+     "state": "PASS",
+     "evidence": "**上板实测通过**（2026-11-17，CVM0146-EVK；开发版 Boot build 14:58:20 / App 15:11:13）。`bootfault testing 3` → 复位，串口依次出现：`slot A : 0x020000 TESTING rc=28 ... crc=DDDA994E` → `[boot] slot A exceeded boot attempts, rollback to slot B` → `[boot] no valid image in slot A or B, waiting for flash` → `entering UDS flash mode`。计数 3→4 超限触发 INVALID 并回滚；B 槽 EMPTY 故按设计停在 UDS（不是死机）。**该行在修复前不可能出现**（旧代码 DemoteToTesting 清零，计数恒为 1）。另测 H1：`bootfault meta-crc` → `[boot] slot A check failed, boot anyway as TESTING` → app `[app] slot A meta mismatch, self-register crc=DDDA994E` 自愈。Host 侧 boot_meta 20 / boot_dev 9 / boot_prod 9 覆盖同一批判据。未做：H3(meta-blank)、H3'(量产拒绝)、H4/H5、选槽耗时。"
     },
     {
      "text": "擦写中断电测试",

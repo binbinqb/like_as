@@ -165,3 +165,69 @@ H6 依赖程控电源（与 M22 任务 4 同一个 SKIP 原因）。
 ⚠ **Boot 需上板复核算槽耗时**：CRC 从"直读"改成 64 B 分段 `memcpy`，444 KB 上限
 约 7000 次调用。逻辑等价已由 B2 证明（测试端一次性算 vs 固件端分段算必须相等），
 但实际耗时只有上板能量。H1 会顺带验证。
+
+---
+
+## 7 上板实测记录（2026-11-17，CVM0146-EVK）
+
+镜像：Boot `build Nov 17 2026 14:58:20`（开发版）、App `build Nov 17 2026 15:11:13`
+（开发版，含 `bootfault`）。串口 UART2 / 115200。
+
+### 7.1 H1 陈旧 meta → 降级照跳（通过）
+
+```
+CVM014x >>  bootfault meta-crc
+<+0, slot A meta.imageCrc=0x222566B1 (was 0x222566B1); reset to observe
+```
+
+> ⚠ 这条输出里的 "was" 是**假的**：真旧值是 `0xDDDA994E`（下一段 boot 日志的
+> `crc=DDDA994E` 可以反推）。`BootMeta_Write()` 会同步更新内部缓存，而打印 "was"
+> 用的 `info->meta.imageCrc` 正指向那块缓存 —— 写完已经是新值了。
+> 已改为在 Write **之前**存旧值；本记录保留原始输出，不做美化。
+
+复位后：
+
+```
+slot A : 0x020000  CONFIRMED  rc=27  size=244576  crc=222566B1  v2.8.0
+[boot] dbg slot A: sp=2000F000 pc=00020401 size=244576 crc=DDDA994E expect=222566B1
+[boot] slot A check failed, boot anyway as TESTING (meta may be stale)   ← 判据
+[boot] jump to slot A  base=0x020000  entry=0x020400
+[app] slot A meta mismatch, self-register  size=244576 crc=DDDA994E      ← 自愈
+```
+
+**结论**：meta 有效但镜像 CRC 不符时，开发版不判死、降级后照跳；app 起来后把 meta
+修回正确 CRC。**同时印证了上板用例的设计前提**：正因为 app 会自愈，靠连续复位
+看累加是看不到的 —— 必须用 `testing N`（见 7.2）。
+
+
+### 7.2 H2 计数累加 → INVALID → 回滚（通过，**D1 修复的决定性证据**）
+
+```
+CVM014x >>  bootfault testing 3
+<+0, slot A TESTING attempts=3; reset -> next boot will be 4 (>3 => INVALID + rollback)
+```
+
+复位后：
+
+```
+slot A : 0x020000  TESTING    rc=28  size=244576  crc=DDDA994E  v2.8.0
+[boot] dbg slot A: sp=2000F000 pc=00020401 size=244576 crc=DDDA994E expect=DDDA994E
+[boot] slot A exceeded boot attempts, rollback to slot B      ← 判据（修复前永不出现）
+[boot] no valid image in slot A or B, waiting for flash
+[boot] entering UDS flash mode ...
+```
+
+**结论**：计数从 3 累加到 4、超过 3 次上限、A 判 INVALID、回滚被触发。
+`slot B : EMPTY (no meta)` 所以回滚目标不可用，按设计停在 UDS 等刷写（不是死机）。
+
+这条在**修复前必然失败**：旧代码 `DemoteToTesting` 每次把 `bootAttempts` 清零，
+计数永远是 1，日志里永远不会出现 `exceeded boot attempts`。
+
+### 7.3 尚未上板的部分
+
+| 用例 | 状态 |
+|---|---|
+| H3 `meta-blank` 开发兜底 | 待跑 |
+| H3' 量产 Boot 拒绝坏镜像 | 待跑（需刷 `--app=Boot --prod`） |
+| H4/H5 刷写超时回退 | 待跑 |
+| 选槽耗时 | 日志无时间戳，未测 |

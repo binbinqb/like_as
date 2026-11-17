@@ -59,6 +59,7 @@ static int bf_meta_crc(void)
 	uint8_t slot = BootMeta_GetActiveSlot();
 	const Boot_SlotInfoType *info;
 	Boot_MetaType meta;
+	uint32_t oldCrc;
 
 	if (slot == BOOT_NO_ACTIVE_SLOT) {
 		sh_print("<+1, no active slot (nothing to corrupt)\r\n");
@@ -72,6 +73,12 @@ static int bf_meta_crc(void)
 		return -1;
 	}
 
+	/* ⚠ 旧值必须在 Write **之前**存下来。
+	 * `BootMeta_Write()` 会同步更新内部缓存 `s_slotInfo[slot].meta`，
+	 * 而 `info` 正指向那块缓存 —— 写完之后 `info->meta.imageCrc` 已经是新值，
+	 * 拿它当 "was" 打印就会出现 "0x222566B1 (was 0x222566B1)" 这种自欺欺人的输出。
+	 * （2026-11-17 上板时被日志抓出来的。） */
+	oldCrc = info->meta.imageCrc;
 	meta = info->meta;
 	meta.imageCrc ^= 0xFFFFFFFFu;      /* 一定对不上，且不依赖原值 */
 
@@ -82,7 +89,7 @@ static int bf_meta_crc(void)
 
 	sh_print("<+0, slot %c meta.imageCrc=0x%08X (was 0x%08X); reset to observe\r\n",
 	         (slot == BOOT_SLOT_INDEX_A) ? 'A' : 'B',
-	         (unsigned)meta.imageCrc, (unsigned)info->meta.imageCrc);
+	         (unsigned)meta.imageCrc, (unsigned)oldCrc);
 	return 0;
 }
 
