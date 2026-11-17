@@ -3149,48 +3149,69 @@ Motorola、有符号、factor/offset、跨报文同名信号、缓存失效、�
 配套：`infras/mcal/Can/SConscript` 的 CPPPATH 加 `$Board_Cfg`（与 Port/Dio 一致）。
 `hardcode_check.py` 从 7 项增到 **9 项**，新增"Can_Cfg.h 不许再有波特率定义"。
 
-### ⚠ Boot 构建：修掉一半，剩下一半是结构性缺陷（BLOCKED）
+### ✅ Boot 三镜像全部可构建：根因是"共享库被两个 app 用不同头编译"
 
-本轮先修了两处**明确正确**的：
+**结论：`Boot.exe` 从链接失败变成可构建、可运行、可刷写；App 产物逐字节未变。**
 
-| 修复 | 原因 |
+#### 真正的根因（前两轮只治了症状）
+
+`Dcm` 库全工程只编一次，用 **app 的** `Dcm_Cfg.h`。而 0x34/0x36/0x37 的实现
+在 `Dcm_Dsp.c` 里被 `#ifdef DCM_USE_SERVICE_*` 包着，app 头里是注释掉的
+→ 库里根本没有这三个符号。boot 的 `Dcm_Cfg.c` 却按 boot 头写、**无条件**
+列出它们 → 链接期 undefined。
+
+前两轮"修掉一半"的两处（`perf_mon.c` 进 keep 列表、`CanTp` 显式声明
+`$CanTp_Cfg`）是真实的独立缺陷，但**不是这个根因**。
+
+#### 修法：让"实现"无条件存在，"可达性"仍由各 app 的服务表决定
+
+| 文件 | 改动 | 为什么 |
+|---|---|---|
+| `Dcm_Dsp.c` | 三个刷写函数的 `#ifdef` 去掉 | 库是共享的，实现不该被**某一个** app 的 cfg 裁掉 |
+| `Dcm_Priv.h` | `Dcm_UDTType` / `context->UDTData` 无条件定义 | 上面的实现要用它；原来只在 DOWNLOAD\|UPLOAD 时定义 |
+| `Dcm_Dsl.c` | 初始化仍留在 `#if` 内 | 见下 |
+
+**关键判断**：app 的服务表（`Dcm_Cfg.c`）里那三条也在 `#ifdef` 内、宏是关的，
+所以 app **不引用**这三个函数 → `-ffunction-sections` + `--gc-sections` 直接剥掉。
+`nm App.exe` 里三个符号计数为 **0**。
+
+`Dcm_Dsl.c` 的 UDT 初始化我**没有**改成无条件：实测那样 App `text` 会 +36 字节
+（5 次字段清零）。`Dcm_Context` 是 `static`，零初始化由 C 标准保证，且 app 不使用
+该字段 —— 保持 App 产物与基线逐字节一致更有价值。
+
+**否掉的两条路**（避免重走）：
+
+1. 把 Dcm 的 4 个 `.c` 编进 boot 应用 → 与库对象落在同一 `Dcm.o` 路径，
+   链接期 `multiple definition of Dcm_GetContext`；
+2. 在 app 的 `Dcm_Cfg.h` 打开三个宏 → `Dcm_Cfg.c` 内有对应 `#ifdef` 条目，
+   **app 会真的多出 0x34/0x36/0x37 服务**（行为变更），已回退。
+
+#### 验证：不止"编过了"
+
+| 项 | 结果 |
 |---|---|
-| `perf_mon.c` 加入 boot 的 keep 列表 | A6 给 `platform_cvm0146.c` 的 SysTick 加了 `PerfMon_TickIsr/TickResync`，boot 编这份平台代码却没编实现 → 链接期 undefined |
-| `CanTp` 库 CPPPATH 显式加 `$CanTp_Cfg` | `CanTp.c:14` 就 include 它，原来靠 `$CanIf_Cfg` 目录"顺带"有这份头才编得过 |
+| App `text` | **240,516**（与基线逐字节一致），0 警告 |
+| AppB `text` | 240,516 |
+| Boot `text` | **51,448**（64 KB 区占 40%），首次成功 |
+| Boot 启动 + 跳转 | 烧 `--boot` 后 App 起来：UDS 18/18、业务 18/18 |
+| Boot 刷写链路 | 强制 UDS 构建下用 `uds_flash.py` 刷 AppB 到 B 槽：**0x34 → 0x36 传 242,232 B → 0x37 写 meta → 0x31 01 FF01 CRC 复核 OK → 0x11 复位** |
+| 刷后恢复 | `flash.py --boot --force` 回 A 槽，B 槽 meta 失效 |
 
-剩下的 `Dcm_DspRequestDownload / TransferData / RequestTransferExit` **不是改配置能解决的**：
+#### ⚠ 同时发现：正常流程里没有"进 Boot 刷写"的入口
 
-- `Dcm` 库全工程只编一次，用的是 **app 的** `Dcm_Cfg.h`（`$Dcm_Cfg` 指向 app 配置）；
-- `Dcm_Dsp.c` 里 0x34/0x36/0x37 被 `#ifdef DCM_USE_SERVICE_*` 包着，app 头里是注释掉的；
-- boot 的 `Dcm_Cfg.c` 用的是 boot 头（这三个是打开的）→ 引用了库里不存在的符号。
+`Boot_EnterUds()` 只有三个调用点：`BOOT_FORCE_UDS` 调试宏、无有效镜像、
+回滚目标也无效。**App 收到 `0x10 03` 后不会把控制权交给 Boot** —— 所以
+`uds_flash.py` 直接对 App 发 `0x34` 得到 NRC 0x11（App 服务表里没有）。
 
-**试过并否掉的两条路**（都记下来，避免下一个人重走）：
+这不是本次修复的缺陷（本次目标是"Boot 能构建/能跑/服务可用"，已达成），
+但它是刷写链路的必要一环，已作为独立任务登记：**App 写刷写请求标志 → 复位
+→ Boot 读标志停 UDS**。
 
-1. 把 Dcm 的 4 个 `.c` 编进 boot 应用 → 与库对象落在同一 `Dcm.o` 路径，链接期
-   `multiple definition of Dcm_GetContext`；
-2. 在 app 的 `Dcm_Cfg.h` 打开三个宏 → `Dcm_Cfg.c` 内有对应 `#ifdef` 条目，**app 真的会
-   多出 0x34/0x36/0x37 服务**，属于行为变更，已回退（App `text` 确认仍是 240,516）。
+（另记：`set BOOT_FORCE_UDS=1 && build.bat` 实测**不生效**，`main.o` 里搜不到
+该字符串；验证时改为临时在 SConscript 里固定打开。这个环境变量入口需要单独修，
+别在验证时依赖它。）
 
-**正确修法**（下一任务）：给 boot 单独编一份 Dcm 库——同一组源码 + boot 的 cfg 头，
-输出到独立 target 名；或在 `building.py` 支持"按 app 复制库"。这不是配置问题，是构建
-架构问题，不该在 02.x 里顺手改。
-
-当前状态：App 240,516（0 警告）/ AppB 可构建 / **Boot 链接失败（3 个 Dcm 符号）**。
-
-### 旧记录：Boot 链接失败（已定位）
-
-跑 `build.bat --app=Boot` 时报：
-
-```
-undefined reference to `Dcm_DspRequestDownload' / `Dcm_DspTransferData'
-                     / `Dcm_DspRequestTransferExit'
-undefined reference to `PerfMon_TickIsr' / `PerfMon_TickResync'
-```
-
-`PerfMon_*` 是 A6 给 `platform_cvm0146.c` 加的计时钩子，而 `perf_mon.c` 在
-`app/app/src/`，Boot 的 keep 列表里没有它；`Dcm_Dsp*` 是 boot 版 Dcm 配置引用了
-未编入的服务函数。**两处都不是本轮引入**，但说明"三镜像构建"这条验收从来没真正
-跑过 Boot —— 已记入看板，作为 02.6/02.8 的前置缺陷。
+### 旧记录：Boot 链接失败的首次定位
 
 ### 尚未完成（下一步）
 

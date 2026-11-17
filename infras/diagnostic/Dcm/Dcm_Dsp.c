@@ -515,7 +515,21 @@ Std_ReturnType Dcm_DspRoutineControl(Dcm_MsgContextType *msgContext,
   return r;
 }
 #endif
-#ifdef DCM_USE_SERVICE_REQUEST_DOWNLOAD
+/* ---------------------------------------------------------------------------
+ * 刷写三件套（0x34 / 0x36 / 0x37）**无条件编译**，不受 DCM_USE_SERVICE_* 控制。
+ *
+ * 为什么（2026-11-17，Boot 链接失败定位）：
+ *   Dcm 库全工程只编一次，用 app 的 Dcm_Cfg.h；而 boot 有自己的 Dcm_Cfg.c，
+ *   里面的服务表是**无条件**列出这三个函数的。原来它们被 #ifdef 包着，app 头
+ *   里宏是关的 → 库里根本没有符号 → boot 链接期 undefined reference。
+ *
+ *   反过来"在 app 头里打开宏"是错的：app 的 Dcm_Cfg.c 里同样有 #ifdef 条目，
+ *   打开后 app 会真的多出这三个服务（行为变更，不是构建问题）。
+ *
+ * 影响：app 编进来但不引用 → -ffunction-sections + --gc-sections 直接剥掉，
+ *       text 不变（实测见提交说明）。服务是否可达仍由各 app 自己的服务表决定，
+ *       这里只提供"实现"，不改变任何 cfg 语义。
+ * ------------------------------------------------------------------------- */
 Std_ReturnType Dcm_DspRequestDownload(Dcm_MsgContextType *msgContext,
                                       Dcm_NegativeResponseCodeType *nrc) {
   Std_ReturnType r = E_NOT_OK;
@@ -591,7 +605,6 @@ Std_ReturnType Dcm_DspRequestDownload(Dcm_MsgContextType *msgContext,
 
   return r;
 }
-#endif
 
 #if defined(DCM_USE_SERVICE_REQUEST_UPLOAD)
 Std_ReturnType Dcm_DspRequestUpload(Dcm_MsgContextType *msgContext,
@@ -671,7 +684,6 @@ Std_ReturnType Dcm_DspRequestUpload(Dcm_MsgContextType *msgContext,
 }
 #endif
 
-#ifdef DCM_USE_SERVICE_TRANSFER_DATA
 Std_ReturnType Dcm_DspTransferData(Dcm_MsgContextType *msgContext,
                                    Dcm_NegativeResponseCodeType *nrc) {
   Std_ReturnType r = E_NOT_OK;
@@ -772,9 +784,7 @@ Std_ReturnType Dcm_DspTransferData(Dcm_MsgContextType *msgContext,
 
   return r;
 }
-#endif
 
-#ifdef DCM_USE_SERVICE_REQUEST_TRANSFER_EXIT
 Std_ReturnType Dcm_DspRequestTransferExit(Dcm_MsgContextType *msgContext,
                                           Dcm_NegativeResponseCodeType *nrc) {
   Std_ReturnType r = E_NOT_OK;
@@ -810,7 +820,6 @@ Std_ReturnType Dcm_DspRequestTransferExit(Dcm_MsgContextType *msgContext,
 
   return r;
 }
-#endif
 
 #ifdef DCM_USE_SERVICE_ECU_RESET
 Std_ReturnType Dcm_DspEcuReset(Dcm_MsgContextType *msgContext, Dcm_NegativeResponseCodeType *nrc) {

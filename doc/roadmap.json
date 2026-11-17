@@ -104,10 +104,10 @@
   }
  ],
  "current": {
-  "module": 0,
-  "task": 3,
-  "text": "02.6 前置：为 Boot 单独编一份 Dcm 库（按 app 复制库，或独立 target 名）",
-  "next": "先在 building.py 里确认库能否带 app 后缀；否则在 boot SConscript 里用唯一对象路径编 Dcm 源"
+  "module": 22,
+  "task": 7,
+  "text": "App → Boot 刷写交接：App 收到 0x10 03 后写 meta 请求标志并复位，Boot 启动时读标志停在 UDS",
+  "next": "先定标志放哪（meta 保留字段 vs NvM 块），再改 App 的会话回调；验收判据是 uds_flash.py 不用强制 UDS 构建就能跑通"
  },
  "modules": [
   {
@@ -142,8 +142,8 @@
     {
      "text": "冻结构建与现有回归",
      "check": "三镜像构建、现有 M/A 用例通过或注明 SKIP",
-     "state": "PARTIAL",
-     "evidence": "App 240,516 / AppB 可构建；**Boot BLOCKED**：Dcm_Dsp 三个服务未编入共享库（app 头关着、boot 头开着）。perf_mon 与 CanTp 头路径已修"
+     "state": "PASS",
+     "evidence": "三镜像均可构建：App 240,516（与基线逐字节一致）/ AppB 240,516 / Boot 51,448；Boot 烧板后正常跳转（UDS 18/18、业务 18/18）；刷写链路 0x34/0x36/0x37/0x31/0x11 实测通过"
     }
    ]
   },
@@ -1006,6 +1006,12 @@
     {
      "text": "FlashTool 自动化",
      "check": "A→B、B→A、异常重试",
+     "state": "PARTIAL",
+     "evidence": "uds_flash.py 全链路实测：AppB→B 槽 242,232 B、10.7 KB/s、CRC 复核 OK、复位；flash.py --boot/--force 回滚正常。缺 App→Boot 控制权交接，见新增任务"
+    },
+    {
+     "text": "App → Boot 刷写交接（0x10 03 后写请求标志并复位，Boot 读标志停 UDS）",
+     "check": "正常流程下 uds_flash.py 一次跑通，不需要 BOOT_FORCE_UDS 调试构建",
      "state": "TODO",
      "evidence": ""
     }

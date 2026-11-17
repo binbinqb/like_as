@@ -50,6 +50,16 @@ void Dcm_DslInit(void) {
   context->timerS3Server = 0;
   context->timerP2Server = 0;
   context->opStatus = DCM_INITIAL;
+/* app 的这三个宏是关的（服务表里没有 0x34/0x36/0x37），所以这段不编。
+ * UDTData 字段本身现在总在结构体里（Dcm_Priv.h 无条件定义），app 侧靠
+ * **静态存储零初始化**（Dcm_Context 是 static，C 标准保证），且 app 不使用
+ * 该字段。实测：把它改成无条件执行，App text 会多 36 字节（5 次清零），
+ * 其余不变；这里选择保持 App 产物与基线逐字节一致。 */
+/* app 的这三个宏是关的（服务表里没有 0x34/0x36/0x37），所以这段不编。
+ * UDTData 字段本身现在总在结构体里（Dcm_Priv.h 无条件定义），app 侧靠
+ * **静态存储零初始化**（Dcm_Context 是 static，C 标准保证），且 app 不使用
+ * 该字段。实测：把它改成无条件执行，App text 会多 36 字节（5 次清零），
+ * 其余不变；这里选择保持 App 产物与基线逐字节一致。 */
 #if defined(DCM_USE_SERVICE_REQUEST_DOWNLOAD) || defined(DCM_USE_SERVICE_REQUEST_UPLOAD)
   context->UDTData.state = DCM_UDT_IDLE_STATE;
   context->UDTData.blockSequenceCounter = 0;

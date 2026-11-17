@@ -154,8 +154,15 @@ enum {
 
 typedef struct Dcm_Service_s Dcm_ServiceType;
 
-#if defined(DCM_USE_SERVICE_REQUEST_DOWNLOAD) || defined(DCM_USE_SERVICE_REQUEST_UPLOAD)
-/* UDT = Upload Download Transfer */
+/* UDT = Upload Download Transfer
+ *
+ * 这块**无条件定义**（原先是 #if REQUEST_DOWNLOAD || REQUEST_UPLOAD）。
+ * 原因：0x34/0x36/0x37 的实现已在 Dcm_Dsp.c 里改为无条件编译（见那里的
+ * 说明），它们要用 DCM_UDT_IDLE_STATE 和 context->UDTData。若这里仍按
+ * cfg 宏裁剪，app（三个宏全关）编译就会报 undeclared。
+ *
+ * 代价：app 的 Dcm_ContextType 多 16 字节（一个 enum + 两个计数字段），
+ *       行为不变 —— 服务是否可达仍由各 app 的服务表决定。 */
 typedef enum {
   DCM_UDT_IDLE_STATE = 0,
   DCM_UDT_UPLOAD_STATE,
@@ -169,7 +176,6 @@ typedef struct {
   uint32_t offset;
   uint8_t blockSequenceCounter;
 } Dcm_UDTType;
-#endif
 
 typedef struct {
   PduIdType curPduId;
@@ -193,9 +199,7 @@ typedef struct {
   P2CONST(Dcm_ServiceType, AUTOMATIC, DCM_CONST) curService;
   Dcm_MsgContextType msgContext;
   uint8_t responsePending;
-#if defined(DCM_USE_SERVICE_REQUEST_DOWNLOAD) || defined(DCM_USE_SERVICE_REQUEST_UPLOAD)
-  Dcm_UDTType UDTData;
-#endif
+  Dcm_UDTType UDTData;   /* 无条件：见上方 UDT 类型的说明 */
 #ifdef DCM_USE_SERVICE_ECU_RESET
   uint8_t resetType;
   uint16_t timer2Reset;
