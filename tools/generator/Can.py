@@ -185,6 +185,70 @@ def gen_hth_table(cfg):
 	return "\n".join(lines), len(rows)
 
 
+def gen_tx_pdus(cfg):
+	"""生成 `CanIf_Cfg.c` 的 `CanIf_TxPdus[]`（12 条）。
+
+	@details 字段来源（这是 02.6 方案 C 的核心，全部有权威出处，没有一处靠猜）：
+
+	| 字段 | 来源 |
+	|------|------|
+	| `txConfirm` | `Can.json` 的 `txConfirm`（项目决策，DBC 推不出来） |
+	| `txPduId` | `Can.json` 的 `canIfMacro`（唯一来源，`sync_pdur` 也从这里取） |
+	| `canid` | `Can.json` 的 `id` |
+	| `p_canid` | 恒 NULL（只有动态 ID 才非空，本项目没有） |
+	| `hoh` | `Can.json` 的 `hth`（**数字**，不是 `CAN_HW_HTH_*` 宏） |
+	| `ControllerId` | 所在 channel 的 index → `CANIF_CHL_CANx` |
+
+	@note 为什么 `hoh` 用数字而不是 `CAN_HW_HTH_*` 宏：宏值是第二份来源，
+	      改了 `hth` 忘了改宏就是"发到别的邮箱"。可读性由行尾注释补
+	      （`/* HTH6 CAN1 mb2 TX_LCSF */`）。`CAN_HW_HTH_DIAG_RESP` 仍保留，
+	      因为 `CanAc.c` 用它发诊断响应，那条路径不经过本表。
+
+	@note 按 `hth` 排序而不是按通道排序：`hth` 就是 `txPduId` 的顺序（实测
+	      0..11 一一对应），打乱会让 `CANIF_TX_*` 编号与表序脱节。
+	"""
+	rows = []
+	for c in cfg["channels"]:
+		for e in c["mailboxes"]:
+			if e["dir"] != "TX":
+				continue
+			if "canIfMacro" not in e:
+				raise SystemExit("CAN%d mb%d: TX 邮箱缺少 canIfMacro（它决定 txPduId）"
+				                 % (c["index"], e["mb"]))
+			if "txConfirm" not in e:
+				raise SystemExit("CAN%d mb%d: TX 邮箱缺少 txConfirm（DBC 推不出来，必须写）"
+				                 % (c["index"], e["mb"]))
+			rows.append({
+				"hth": e["hth"], "ctrl": c["index"], "mb": e["mb"],
+				"name": e.get("name", ""), "id": int(e["id"], 0),
+				"macro": e["canIfMacro"], "confirm": e["txConfirm"],
+			})
+
+	rows.sort(key=lambda r: r["hth"])
+	if [r["hth"] for r in rows] != list(range(len(rows))):
+		raise SystemExit("hth 必须是 0..N-1 连续：%s" % [r["hth"] for r in rows])
+
+	w_conf = max(len(r["confirm"]) for r in rows) + 3
+	w_macro = max(len(r["macro"]) for r in rows) + 3
+	w_id = max(len(_hex(r["id"])) for r in rows)
+
+	lines = ["static const CanIf_TxPduType CanIf_TxPdus[] = {"]
+	for r in rows:
+		lines.append("\t/* HTH%-2u · CAN%u mb%-2u · 0x%X %s */"
+		             % (r["hth"], r["ctrl"], r["mb"], r["id"], r["name"]))
+		lines.append("\t{")
+		lines.append("\t\t%-*s/* txConfirm */" % (w_conf, r["confirm"] + ","))
+		lines.append("\t\t%-*s/* txPduId（canIfMacro） */" % (w_macro, r["macro"] + ","))
+		lines.append("\t\t%-*s/* canid */" % (w_id + 2, _hex(r["id"]) + ","))
+		lines.append("\t\t%-*s/* p_canid：固定 ID */" % (w_id + 2, "NULL,"))
+		# 不要写成 "%-*s ... %u" —— 两个占位符只给两个参数会缺一个（踩过）
+		lines.append("\t\t%s/* hoh：HTH %u */" % (("%uu," % r["hth"]).ljust(12), r["hth"]))
+		lines.append("\t\tCANIF_CHL_CAN%u,                 /* ControllerId */" % r["ctrl"])
+		lines.append("\t},")
+	lines.append("};")
+	return "\n".join(lines), len(rows)
+
+
 def gen_all(cfg):
 	"""返回三块 C 代码与统计信息（供 `sync_can.py` 注入）。"""
 	blocks = {}
@@ -196,4 +260,7 @@ def gen_all(cfg):
 	code, n = gen_hth_table(cfg)
 	blocks["HTH table"] = code
 	stats["HTH"] = n
+	code, n = gen_tx_pdus(cfg)
+	blocks["CanIf TX PDUs"] = code
+	stats["CanIfTX"] = n
 	return blocks, stats

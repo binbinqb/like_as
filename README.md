@@ -3357,6 +3357,62 @@ App 的会话表相应加了 `DCM_PROGRAMMING_SESSION`（原来只有 DEFAULT + 
 回归：上板 `m3` 18/18、`m23` 24/24、`a9` 18/18；`hardcode_check` 10/10、
 `pdu_selftest` 3/3、`dbc_parser_check` 25/25。
 
+### ✅ 02.6 方案 C：CanIf TX 表也由 `Can.json` 生成（12 条，二进制等价）
+
+盘点时发现的一个洞：**TX 这 12 条从来没被生成过**——`sync_canif.py` 只管 RX，
+`CanIf_TxPdus[]` 全是手写。加起来它比 RX 更危险：
+
+> `Can_Write()` 校验 `hoh->canId`，**ID 错会返回 E_NOT_OK**，但**邮箱号错不会**。
+> 邮箱号只影响"数据写进哪个硬件邮箱"，写错了就是发一条 ID 对、内容进了别人邮箱的帧。
+
+#### 六个字段，全部有出处
+
+| 字段 | 来源 | 说明 |
+|---|---|---|
+| `txConfirm` | `Can.json` 的 `txConfirm` | 项目决策，DBC 推不出来 |
+| `txPduId` | `Can.json` 的 `canIfMacro` | **唯一来源**，`sync_pdur` 也从这里取 |
+| `canid` | `Can.json` 的 `id` | |
+| `p_canid` | 恒 `NULL` | 只有动态 ID 才非空，本项目没有 |
+| `hoh` | `Can.json` 的 `hth` | **用数字，不用 `CAN_HW_HTH_*` 宏** |
+| `ControllerId` | 通道 index → `CANIF_CHL_CANx` | |
+
+`hoh` 为什么不用宏：宏值是**第二份来源**，改了 `hth` 忘了改宏就是"发到别的邮箱"，
+而且编译器不会说话。可读性由行尾注释补（`/* hoh：HTH6 */`）。
+`CAN_HW_HTH_DIAG_RESP` 保留——`CanAc.c` 用它发诊断响应，那条路径不经过本表。
+
+#### 顺带把 `canIfMacro` 收成唯一来源
+
+原来 `Can.json` 的 `txPdus` 和邮箱表都能表达"这条报文用哪个 CanIf PDU 宏"。
+现在只留邮箱表里的 `canIfMacro`，`txPdus` 只保留 `dbc` / `short` / `pdurMacro`：
+
+```
+sync_canif.py  →  按 "TX_" + short 查邮箱表 → 生成 shim 名
+sync_pdur.py   →  按 "TX_" + short 查邮箱表 → 生成路由目的端
+sync_can.py    →  直接读 canIfMacro      → 生成 CanIf_TxPdus[]
+```
+
+三处查同一份数据，改一处不会漏另两处。重跑 `sync_pdur.py` 后 **`PduR_Cfg.c` 零差异**。
+
+#### 验证
+
+| 项 | 结果 |
+|---|---|
+| 逐字段对账 | **67 项**（原 53 + TX 12 条 + txPduId 编号连续性） |
+| 缺陷注入 | **6/6**（新增三条：改 `hoh` / 改 `txPduId` / 改 `txConfirm`） |
+| 二进制 | `text 241,084 / data 1,712 / bss 15,040` 与改动前**逐字节一致** |
+| 上板 | `m3` 18/18、`m23` 24/24、`a9` 18/18 |
+| 幂等 | `sync_can.py` 连跑两次，`Can_Cfg.c` + `CanIf_Cfg.c` 哈希一致 |
+
+`txPduId` 编号连续性单独做一条断言：CanIf 是按 `txPduId` 索引表的，
+编号与表序脱节一位，`CanIf_Transmit()` 就会取到别人的条目——这种错编译不报、
+总线上看是"发了条不该发的报文"。
+
+#### 盘点的两条结论也被这轮验证了
+
+- **TX 12 条全部可生成**（6 个字段都有权威出处）；
+- **CAN0 的 23 条 RX 仍保持手写**——它们是验证资产（测试 ID、诊断、NM、边界值），
+  跟着 DBC 变会让 M1/M2/M8/M14 失去稳定基线。
+
 ### 尚未完成（下一步）
 
 1. **0x27 换成真算法**：现在 `27 01/02` 是桩（种子返回 0、key 任意），

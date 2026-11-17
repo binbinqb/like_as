@@ -106,8 +106,8 @@
  "current": {
   "module": 2,
   "task": 5,
-  "text": "02.6 第二步：CanIf / PduR 去掉二次注入（把 sync_*.py 的补丁变成生成器输出）",
-  "next": "先确认 CanIf 的 34 条 RX / PduR 的 51 条路径里，哪些字段是 DBC 推不出来的项目参数，再决定是扩 CanIf.py 还是保留注入"
+  "text": "02.6 方案 B：把 sync_canif / sync_pdur 里的项目常量搬进 JSON",
+  "next": "盘点脚本里还剩哪些硬编码（SHIM 前缀、编号规则、MANUAL_TX/RX），逐项决定进 CanIf.json 还是 PduR.json"
  },
  "modules": [
   {
@@ -233,7 +233,7 @@
      "text": "生成 Can/CanIf/PduR/Com 全配置",
      "check": "保留诊断/NM 路由；替代注入脚本",
      "state": "PARTIAL",
-     "evidence": "Can 的邮箱表 29 条 + HTH 12 个已由 Can.json 生成（sync_can.py），53 项逐字段对账 + 3/3 缺陷注入；App text 241,084 逐字节不变；上板 m3 18/18、m23 24/24。剩余：CanIf/PduR 的二次注入仍在，Com 仍是拷 GEN"
+     "evidence": "Can 邮箱 29 条 + HTH 12 个 + **CanIf TX 12 条**均由 Can.json 生成；67 项逐字段对账、6/6 缺陷注入；App text 241,084 逐字节不变；上板 m3 18/18、m23 24/24。剩余：CanIf 的 34 条 RX 仍靠注入，Com 仍是拷 GEN"
     },
     {
      "text": "生成幂等性",

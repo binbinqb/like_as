@@ -34,6 +34,7 @@ from generator.Can import gen_all  # noqa: E402
 CFG_DIR = os.path.join(ROOT, "app", "platform", "cvm0146", "src", "config")
 CAN_JSON = os.path.join(CFG_DIR, "Can", "Can.json")
 CAN_C = os.path.join(CFG_DIR, "Can_Cfg.c")
+CANIF_C = os.path.join(CFG_DIR, "CanIf_Cfg.c")
 
 
 def inject(text, name, body):
@@ -54,21 +55,33 @@ def main():
 
 	blocks, stats = gen_all(cfg)
 
-	with io.open(CAN_C, encoding="utf-8") as f:
-		text = f.read()
+	# 两个落地文件，职责不同：
+	#   Can_Cfg.c   ← 邮箱表 + HTH 表（硬件资源）
+	#   CanIf_Cfg.c ← TX PDU 表（上层视图：txPduId / txConfirm / ControllerId）
+	# TX 表放在 CanIf 里而不是 Can 里，是因为它的字段（回调、PDU 号）属于 CanIf 语义。
+	targets = [
+		(CAN_C, ("CAN0 mailboxes", "CAN1 mailboxes", "HTH table")),
+		(CANIF_C, ("CanIf TX PDUs",)),
+	]
 
-	for name in ("CAN0 mailboxes", "CAN1 mailboxes", "HTH table"):
-		text = inject(text, name, blocks[name])
+	for path, names in targets:
+		with io.open(path, encoding="utf-8") as f:
+			text = f.read()
+		for name in names:
+			text = inject(text, name, blocks[name])
+		if dry:
+			print("\n/* ===== %s ===== */" % os.path.basename(path))
+			print("\n\n".join(blocks[k] for k in names))
+		else:
+			with io.open(path, "w", encoding="utf-8", newline="\n") as f:
+				f.write(text)
+			print("%s 已更新" % os.path.basename(path))
 
 	if dry:
-		print("\n\n".join(blocks[k] for k in ("CAN0 mailboxes", "CAN1 mailboxes", "HTH table")))
 		print("\n[dry-run] 不写文件")
 		return 0
 
-	with io.open(CAN_C, "w", encoding="utf-8", newline="\n") as f:
-		f.write(text)
-
-	print("Can_Cfg.c 已更新：%s" % ", ".join("%s %d 条" % (k, v) for k, v in stats.items()))
+	print("共 %s" % ", ".join("%s %d 条" % (k, v) for k, v in stats.items()))
 	return 0
 
 

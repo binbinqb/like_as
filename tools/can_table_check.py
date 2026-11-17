@@ -36,8 +36,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 
-from can_table_dump import (CFG_C, HWCFG_H, load_macros, parse_hohs,  # noqa: E402
-                            parse_table, strip_comments)
+from can_table_dump import (CFG_C, CANIF_C, HWCFG_H, load_macros,  # noqa: E402
+                            parse_hohs, parse_table, parse_tx_pdus, strip_comments)
 
 CAN_JSON = os.environ.get("LIKEAS_CAN_JSON") or os.path.join(
 	ROOT, "app", "platform", "cvm0146", "src", "config", "Can", "Can.json")
@@ -112,6 +112,44 @@ def main():
 	for a, b in zip(jh, ch_):
 		check(a == b, "HTH%-2u 一致（CAN%u mb%u 0x%X）" % (a[0], a[1], a[2], a[3]),
 		      "C=%r" % (b,))
+
+	print("\n== CanIf TX 表：Can.json vs CanIf_Cfg.c ==")
+	jt = []
+	for c in cfg["channels"]:
+		for e in c["mailboxes"]:
+			if e["dir"] == "TX":
+				jt.append({
+					"hth": e["hth"], "ctrl": c["index"],
+					"txConfirm": e.get("txConfirm"),
+					"txPduId": e.get("canIfMacro"),
+					"canid": int(e["id"], 0),
+					"name": e.get("name", ""),
+				})
+	jt.sort(key=lambda r: r["hth"])
+
+	mac = load_macros(HWCFG_H)
+	ct = parse_tx_pdus(strip_comments(io.open(CANIF_C, encoding="utf-8", errors="replace").read()), mac)
+
+	check(len(jt) == len(ct), "TX 条目数一致", "JSON %d / C %d" % (len(jt), len(ct)))
+	for a, b in zip(jt, ct):
+		bad = []
+		if a["txConfirm"] != b["txConfirm"]:
+			bad.append("txConfirm: C=%s JSON=%s" % (b["txConfirm"], a["txConfirm"]))
+		if a["txPduId"] != b["txPduId"]:
+			bad.append("txPduId: C=%s JSON=%s" % (b["txPduId"], a["txPduId"]))
+		if a["canid"] != b["canid"]:
+			bad.append("canid: C=0x%X JSON=0x%X" % (b["canid"], a["canid"]))
+		if a["hth"] != b["hoh"]:
+			bad.append("hoh: C=%d JSON=%d" % (b["hoh"], a["hth"]))
+		if a["ctrl"] != b["ctrl"]:
+			bad.append("ctrl: C=%d JSON=%d" % (b["ctrl"], a["ctrl"]))
+		if b["p_canid"] != "NULL":
+			bad.append("p_canid 不是 NULL：%s" % b["p_canid"])
+		check(not bad, "HTH%-2u %-12s 字段一致" % (a["hth"], a["name"]), "; ".join(bad))
+
+	# txPduId 的编号必须与 hth 顺序一致：CanIf 按 txPduId 索引表，错一位就发错报文
+	nums = [b["txPduIdNum"] for b in ct]
+	check(nums == list(range(len(ct))), "txPduId 编号 0..N-1 与表序一致", str(nums))
 
 	print("\n== 交叉校验 ==")
 	# 1) 每条 txPdus 都要有一个对应的 TX 邮箱（按短名匹配 name 的后缀）

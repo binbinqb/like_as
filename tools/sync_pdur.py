@@ -69,11 +69,27 @@ with io.open(os.path.join(CFG_DIR, "CanIf", "CanIf.json"), encoding="utf-8") as 
 ME = _CANIF["networks"][0]["me"]
 
 # CAN1 发送报文 → CanIf 的 TX PDU 宏。
+#
 # 不能按"报文名去 BCM 前缀"自动推：`BCM_DoorCtrl` 在 CanIf_Cfg.h 里叫
 # `CANIF_TX_CAN1_DOOR`（不是 DOOR_CTRL），自动推会拼出一个不存在的宏。
-# 这里显式列出，改矩阵时若新增发送报文，漏一条会在编译期就报"未定义"，
-# 不会静默丢帧。
-CANIF_TX_MAP = {e["dbc"]: e["canIfMacro"] for e in _CAN["txPdus"]}
+#
+# 02.6 起 `canIfMacro` 的唯一来源是 **Can.json 的邮箱表**（`CanIf_TxPdus[]`
+# 也由它生成）。`txPdus` 里只留 `short`，这里按 `TX_<short>` 去邮箱表查 ——
+# 两处各写一份的话，改了邮箱表忘了改 txPdus 就会生成指向错误 PDU 的路由，
+# 而 PduR 只按编号传递、不会报错。
+_CANIF_TX_OF = {}
+for _ch in _CAN.get("channels", []):
+	for _e in _ch["mailboxes"]:
+		if _e["dir"] == "TX" and "canIfMacro" in _e:
+			_CANIF_TX_OF[_e["name"]] = _e["canIfMacro"]
+
+CANIF_TX_MAP = {}
+for _e in _CAN["txPdus"]:
+	_key = "TX_" + _e["short"]
+	if _key not in _CANIF_TX_OF:
+		raise SystemExit("Can.json: txPdus 的 %s 找不到对应 TX 邮箱 %s（short 改名了？）"
+		                 % (_e["dbc"], _key))
+	CANIF_TX_MAP[_e["dbc"]] = _CANIF_TX_OF[_key]
 
 # 本工程的"诊断/测试"报文不在 dbc 里，手工补两条 Com↔CanIf 路径。
 # 它们的 Com PDU 宏来自 Com.json 的 CANTEST 网络（生成器保证同名）。

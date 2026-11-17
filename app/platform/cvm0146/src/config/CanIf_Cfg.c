@@ -793,118 +793,118 @@ static const CanIf_RxPduType CanIf_RxPdus_CAN1[] = {
  *        避免"CanIf 指向了别的邮箱"这类静默错误。
  *        `ControllerId` 必须是 `CanIf_CtrlContexts[]` 的合法下标。
  */
+/* @generated BEGIN: CanIf TX PDUs */
 static const CanIf_TxPduType CanIf_TxPdus[] = {
-	/* 0x123 心跳帧：HTH 0 → CAN0 邮箱 0 */
+	/* HTH0  · CAN0 mb0  · 0x123 HEARTBEAT */
 	{
-		App_CanIfTxConfirmation,        /* txConfirm */
-		CANIF_TX_HEARTBEAT,             /* txPduId */
-		CAN_HW_ID_HEARTBEAT,            /* canid */
-		NULL,                           /* p_canid：固定 ID */
-		CAN_HW_HTH_CAN0_HEARTBEAT,      /* hoh */
+		App_CanIfTxConfirmation,      /* txConfirm */
+		CANIF_TX_HEARTBEAT,  /* txPduId（canIfMacro） */
+		0x123u,      /* canid */
+		NULL,        /* p_canid：固定 ID */
+		0u,         /* hoh：HTH 0 */
 		CANIF_CHL_CAN0,                 /* ControllerId */
 	},
-	/* 0x18FF0002 扩展帧：HTH 1 → CAN0 邮箱 3 */
+	/* HTH1  · CAN0 mb3  · 0x18FF0002 EXT_TX */
 	{
-		App_CanIfTxConfirmation,        /* txConfirm */
-		CANIF_TX_EXT_TEST,              /* txPduId */
-		CAN_HW_ID_EXT_TX,               /* canid */
-		NULL,                           /* p_canid */
-		CAN_HW_HTH_CAN0_EXT_TX,         /* hoh */
+		App_CanIfTxConfirmation,      /* txConfirm */
+		CANIF_TX_EXT_TEST,   /* txPduId（canIfMacro） */
+		0x18FF0002u, /* canid */
+		NULL,        /* p_canid：固定 ID */
+		1u,         /* hoh：HTH 1 */
 		CANIF_CHL_CAN0,                 /* ControllerId */
 	},
-	/* 0x124 心跳帧：HTH 2 → CAN1 邮箱 0 */
+	/* HTH2  · CAN1 mb0  · 0x124 TEST_TX */
 	{
-		App_CanIfTxConfirmation,        /* txConfirm */
-		CANIF_TX_CAN1_TEST,             /* txPduId */
-		CAN_HW_ID_CAN1_TX,              /* canid */
-		NULL,                           /* p_canid */
-		CAN_HW_HTH_CAN1_HEARTBEAT,      /* hoh */
+		App_CanIfTxConfirmation,      /* txConfirm */
+		CANIF_TX_CAN1_TEST,  /* txPduId（canIfMacro） */
+		0x124u,      /* canid */
+		NULL,        /* p_canid：固定 ID */
+		2u,         /* hoh：HTH 2 */
 		CANIF_CHL_CAN1,                 /* ControllerId */
 	},
-	/* 0x7E8 诊断响应（M3）：HTH 3 → CAN0 邮箱 4 */
+	/* HTH3  · CAN0 mb4  · 0x7E8 DIAG_RESP */
 	{
-		CanIfCfg_DiagTxConfirmation,    /* txConfirm */
-		CANIF_TX_DIAG_RESP,             /* txPduId */
-		CAN_HW_ID_DIAG_RESP,            /* canid */
-		NULL,                           /* p_canid */
-		CAN_HW_HTH_DIAG_RESP,           /* hoh */
+		CanIfCfg_DiagTxConfirmation,  /* txConfirm */
+		CANIF_TX_DIAG_RESP,  /* txPduId（canIfMacro） */
+		0x7E8u,      /* canid */
+		NULL,        /* p_canid：固定 ID */
+		3u,         /* hoh：HTH 3 */
 		CANIF_CHL_CAN0,                 /* ControllerId */
 	},
-	/* 0x500 网络管理（M9）：HTH 4 → CAN0 邮箱 11 */
+	/* HTH4  · CAN0 mb11 · 0x500 NM_TX */
 	{
-		CanIfCfg_NmTxConfirmation,      /* txConfirm：推进 CanNm 的 TxCounter / 定时器 */
-		CANIF_TX_NM,                    /* txPduId */
-		CAN_HW_ID_NM,                   /* canid */
-		NULL,                           /* p_canid：固定 ID */
-		CAN_HW_HTH_NM,                  /* hoh */
+		CanIfCfg_NmTxConfirmation,    /* txConfirm */
+		CANIF_TX_NM,         /* txPduId（canIfMacro） */
+		0x500u,      /* canid */
+		NULL,        /* p_canid：固定 ID */
+		4u,         /* hoh：HTH 4 */
 		CANIF_CHL_CAN0,                 /* ControllerId */
 	},
-	/* 0x200 Com 信号测试（M10）：HTH 5 → CAN0 邮箱 13 */
+	/* HTH5  · CAN0 mb13 · 0x200 COM_TX */
 	{
-		CanIfCfg_ComTxConfirmation,     /* txConfirm */
-		CANIF_TX_COM_TEST,              /* txPduId */
-		CAN_HW_ID_COM_TX,               /* canid：0x200 */
-		NULL,                           /* p_canid：固定 ID */
-		CAN_HW_HTH_COM,                 /* hoh */
+		CanIfCfg_ComTxConfirmation,   /* txConfirm */
+		CANIF_TX_COM_TEST,   /* txPduId（canIfMacro） */
+		0x200u,      /* canid */
+		NULL,        /* p_canid：固定 ID */
+		5u,         /* hoh：HTH 5 */
 		CANIF_CHL_CAN0,                 /* ControllerId */
 	},
-
-	/* ---- M19：CAN1 真实矩阵的 6 条发送报文 ---- */
-	/*
-	 * @warning `hoh` 与 `CanHw_Hohs[]` 的 `msgBufId` 必须逐条对应
-	 *          （HTH 6 → CAN1 mb2 … HTH 11 → CAN1 mb7）。
-	 *          `Can_Write()` 会校验 `hoh->canId`，ID 写错会返回 `E_NOT_OK`；
-	 *          但**邮箱号写错它发现不了**，只会发到别的邮箱上去。
-	 */
+	/* HTH6  · CAN1 mb2  · 0x18FE4021 TX_LCSF */
 	{
-		CanIfCfg_TxPduR_CAN1_LCSF,        /* txConfirm */
-		CANIF_TX_CAN1_LCSF,             /* txPduId */
-		CAN_HW_ID_TX_LCSF,              /* canid：0x18FE4021 */
-		NULL,                           /* p_canid */
-		CAN_HW_HTH_CAN1_LCSF,           /* hoh：HTH 6 → CAN1 mb2 */
+		CanIfCfg_TxPduR_CAN1_LCSF,    /* txConfirm */
+		CANIF_TX_CAN1_LCSF,  /* txPduId（canIfMacro） */
+		0x18FE4021u, /* canid */
+		NULL,        /* p_canid：固定 ID */
+		6u,         /* hoh：HTH 6 */
 		CANIF_CHL_CAN1,                 /* ControllerId */
 	},
+	/* HTH7  · CAN1 mb3  · 0x18FF0C21 TX_CTRL */
 	{
-		CanIfCfg_TxPduR_CAN1_CTRL,
-		CANIF_TX_CAN1_CTRL,
-		CAN_HW_ID_TX_CTRL,              /* 0x18FF0C21 */
-		NULL,
-		CAN_HW_HTH_CAN1_CTRL,           /* HTH 7 → CAN1 mb3 */
-		CANIF_CHL_CAN1,
+		CanIfCfg_TxPduR_CAN1_CTRL,    /* txConfirm */
+		CANIF_TX_CAN1_CTRL,  /* txPduId（canIfMacro） */
+		0x18FF0C21u, /* canid */
+		NULL,        /* p_canid：固定 ID */
+		7u,         /* hoh：HTH 7 */
+		CANIF_CHL_CAN1,                 /* ControllerId */
 	},
+	/* HTH8  · CAN1 mb4  · 0xCFDCC21 TX_OEL */
 	{
-		CanIfCfg_TxPduR_CAN1_OEL,
-		CANIF_TX_CAN1_OEL,
-		CAN_HW_ID_TX_OEL,               /* 0x0CFDCC21，P=3 */
-		NULL,
-		CAN_HW_HTH_CAN1_OEL,            /* HTH 8 → CAN1 mb4 */
-		CANIF_CHL_CAN1,
+		CanIfCfg_TxPduR_CAN1_OEL,     /* txConfirm */
+		CANIF_TX_CAN1_OEL,   /* txPduId（canIfMacro） */
+		0xCFDCC21u,  /* canid */
+		NULL,        /* p_canid：固定 ID */
+		8u,         /* hoh：HTH 8 */
+		CANIF_CHL_CAN1,                 /* ControllerId */
 	},
+	/* HTH9  · CAN1 mb5  · 0x18FDCD21 TX_OWW */
 	{
-		CanIfCfg_TxPduR_CAN1_OWW,
-		CANIF_TX_CAN1_OWW,
-		CAN_HW_ID_TX_OWW,               /* 0x18FDCD21 */
-		NULL,
-		CAN_HW_HTH_CAN1_OWW,            /* HTH 9 → CAN1 mb5 */
-		CANIF_CHL_CAN1,
+		CanIfCfg_TxPduR_CAN1_OWW,     /* txConfirm */
+		CANIF_TX_CAN1_OWW,   /* txPduId（canIfMacro） */
+		0x18FDCD21u, /* canid */
+		NULL,        /* p_canid：固定 ID */
+		9u,         /* hoh：HTH 9 */
+		CANIF_CHL_CAN1,                 /* ControllerId */
 	},
+	/* HTH10 · CAN1 mb6  · 0x18FE4E21 TX_DOOR */
 	{
-		CanIfCfg_TxPduR_CAN1_DOOR,
-		CANIF_TX_CAN1_DOOR,
-		CAN_HW_ID_TX_DOOR,              /* 0x18FE4E21 */
-		NULL,
-		CAN_HW_HTH_CAN1_DOOR,           /* HTH 10 → CAN1 mb6 */
-		CANIF_CHL_CAN1,
+		CanIfCfg_TxPduR_CAN1_DOOR,    /* txConfirm */
+		CANIF_TX_CAN1_DOOR,  /* txPduId（canIfMacro） */
+		0x18FE4E21u, /* canid */
+		NULL,        /* p_canid：固定 ID */
+		10u,        /* hoh：HTH 10 */
+		CANIF_CHL_CAN1,                 /* ControllerId */
 	},
+	/* HTH11 · CAN1 mb7  · 0x18FECA21 TX_DM1 */
 	{
-		CanIfCfg_TxPduR_CAN1_DM1,
-		CANIF_TX_CAN1_DM1,
-		CAN_HW_ID_TX_DM1,               /* 0x18FECA21 */
-		NULL,
-		CAN_HW_HTH_CAN1_DM1,            /* HTH 11 → CAN1 mb7 */
-		CANIF_CHL_CAN1,
+		CanIfCfg_TxPduR_CAN1_DM1,     /* txConfirm */
+		CANIF_TX_CAN1_DM1,   /* txPduId（canIfMacro） */
+		0x18FECA21u, /* canid */
+		NULL,        /* p_canid：固定 ID */
+		11u,        /* hoh：HTH 11 */
+		CANIF_CHL_CAN1,                 /* ControllerId */
 	},
 };
+/* @generated END: CanIf TX PDUs */
 
 /* ============================ [ 控制器 ] ============================ */
 

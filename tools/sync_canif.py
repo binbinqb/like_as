@@ -68,8 +68,23 @@ SHIM_PREFIX_TX = "CanIfCfg_TxPduR_CAN1_"
 # CAN1 发送报文 → (shim 后缀, CanIf TX PDU 宏, PduR 路径宏)
 # 后缀与 `CANIF_TX_MAP`（tools/sync_pdur.py）保持一致的短名，
 # 这样两个脚本生成的回调名与 PduR 宏名能对得上眼。
-TX_MAP = {e["dbc"]: (e["short"], e["canIfMacro"], e["pdurMacro"])
-          for e in _CAN["txPdus"]}
+#
+# 02.6 起 `canIfMacro` 的唯一来源是 **Can.json 的邮箱表**（TX 条目），
+# `txPdus` 只留 `short`。按 `TX_<short>` 去查，查不到就报错 ——
+# 三处各写一份宏名的话，改一处忘一处会生成指向错误 PDU 的 shim。
+_CANIF_TX_OF = {}
+for _ch in _CAN.get("channels", []):
+	for _e in _ch["mailboxes"]:
+		if _e["dir"] == "TX" and "canIfMacro" in _e:
+			_CANIF_TX_OF[_e["name"]] = _e["canIfMacro"]
+
+TX_MAP = {}
+for _e in _CAN["txPdus"]:
+	_key = "TX_" + _e["short"]
+	if _key not in _CANIF_TX_OF:
+		raise SystemExit("Can.json: txPdus 的 %s 找不到对应 TX 邮箱 %s"
+		                 % (_e["dbc"], _key))
+	TX_MAP[_e["dbc"]] = (_e["short"], _CANIF_TX_OF[_key], _e["pdurMacro"])
 
 BEGIN_MARK = "/* @generated BEGIN: CAN1 real matrix */"
 END_MARK = "/* @generated END: CAN1 real matrix */"

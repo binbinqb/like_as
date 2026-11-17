@@ -98,12 +98,15 @@ def main():
 	canif_h = read("app/platform/cvm0146/src/config/CanIf_Cfg.h")
 	pdur_h = read("app/platform/cvm0146/src/config/PduR_Cfg.h")
 	miss = []
+	# canIfMacro 在邮箱表里（TX 条目），pdurMacro 还在 txPdus 里
+	for c in cfg.get("channels", []):
+		for e in c["mailboxes"]:
+			if e.get("canIfMacro") and ("#define %s" % e["canIfMacro"]) not in canif_h:
+				miss.append(e["canIfMacro"])
 	for e in cfg.get("txPdus", []):
-		if ("#define %s" % e["canIfMacro"]) not in canif_h:
-			miss.append(e["canIfMacro"])
 		if ("#define %s" % e["pdurMacro"]) not in pdur_h:
 			miss.append(e["pdurMacro"])
-	check(not miss, "txPdus 的宏都在生成头里", ", ".join(miss))
+	check(not miss, "Can.json 的宏都在生成头里", ", ".join(miss))
 
 	# 4) 邮箱号必须真实存在于 Can_Cfg.c 的邮箱表
 	can_c = read("app/platform/cvm0146/src/config/Can_Cfg.c")

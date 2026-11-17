@@ -39,6 +39,8 @@ CFG = os.environ.get("LIKEAS_CAN_CFG_DIR") or os.path.join(
 	ROOT, "app", "platform", "cvm0146", "src", "config")
 HWCFG_H = os.path.join(CFG, "Can_HwCfg.h")
 CFG_C = os.path.join(CFG, "Can_Cfg.c")
+CANIF_H = os.path.join(CFG, "CanIf_Cfg.h")
+CANIF_C = os.path.join(CFG, "CanIf_Cfg.c")
 
 #: 方向枚举 → 字符串（`CanHw_MbDirType` 的成员，不是宏）
 DIRS = {"CAN_HW_MB_TX": "TX", "CAN_HW_MB_RX": "RX"}
@@ -154,6 +156,47 @@ def parse_hohs(text, macros):
 			"mb":         expand(f[1], macros),
 			"id":         expand(f[2], macros),
 			"dlc":        expand(f[3], macros),
+		})
+	return rows
+
+
+def parse_tx_pdus(text, macros):
+	"""解析 `CanIf_TxPdus[]` 的每条（6 个字段）。
+
+	@note 与 `parse_table` 分开写：这里每条的字段是**多行**（一个字段一行 + 行尾注释），
+	      不是单行逗号列表。`strip_comments` 之后按 `{...}` 抓再切 6 段最稳。
+	@note `CANIF_TX_PACKET_POOL_SIZE > 0` 时结构体会多一个 `bUseTxPool` 字段（7 段）。
+	      本工程该宏为 0，所以按 6 段解析；真改成非 0 时这里会明确报错，
+	      而不是静默错位。
+	"""
+	macros = dict(macros)
+	text_h = strip_comments(io.open(CANIF_H, encoding="utf-8", errors="replace").read())
+	for m in re.finditer(r"#define\s+(CANIF_(?:TX|CHL)_[A-Z0-9_]+)\s+\((\d+)u?\)", text_h):
+		macros[m.group(1)] = int(m.group(2))
+	for m in re.finditer(r"#define\s+(CANIF_CHL_[A-Z0-9_]+)\s+\((\d+)u?\)", text_h):
+		macros[m.group(1)] = int(m.group(2))
+
+	i = text.find("CanIf_TxPdus[]")
+	if i < 0:
+		raise SystemExit("找不到 CanIf_TxPdus[]")
+	i = text.find("{", i)
+	j = text.find("};", i)
+	body = text[i + 1:j]
+
+	rows = []
+	for m in re.finditer(r"\{([^{}]*)\}", body, re.S):
+		f = [x.strip() for x in m.group(1).split(",") if x.strip()]
+		if len(f) != 6:
+			raise SystemExit("TX 条目字段数 %d（应为 6；若 CANIF_TX_PACKET_POOL_SIZE>0 会是 7）：%s"
+			                 % (len(f), f[:8]))
+		rows.append({
+			"txConfirm": f[0],
+			"txPduId":   f[1],
+			"txPduIdNum": macros.get(f[1], -1),
+			"canid":     expand(f[2], macros),
+			"p_canid":   f[3],
+			"hoh":       expand(f[4], macros),
+			"ctrl":      expand(f[5], macros),
 		})
 	return rows
 
