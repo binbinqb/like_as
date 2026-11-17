@@ -12,7 +12,13 @@
       "RxPdus": [],
       "TxPdus": [],
       "shimPrefixRx": "CanIfCfg_RxPduR_",
-      "shimPrefixTx": "CanIfCfg_TxPduR_"
+      "shimPrefixTx": "CanIfCfg_TxPduR_",
+      "NumHrh": 15,
+      "NumHth": 12,
+      "rxPduNamePrefix": "RX_",
+      "rxIndicationShim": true,
+      "hohFrom": "../Can/Can.json"
     }
-  ]
+  ],
+  "rxPduIdBase": 23
 }

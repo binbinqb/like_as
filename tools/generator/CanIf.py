@@ -29,10 +29,13 @@ def Gen_CanIf(cfg, dir):
         H.write("#define CANIF_CHL_%s %su\n" % (network["name"], ID))
         ID += 1
     H.write("\n")
-    ID = 0
+    # 编号起始可由配置指定（项目里 CAN0 已占 0~22，CAN1 从 23 起）
+    ID = cfg.get("rxPduIdBase", 0)
     for network in cfg["networks"]:
         for pdu in network["RxPdus"]:
-            H.write("#define CANIF_%s %su /* %s id=0x%x */\n" % (pdu["name"], ID, network["name"], toNum(pdu["id"])))
+            H.write("#define CANIF_%s %su /* %s id=0x%08X */\n"
+                    % (pdu.get("pduIdName", pdu["name"]), ID, network["name"],
+                       toNum(pdu["id"]) & 0x1FFFFFFF))
             ID += 1
     H.write("\n")
     ID = 0
@@ -122,18 +125,26 @@ def Gen_CanIf(cfg, dir):
                 if (canid & mask) == (canid_ & mask):
                     raise Exception(f"Duplicate Rx Pdus: {pdu} vs {pdu_}")
             C.write("  {\n")
-            if pdu["up"] in ["PduR", "Xcp"]:
+            # rxInd：`rxIndName` 优先（项目用它挂 shim：先喂调试计数再转 PduR）。
+            # 不提供时完全走上游原来的三选一，其它使用者不受影响。
+            if pdu.get("rxIndName"):
+                C.write("    %s,\n" % pdu["rxIndName"])
+            elif pdu["up"] in ["PduR", "Xcp"]:
                 C.write("    %s_CanIfRxIndication,\n" % (pdu["up"]))
             else:
                 C.write("    %s_RxIndication,\n" % (pdu["up"]))
-            if pdu["up"] in ["OsekNm", "CanNm", "CanTSyn", "Xcp"]:
+            # rxPduId：`pduIdName` 优先（项目命名是 CANIF_RX_<NET>_<MSG>）
+            if pdu.get("pduIdName"):
+                C.write("    CANIF_%s,\n" % pdu["pduIdName"])
+            elif pdu["up"] in ["OsekNm", "CanNm", "CanTSyn", "Xcp"]:
                 C.write("    %s, /* NetId */\n" % (netId))
             elif pdu["up"][:4] == "User":
                 C.write("    CANIF_%s, /* rxPduId */\n" % (pdu["name"]))
             else:
                 C.write("    %s_%s,\n" % (pdu["up"].upper(), pdu["name"]))
-            C.write("    0x%x, /* canid */\n" % (toNum(pdu["id"]) & 0x1FFFFFFF))
-            C.write("    0x%x, /* mask */\n" % (toNum(pdu.get("mask", "0xFFFFFFFF")) & 0x1FFFFFFF))
+            # 0x%08X：项目要求 8 位定宽（`0x0CF00400u`），上游原样是 `0xcf00400`
+            C.write("    0x%08X, /* canid */\n" % (toNum(pdu["id"]) & 0x1FFFFFFF))
+            C.write("    0x%08X, /* mask */\n" % (toNum(pdu.get("mask", "0xFFFFFFFF")) & 0x1FFFFFFF))
             C.write("    %s, /* hoh */\n" % (pdu.get("hoh", 0)))
             C.write("  },\n")
         C.write("};\n\n")
@@ -217,6 +228,24 @@ def extract(cfg, dir):
                 path = os.path.abspath(os.path.join(dir, "..", path))
             if not os.path.isfile(path):
                 raise Exception("File %s not exists" % (path))
+            # hoh：项目要的是**真实邮箱号**（按报文 PF 落到哪个段邮箱），
+            # 不是生成器默认的"每网络递增"。查表来源由 `hohFrom` 声明 ——
+            # 依赖是配置写出来的，不是生成器硬编码某个项目的路径。
+            #
+            # 不声明 hohFrom 时行为完全不变（仍用递增的 hrh），
+            # 上游其它使用者不受影响。
+            hoh_by_pf = {}
+            if "hohFrom" in network:
+                hp = os.path.join(dir, "..", network["hohFrom"])
+                if not os.path.isfile(hp):
+                    raise Exception("hohFrom 指向的文件不存在：%s" % hp)
+                with open(hp) as _f:
+                    _can = json.load(_f)
+                for _ch in _can.get("channels", []):
+                    for _e in _ch["mailboxes"]:
+                        if "pf" in _e:
+                            hoh_by_pf[int(_e["pf"], 0)] = _e["mb"]
+
             messages = classify(get_messages(path), me)
             for msg in messages:
                 if msg["name"] in ignore:
@@ -233,7 +262,23 @@ def extract(cfg, dir):
                     if "RX" not in rn:
                         rn += "_RX"
                     kl = "RxPdus"
-                    pdu = {"name": rn, "id": msg["id"], "hoh": hrh, "up": "PduR"}
+
+                    # hoh：有 pf 标签就查表，查不到退回递增（保持上游行为）
+                    pf = (msg["id"] & 0x1FFFFFFF) >> 16 & 0xFF
+                    hoh = hoh_by_pf.get(pf, hrh)
+
+                    pdu = {"name": rn, "id": msg["id"], "hoh": hoh, "up": "PduR"}
+
+                    # 项目的命名约定与上游不同，用两个可选覆盖表达：
+                    #   pduIdName  → `#define CANIF_<pduIdName>` 与 rxPduId 字段
+                    #   rxIndName  → 表里的回调名（项目要 shim，不是直连 PduR）
+                    # 不给这两个参数时，下面模板会走原逻辑。
+                    msg_macro = toMacro(msg["name"])
+                    if network.get("rxPduNamePrefix"):
+                        pdu["pduIdName"] = "%s%s_%s" % (network["rxPduNamePrefix"], name, msg_macro)
+                    if network.get("rxIndicationShim"):
+                        pdu["rxIndName"] = "%s%s_%s" % (
+                            network.get("shimPrefixRx", "CanIfCfg_RxPduR_"), name, msg_macro)
                 if kl not in network_:
                     network_[kl] = []
                 network_[kl].append(pdu)

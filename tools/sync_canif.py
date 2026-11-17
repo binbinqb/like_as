@@ -54,7 +54,9 @@ CAN_JSON = os.path.join(CFG_DIR, "Can", "Can.json")
 with io.open(CAN_JSON, encoding="utf-8") as _f:
     _CAN = json.load(_f)
 
-ID_BASE = _CAN["canIfPduIdBase"]      # CAN0 已用 0~22，起点在 Can.json 里
+# 编号起点不在这里定义：它由 `CanIf.json` 的 `rxPduIdBase` 决定、生成器已经
+# 编进宏值里。原来 Can.json 还另有一份 `canIfPduIdBase`，两处必然分叉 ——
+# 02.6 方案 A 收掉，现在这里只从生成物读实际编号。
 
 # 上层回调：M22 起 CAN1 的 34 条统一走 PduR → Com（信号解包）。
 #
@@ -96,21 +98,6 @@ for _e in _CAN["txPdus"]:
 BEGIN_MARK = "/* @generated BEGIN: CAN1 real matrix */"
 END_MARK = "/* @generated END: CAN1 real matrix */"
 
-# PF → 硬件邮箱号（必须与 Can_Cfg.c 的 CanHw_MsgCfgs1[] 一致）
-# PF → 邮箱号：**从邮箱表推导，不再有独立的 rxPfToMb**（02.6）。
-#
-# 为什么合并：`rxPfToMb` 和 `channels[].mailboxes[]` 描述的是同一件事（这个 PF
-# 落在哪个邮箱），两处各写一份，改一处忘一处就会生成一组指向错误邮箱的
-# CanIf 过滤项 —— 而 CanIf 只按 canid&mask 匹配，邮箱号错了根本不会报错。
-PF_TO_MB = {}
-for _ch in _CAN.get("channels", []):
-	if _ch.get("index") != 1:
-		continue          # 只有 CAN1 用 PF 分段收
-	for _e in _ch["mailboxes"]:
-		if "pf" in _e:
-			PF_TO_MB[int(_e["pf"], 0)] = _e["mb"]
-if not PF_TO_MB:
-	raise SystemExit("Can.json 的 channels[1] 里没有任何带 pf 标签的 RX 邮箱")
 
 
 def generate():
@@ -129,52 +116,56 @@ def generate():
 
 
 def collect():
-    """返回 (宏列表, 表体文本)。"""
+    """返回 (宏列表, 表体文本)。
+
+    @note 02.6 方案 A 之后，生成器已经按项目约定产出：宏名 `CANIF_RX_CAN1_*`、
+          编号从 `rxPduIdBase`（23）起、`hoh` 是真实邮箱号、`canid` 8 位定宽。
+          所以这里**不再重命名 / 偏移编号 / 查 PF 表**，只做两件仍然必须的事：
+
+          | 事 | 为什么留在这里 |
+          |----|----------------|
+          | 缩进从 2 空格改成 Tab | 产物要入库，风格要与手写的 CAN0 段一致 |
+          | 生成 shim 函数体 | 它调 `App_CanIfRxIndication`（`!k` 的计数源）再转 PduR，是**跨模块知识**，不属于 CanIf 生成器 |
+
+          好处不只是少几十行：原来用正则**啃生成器的 C 文本**（抓 5 行固定格式），
+          生成器改一个空格就静默失配。现在抓的是"语义已正确"的字段，格式变了
+          只会让正则不匹配、直接报错，不会算出错的值。
+    """
     h = io.open(os.path.join(GEN_DIR, "CanIf_Cfg.h"), encoding="utf-8").read()
     c = io.open(os.path.join(GEN_DIR, "CanIf_Cfg.c"), encoding="utf-8").read()
 
     macros = []
     for m in re.finditer(
-            r"^#define CANIF_CAN1_(\w+?)_RX\s+(\d+)u\s*/\* CAN1 id=(0x[0-9a-f]+) \*/$", h, re.M):
-        macros.append({"name": m.group(1), "gen": int(m.group(2)),
+            r"^#define (CANIF_RX_CAN1_\w+)\s+(\d+)u /\* CAN1 id=(0x[0-9A-F]+) \*/$", h, re.M):
+        macros.append({"name": m.group(1), "num": int(m.group(2)),
                        "id": int(m.group(3), 16)})
     if not macros:
-        raise SystemExit("GEN/CanIf_Cfg.h 里没有 CAN1 的 RX 宏")
-    known = set(x["name"] for x in macros)
+        raise SystemExit("GEN/CanIf_Cfg.h 里没有 CANIF_RX_CAN1_* 宏")
 
     i = c.index("static const CanIf_RxPduType CanIf_RxPdus_CAN1[] = {")
     j = c.index("\n};", i) + 3
     raw = c[i:j]
 
-    # 逐条解析生成器的块，重新排版成本工程的风格。
-    # 不直接字符串替换的原因：生成器输出 `0xcf00400`（小写、无前导零）、
-    # `0, /* hoh */`（恒 0，因为它的 hrh 是每网络递增而不是每报文），
-    # 直接搬过来会让人误读成"34 条共用邮箱 0"。
+    blocks = re.findall(
+        r"\{\s*\n\s*(CanIfCfg_RxPduR_\w+),\s*\n"
+        r"\s*(CANIF_RX_\w+),\s*\n"
+        r"\s*(0x[0-9A-F]+), /\* canid \*/\s*\n"
+        r"\s*(0x[0-9A-F]+), /\* mask \*/\s*\n"
+        r"\s*(\d+), /\* hoh \*/", raw)
+    if len(blocks) != len(macros):
+        raise SystemExit("表体解析出 %d 条，与宏数量 %d 不符（生成器格式变了？）"
+                         % (len(blocks), len(macros)))
+
     out = ["static const CanIf_RxPduType CanIf_RxPdus_CAN1[] = {"]
     shims = []
-
-    # 生成器用的宏前缀是 PDUR_CAN1_，与块内第二个字段同名；上面正则第一行
-    # 只是占位，真正的名字从 pair 里取。
-    # 生成器对 `up: "PduR"` 的 PDU 写成三行：
-    #     PduR_CanIfRxIndication,            ← 回调
-    #     PDUR_CAN1_<NAME>_RX,               ← rxPduId
-    #     0x...., /* canid */
-    blocks = re.findall(
-        r"\{\s*\n\s*\w+,\s*\n\s*PDUR_CAN1_(\w+?)_RX,\s*\n"
-        r"\s*(0x[0-9a-f]+),\s*/\* canid \*/\s*\n"
-        r"\s*(0x[0-9a-f]+),\s*/\* mask \*/\s*\n"
-        r"\s*\d+,\s*/\* hoh \*/", raw)
-
-    for name, canid_s, mask_s in blocks:
-        canid = int(canid_s, 16) & 0x1FFFFFFF
+    for shim, canif_macro, canid_s, mask_s, hoh_s in blocks:
+        name = canif_macro[len("CANIF_RX_CAN1_"):]
+        canid = int(canid_s, 16)
         pf = (canid >> 16) & 0xFF
-        mb = PF_TO_MB.get(pf)
-        if mb is None:
-            raise SystemExit("PF=0x%02X 不在分组表里（canid 0x%08X）" % (pf, canid))
-        if name not in known:
-            raise SystemExit("表体里的 %s 不在宏列表里" % name)
+        mask = int(mask_s, 16)
 
-        shim = SHIM_PREFIX_RX + name
+        # 每条一个 shim：`RxPduType` 只有函数指针、没有 context 字段，
+        # pathId 只能靠「每条一个函数」带进去。
         shims.append(
             "static void %s(PduIdType RxPduId, const PduInfoType *PduInfoPtr)\n"
             "{\n"
@@ -184,19 +175,16 @@ def collect():
 
         out.append("\t{")
         out.append("\t\t%s,\t/* rxInd */" % shim)
-        out.append("\t\tCANIF_RX_CAN1_%s," % name)
+        out.append("\t\t%s," % canif_macro)
         out.append("\t\t0x%08Xu,\t\t\t/* canid：PF=0x%02X */" % (canid, pf))
-        out.append("\t\t0x1FFFFFFFu,\t/* mask：精确匹配，忽略源地址 */")
-        out.append("\t\t%du,\t\t\t/* hoh：mb%d（PF=0x%02X 段） */" % (mb, mb, pf))
+        if mask == 0x1FFFFFFF:
+            out.append("\t\t0x1FFFFFFFu,\t/* mask：精确匹配，忽略源地址 */")
+        else:
+            out.append("\t\t0x%08Xu,\t/* mask */" % mask)
+        out.append("\t\t%su,\t\t\t/* hoh：mb%s（PF=0x%02X 段） */" % (hoh_s, hoh_s, pf))
         out.append("\t},")
-
     out.append("};")
-    if len(blocks) != len(macros):
-        raise SystemExit("表体解析出 %d 条，与宏数量 %d 不符" % (len(blocks), len(macros)))
 
-    # 发送方向的 shim 也放在这个区块里：TX 表本身是手写的（6 条报文各带
-    # 邮箱/HTH 注释，不适合生成），但它们的 txConfirm 必须切到 PduR，
-    # 于是回调体集中在这一处生成，TX 表里只写函数名。
     tx_shims = []
     for dbc_name, (short, canif_macro, pdur_macro) in TX_MAP.items():
         tx_shims.append(
@@ -218,10 +206,17 @@ def collect():
 def build_header(macros):
     out = [BEGIN_MARK,
            "/* 由 tools/sync_canif.py 从 can1.dbc 生成，请勿手改。",
-           " * 编号从 %d 开始：CAN0 已占用 0~%d。 */" % (ID_BASE, ID_BASE - 1)]
-    for k, x in enumerate(sorted(macros, key=lambda y: y["gen"])):
-        out.append("#define CANIF_RX_CAN1_%-44s (%du)  /**< 0x%08X */"
-                   % (x["name"], ID_BASE + k, x["id"]))
+           " * 编号从 %d 开始：CAN0 已占用 0~%d。 */"
+           % (macros[0]["num"], macros[0]["num"] - 1)]
+    # 编号直接用生成器给的（它按 `rxPduIdBase` 从 23 起编），不再本地 +k
+    _PRE = "CANIF_RX_CAN1_"
+    for x in sorted(macros, key=lambda y: y["num"]):
+        # 沿用与手写 CAN0 段**完全相同**的模板（前缀 + %-44s + 空格 + 编号），
+        # 这样 34 行宏的列宽一字不差。不要试图"算总列宽"——我试过，
+        # 把 `%-44s` 换成整行的 `%-66s` 差了 2 列，产出 34 行纯空白 diff。
+        assert x["name"].startswith(_PRE), x["name"]
+        out.append("#define %s%-44s (%du)  /**< 0x%08X */"
+                   % (_PRE, x["name"][len(_PRE):], x["num"], x["id"]))
     out.append("#define CANIF_RX_CAN1_NUM                           (%du)" % len(macros))
     out.append(END_MARK)
     return "\n".join(out)
@@ -233,7 +228,7 @@ def main():
     generate()
     print("generator: ok")
     macros, body = collect()
-    total = ID_BASE + len(macros)
+    total = macros[-1]["num"] + 1
     hdr = build_header(macros)
 
     if dry:
@@ -263,7 +258,7 @@ def main():
                 "#define CANIF_RX_PDU_NUM            (%du)" % total, hs, count=1)
     io.open(HDR, "w", encoding="utf-8", newline="\n").write(hs)
     print("header: %d 条，编号 %d~%d，CANIF_RX_PDU_NUM = %d"
-          % (len(macros), ID_BASE, total - 1, total))
+          % (len(macros), macros[0]["num"], total - 1, total))
 
     # 源文件
     cs = io.open(SRC, encoding="utf-8").read()

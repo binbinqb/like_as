@@ -1,6 +1,5 @@
 {
   "class": "Can",
-  "canIfPduIdBase": 23,
   "pdurIdBase": 9,
   "txPdus": [
     {
@@ -314,9 +313,9 @@
     }
   ],
   "_comment": [
+    "PDU 编号起点不在这里：CanIf 的在 CanIf.json 的 rxPduIdBase，PduR 的在下面的 pdurIdBase。",
     "CAN 硬件资源与项目参数的唯一来源（02.6 起由 tools/sync_can.py 注入 Can_Cfg.c）。",
     "",
-    "canIfPduIdBase / pdurIdBase：生成段的 PDU 编号起点（前面留给手工配置）。",
     "txPdus：DBC 报文名 → (短名, CanIf 宏, PduR 宏)。不能按报文名自动推 ——",
     "        BCM_DoorCtrl 在 CanIf 里叫 CANIF_TX_CAN1_DOOR，自动推会拼出不存在的宏。",
     "",

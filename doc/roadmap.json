@@ -105,9 +105,9 @@
  ],
  "current": {
   "module": 2,
-  "task": 5,
-  "text": "02.6 方案 A：CanIf 的 34 条 RX 去掉注入（把 up / 命名 / 编号规则进 CanIf.json）",
-  "next": "先确认 CanIf.py 的模板要改哪几处（up 恒 PduR、hoh 递增、name 规则），再决定改动范围与回退方案"
+  "task": 7,
+  "text": "02.8 SCons 自动生成集成（配置变化触发增量生成，无变化不重生成）",
+  "next": "先确认 SCons 能否把 JSON/DBC/Generator 声明为生成依赖；缺客户 DBC 时要能走预生成构建"
  },
  "modules": [
   {
@@ -233,7 +233,7 @@
      "text": "生成 Can/CanIf/PduR/Com 全配置",
      "check": "保留诊断/NM 路由；替代注入脚本",
      "state": "PARTIAL",
-     "evidence": "Can 邮箱 29 条 + HTH 12 个 + **CanIf TX 12 条**均由 Can.json 生成；67 项逐字段对账、6/6 缺陷注入；App text 241,084 逐字节不变；上板 m3 18/18、m23 24/24。剩余：CanIf 的 34 条 RX 仍靠注入，Com 仍是拷 GEN"
+     "evidence": "Can 邮箱 29 + HTH 12 + **CanIf TX 12 + CanIf RX 34** 均由生成器产出；CanIf 生成器加 4 个可选参数（编号/命名/shim/hoh），CanIf_Cfg.c 零差异；67 项对账 + 6/6 缺陷注入；text 241,084 不变；上板 m3 18/18、m23 24/24。剩余：PduR 的 42 条仍靠注入，Com 仍是拷 GEN"
     },
     {
      "text": "生成幂等性",

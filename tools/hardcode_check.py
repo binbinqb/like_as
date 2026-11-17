@@ -91,7 +91,7 @@ def main():
 		return 1
 
 	cfg = json.load(io.open(CAN_JSON, encoding="utf-8"))
-	for key in ("canIfPduIdBase", "pdurIdBase", "txPdus", "channels"):
+	for key in ("pdurIdBase", "txPdus", "channels"):
 		check(key in cfg, "Can.json 含 %s" % key)
 
 	# 3) 宏存在性：JSON 说的名字必须真在生成头里

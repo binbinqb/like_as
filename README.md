@@ -3459,6 +3459,77 @@ PASS  sync_pdur 不再写死 DBC 文件名（应在 PduR.json 的 networks[].dbc
 `IndentationError`。**02.5 那次是同一个坑**。以后插代码要用带唯一上下文的锚点
 （例如把 `return 0 if FAIL == 0 else 1` 一起放进 old 串）。
 
+### ✅ 02.6 方案 A：CanIf 生成器直接产出项目形态（`CanIf_Cfg.c` 零差异）
+
+方案 B 之后，`sync_canif.py` 里还在做四件"修正"：重命名宏、偏移编号、
+按 PF 查邮箱号、改格式。这四件**都应该由生成器做**，不该由脚本事后补。
+
+#### 做法：给 `CanIf.py` 加 4 个可选参数
+
+| 参数（`CanIf.json`） | 作用 | 不提供时 |
+|---|---|---|
+| `rxPduIdBase: 23` | 宏编号起点 | 上游从 0 起 |
+| `rxPduNamePrefix: "RX_"` | `#define CANIF_<RX_CAN1_EOI>` | 上游 `CANIF_CAN1_EOI_RX` |
+| `rxIndicationShim: true` | 表里的回调名用 shim | 上游直接调 `PduR_CanIfRxIndication` |
+| `hohFrom: "../Can/Can.json"` | 按报文 PF 查邮箱表的 `mb` | 上游用"每网络递增" |
+
+外加 `NumHrh: 15` / `NumHth: 12`——上游有 `hoh` 范围校验（默认 `[0,1]`），
+真实邮箱号 8~14 会被它拒掉。这是**必须显式放宽**的，不是可选项。
+
+全部是"不提供就走原逻辑"的可选覆盖，上游其它使用者不受影响。
+
+#### 生成器现在的输出
+
+```c
+#define CANIF_RX_CAN1_EEC1_ELECTRONIC_ENGINE_CONTROLLER_1          (23u)  /**< 0x0CF00400 */
+...
+    CanIfCfg_RxPduR_CAN1_EEC1_ELECTRONIC_ENGINE_CONTROLLER_1,
+    CANIF_RX_CAN1_EEC1_ELECTRONIC_ENGINE_CONTROLLER_1,
+    0x0CF00400, /* canid */
+    0x1FFFFFFF, /* mask */
+    11, /* hoh */
+```
+
+宏名、编号（23~56）、真实邮箱号、8 位定宽——**全是项目要的**。
+
+#### `sync_canif.py` 降级成两件事
+
+| 仍保留 | 为什么不能交给生成器 |
+|---|---|
+| 缩进 2 空格 → Tab | 产物要入库，风格要与手写的 CAN0 段一致 |
+| 生成 shim 函数体 | 它调 `App_CanIfRxIndication`（`!k` 的计数源）再转 PduR，是**跨模块知识** |
+
+删掉的：`PF_TO_MB` 整个查表逻辑、`ID_BASE` 偏移、宏名重命名、`known` 校验。
+
+**副产物**：原来用正则**啃生成器的 C 文本**（抓 5 行固定格式），生成器改一个空格
+就静默失配。现在抓的是"语义已正确"的字段——格式变了只会不匹配、直接报错，
+不会算出错的值。
+
+#### 顺带合并一处重复
+
+`Can.json` 的 `canIfPduIdBase` 和 `CanIf.json` 的 `rxPduIdBase` 都是 23。
+`CANIF_RX_*` 是 CanIf 的编号，归 `CanIf.json`；`Can.json` 那份删掉。
+
+#### 验证
+
+| 项 | 结果 |
+|---|---|
+| `CanIf_Cfg.c` | **零差异** |
+| `CanIf_Cfg.h` | 只差 34 行宏注释里的 ID：`0x8CF00400`（DBC 内部编码，带 bit31）→ `0x0CF00400`（总线真实值） |
+| App | `text 241,084` 不变 |
+| 上板 | `m3` 18/18、`m23` 24/24 |
+| 工具链 | `hardcode_check` 12/12、`can_table_check` 67/67、`can_table_selftest` 6/6、`pdu_selftest` 3/3 |
+
+头文件那 34 行 ID 变化是**修正**：`0x8CF00400` 是 DBC 文件里 `BO_` 的编码
+（bit31 = 扩展帧标记），`0x0CF00400` 才是线上真实 ID——与 `Can_Cfg.c` 的邮箱表
+一致了。
+
+#### 一个算错的教训
+
+想让宏行对齐时，我把 `"#define CANIF_RX_CAN1_%-44s"` 换成整行的 `"%-66s"`，
+以为 8+14+44=66 就等价，结果差了 2 列、产出 34 行纯空白 diff。
+**要么沿用字面相同的模板，要么直接比对两行的列位置**，别在心里算。
+
 ### 尚未完成（下一步）
 
 1. **0x27 换成真算法**：现在 `27 01/02` 是桩（种子返回 0、key 任意），
