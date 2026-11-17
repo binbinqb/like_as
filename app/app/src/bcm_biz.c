@@ -36,7 +36,7 @@
 #include "bcm_biz.h"
 #include "bcm_sig.h"
 
-#include "platform_cvm0146.h"   /* Platform_NowMs：去抖计时 */
+#include "platform.h"           /* Platform_NowMs：去抖计时（芯片无关，Host 也编这一份） */
 
 /* ============================ [ 常量 ] ============================ */
 

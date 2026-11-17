@@ -2907,6 +2907,41 @@ DBC-01/02/05 一起修了（批次 C 前置）：
 回归：m3 诊断多帧 18/18、m23 24/24、a1 静态 PASS、a4 7/7、a2 19/19。
 text 239,784 → 240,072（+288：占用表 + 三处检查）。
 
+### ✅ 26.1 Host 最小构建：业务代码第一次能在 PC 上被判定
+
+目标不是"在 PC 上跑整个 BSW"，而是给业务一个**时间可控**的运行环境：
+
+| 能力 | CVM0146 | Host |
+|------|---------|------|
+| 业务源码 | 同一份 | 同一份（不复制、不改宏） |
+| 时间 | SysTick 1 ms，只能等 | 虚拟时钟，`Host_AdvanceMs(3000)` 瞬间跳 3 s |
+| CAN 输入 | 真实收发 | `com_stub.c` 注入 raw |
+| Flash / 看门狗 / 低功耗 | 真实硬件 | 空实现 |
+
+| 文件 | 作用 |
+|------|------|
+| `app/include/platform.h` | **芯片无关**契约（`Platform_NowMs` / `Puts` / `Printf`）。业务原来 include `platform_cvm0146.h`，等于焊死在 CVM0146 上 |
+| `app/platform/host/src/platform_host.c` | 虚拟时钟 + stdio 控制台 + 外设空实现 |
+| `app/platform/host/src/CriticalAc.c` | 空操作；**文档里写清**"Host 单线程，不能证明并发安全" |
+| `app/platform/host/src/com_stub.c` | 按信号号存 1 字节；不模拟打包/位序/超时 |
+| `app/platform/host/test/test_bcm.c` | 14 条断言：四态 + 去抖 + 流水线延迟 |
+| `tools/host_build.py` | 自动找 gcc（含 `C:/soft/mingw64`）或 MSVC，编译并运行 |
+
+**14/14 通过。** 过程中发现一条以前没写下来的契约：
+
+> `BcmSig_TxSet()` 只改影子，**下一拍** `BcmSig_MainFunction()` 才写进 Com。
+
+首版用例按"立即生效"断言，3 条失败；查代码确认是设计而非缺陷，于是把它
+**显式断言**出来（`BcmSig_TxSet 只改影子：同一拍内 Com 尚未更新`），
+而不是把用例改成"等两拍"——后者会把真正的晚一拍缺陷一起掩盖掉。
+
+工具链：MinGW-w64 16.2.0（WinLibs）装在 `C:/soft/mingw64`，与
+`C:/soft/gcc/10.3.1`（ARM）放在一起；`host_build.py` 会自动找，不写系统 PATH。
+
+开发看板升级到 V2.0：`doc/like_as_development_roadmap.html`
+（源 `doc/roadmap.json`，渲染 `tools/roadmap_build.py`）——五态
+PASS/PARTIAL/TODO/BLOCKED/SKIP、阶段依赖图、开发顺序、验收证据、决策记录。
+
 ### 尚未完成（下一步）
 
 1. **0x27 换成真算法**：现在 `27 01/02` 是桩（种子返回 0、key 任意），

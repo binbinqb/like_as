@@ -17,7 +17,7 @@
 
 #include "rx_mon.h"
 
-#include "platform_cvm0146.h"   /* Platform_NowMs()：1 ms 计数，SysTick 递增 */
+#include "platform.h"           /* Platform_NowMs()：1 ms 计数（Host 上是虚拟时钟） */
 
 #include <string.h>
 
