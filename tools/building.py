@@ -38,6 +38,14 @@ AddOption("--cfg", dest="cfg", type=str, default=None, help="the directory path 
 AddOption("--gen", dest="gen", action="store_true", default=False, help="force to generate config")
 
 AddOption(
+    "--prod",
+    dest="prod",
+    action="store_true",
+    default=False,
+    help="production build: disable dev-only boot fallbacks (BOOT_MODE_PRODUCTION=1)",
+)
+
+AddOption(
     "--generate",
     dest="generate_only",
     action="store_true",

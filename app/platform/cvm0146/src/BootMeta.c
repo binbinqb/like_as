@@ -85,7 +85,7 @@ static uint8_t s_initialized = 0u;
  * @param[in] len  镜像长度（字节）
  * @return CRC32（AUTOSAR 初值 0xFFFFFFFF）
  */
-static uint32_t BootMeta_ImageCrc(uint32_t base, uint32_t len)
+uint32_t BootMeta_CalcImageCrc(uint32_t base, uint32_t len)
 {
 	uint8_t  buf[BOOTMETA_CRC_CHUNK];
 	uint32_t crc = BOOTMETA_CRC_INIT;
@@ -308,7 +308,7 @@ Std_ReturnType BootMeta_CheckImage(uint8_t slot)
 	}
 
 	/* 3) 整镜像 CRC32 */
-	return (BootMeta_ImageCrc(base, info->meta.imageSize) == info->meta.imageCrc)
+	return (BootMeta_CalcImageCrc(base, info->meta.imageSize) == info->meta.imageCrc)
 	       ? E_OK : E_NOT_OK;
 }
 
@@ -423,8 +423,21 @@ Std_ReturnType BootMeta_DemoteToTesting(uint8_t slot)
 	}
 
 	meta = info->meta;
-	meta.state        = (uint8_t)BOOT_SLOT_TESTING;
-	meta.bootAttempts = 0u;
+	meta.state = (uint8_t)BOOT_SLOT_TESTING;
+
+	/* @warning **不要在这里把 `bootAttempts` 清零。**（22.3 修的第 1 个缺陷）
+	 *
+	 * 清零看起来"重新开始计数"很合理，但 boot 每次上电只要镜像 CRC 不符就会
+	 * 再调一次本函数：清零 → `PrepareJump` 加到 1 → 上电 → 再清零 → 还是 1。
+	 * 计数永远到不了 `BOOT_MAX_BOOT_ATTEMPTS`，于是**永不判 INVALID、永不回滚**，
+	 * 板子每次上电都往同一个坏镜像里跳。Host 用例 `test_boot_meta.c` 的 B4
+	 * 用 10 轮上电复现了这一点（计数恒为 1）。
+	 *
+	 * 保留原值才能让"降级照跳"这条开发路径仍然有兜底：镜像真坏时跳进去不返回，
+	 * 复位后计数 +1，第 4 次判 INVALID 并回滚到另一个槽。
+	 *
+	 * 唯一需要清零的是"从 CONFIRMED 降级"这种一次性的情形 —— 而 CONFIRMED 的
+	 * `bootAttempts` 本来就是 0（见 `BootMeta_Confirm`），不需要额外处理。 */
 
 	return BootMeta_Write(slot, &meta);
 }

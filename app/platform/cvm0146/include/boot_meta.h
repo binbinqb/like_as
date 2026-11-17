@@ -153,7 +153,7 @@ Std_ReturnType BootMeta_Register(uint8_t slot, uint32_t imageSize, uint32_t imag
                                  uint8_t major, uint8_t minor, uint8_t patch);
 
 /**
- * @brief 把某个槽降级为 TESTING（尝试次数清零）
+ * @brief 把某个槽降级为 TESTING（**保留**已累计的尝试次数）
  *
  * @details 用在"meta 结构完好但镜像校验失败"的场合 —— 最典型的场景是
  *          **用 J-Link 直接重烧了 app，槽尾 meta 还记着旧镜像的 CRC**。
@@ -164,6 +164,14 @@ Std_ReturnType BootMeta_Register(uint8_t slot, uint32_t imageSize, uint32_t imag
  *            - app 起来了 → 它调用 `BootMeta_Register()` 按当前镜像重写 meta；
  *            - app 起不来 → 复位后 `BootMeta_PrepareJump()` 累加尝试次数，
  *              满 `BOOT_MAX_BOOT_ATTEMPTS` 次自动判 INVALID 并回滚到另一个槽。
+ *
+ *          @warning 第二条成立的前提是**本函数不清零 `bootAttempts`**。
+ *          22.3 之前这里清了一次零，结果 boot 每次上电都走一遍降级，
+ *          计数被反复清回 1，永不 INVALID —— 回滚能力实际上被废掉。
+ *          详见 `BootMeta.c` 对应实现处的说明与 Host 用例 B4。
+ *
+ *          @note 量产构建（`BOOT_MODE_PRODUCTION=1`）**不调用**本函数：
+ *          镜像 CRC 失败直接判 INVALID 并回滚，不执行未经验证的镜像。
  *
  * @param[in] slot 槽索引
  * @retval E_OK     已降级
@@ -179,6 +187,23 @@ Std_ReturnType BootMeta_DemoteToTesting(uint8_t slot);
  *        ECU 算的不一样，但两边都自认为对"。
  */
 uint32_t BootMeta_CalcCrc(const Boot_MetaType *meta);
+
+/**
+ * @brief 算一段 Flash 的 CRC32（经平台层分段读，不做裸指针访问）
+ *
+ * @details 板上 Flash 是内存映射的，`(const uint8_t *)addr` 也能读；但那样会让
+ *          上层代码依赖"映射"这个平台细节，且同一函数里出现两条取数路径
+ *          （向量表走 `Platform_FlashRead()`、CRC 走裸指针）。统一到这里之后：
+ *
+ *          - 选槽校验（`BootMeta_CheckImage`）与调试打印（`Boot_DebugImage`）
+ *            用的是**同一份**算法，不会一处对一处错；
+ *          - 该函数能在 Host 上跑（Flash 换成内存数组），启动判定才可测。
+ *
+ * @param[in] base 起始地址
+ * @param[in] len  长度（字节）
+ * @return CRC32（AUTOSAR 初值 0xFFFFFFFF）
+ */
+uint32_t BootMeta_CalcImageCrc(uint32_t base, uint32_t len);
 
 #ifdef __cplusplus
 }

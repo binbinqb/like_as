@@ -115,13 +115,20 @@
    "title": "Boot 故障注入怎么落到板上",
    "decision": "现有 UDS 服务在结构上造不出「meta 有效 + 镜像 CRC 不符」：0x31/0x34 只接受槽基址且拒绝活动槽，0x37 的 CRC 取自写入后回读的 Flash，meta 永远自洽。因此故障注入走「debug 构建专用钩子」（推荐）或 J-Link 直写，不用诊断服务。",
    "impact": "release 构建不含钩子；上板用例 H1~H3 依赖该钩子；反过来也证明刷写链路本身自洽，D1/D2 不是刷写引入的。"
+  },
+  {
+   "id": "D-BOOTPROD",
+   "date": "2026-11-17",
+   "title": "Boot 的开发宽松策略怎么与量产隔离",
+   "decision": "用编译期 BOOT_MODE_PRODUCTION 而不是运行时标志：开发构建（默认）允许「陈旧 meta 降级照跳」与「向量表兜底」，量产构建（--prod）两者全关——CRC 不符直接判 INVALID 回滚，无有效 meta 一律停 UDS。",
+   "impact": "build.bat --app=Boot --prod 出量产镜像（51,896，与旧基线一致）；app 侧同一宏剔除 bootfault 调试命令（量产 App 241,084、字符串 0 处）。代价：量产构建下 J-Link 直烧 app 后需要同时修 meta，否则会回滚到旧槽。"
   }
  ],
  "current": {
   "module": 22,
   "task": 3,
-  "text": "失败启动恢复：降级路径绕过尝试计数，镜像坏时永不回滚（D1 已证伪）",
-  "next": "① 加 debug-only 的 bootfault 钩子（串口命令写坏 meta/镜像），先在板上复现 D1；② 用编译期开关 BOOT_ALLOW_STALE_META / BOOT_ALLOW_VECTOR_FALLBACK 把开发模式与量产模式分开；③ 修完把 B4 断言反转成「第 4 次降级启动后判 INVALID 并回滚到 B」，同一脚本回归。"
+  "text": "失败启动恢复：D1/D2/D3 已修（Host 双模式全过），待上板用 bootfault 复核回滚",
+  "next": "① 上板跑 H1~H3：bootfault meta-crc → 连续复位 4 次看回滚日志；meta-blank 看兜底与量产停 UDS；顺带量选槽耗时。② 再做 02.8 的 SCons 依赖边（env.Command/Depends）。"
  },
  "modules": [
   {
@@ -991,7 +998,7 @@
      "text": "验证镜像及 metadata",
      "check": "损坏镜像拒绝、元数据原子更新",
      "state": "PARTIAL",
-     "evidence": "Host 用例 test_boot_meta.c（真编译 BootMeta.c，Flash 换内存替身）22/22：主备 meta 择优成立（B8：主份损坏仍可用）、长度/向量表/CRC 三道检查各自独立（B2/B9）。但判据的另一半「损坏镜像拒绝」**不成立**：镜像 CRC 失败后 DemoteToTesting→跳转，见 22.3 缺陷 D2。"
+     "evidence": "Host 用例真编译 BootMeta.c（Flash 换 1 MB 内存替身）20/20：主备 meta 择优成立（B8）、长度/向量表/CRC 三道检查各自独立（B2/B9）。「损坏镜像拒绝」已由量产策略补齐：boot_choice 在 BOOT_MODE_PRODUCTION=1 下把 CRC 失败的槽判 INVALID 并回滚（C2），开发模式仍保留降级（C2/C3）。待上板 H1~H3 复核。"
     },
     {
      "text": "复位恢复",
@@ -1003,7 +1010,7 @@
      "text": "失败启动恢复",
      "check": "镜像校验失败进入回滚",
      "state": "PARTIAL",
-     "evidence": "判据「镜像校验失败进入回滚」**未满足，已证伪**：降级路径 BootMeta_DemoteToTesting 把 bootAttempts 清零，10 轮上电后计数恒为 1，永不 INVALID、永不回滚（B4）。对照组 B5 证明计数器机制本身有效，说明缺陷在降级分支而非机制缺失。矩阵与用例已就绪（doc/Boot启动判定矩阵.md 22 条断言）；另查明 UDS 路径造不出该故障（0x31/0x34 拒绝活动槽、0x37 从 Flash 回读算 CRC），需 debug 钩子或 J-Link 注入。"
+     "evidence": "D1 已修：DemoteToTesting 不再清零 bootAttempts，降级路径也能累加到 4 次判 INVALID 回滚（B4：1→2→3→第4次 INVALID；修复前恒为 1、永不回滚）。选槽判定抽到 boot_choice.c，同一份源码按 BOOT_MODE_PRODUCTION=0/1 各编一次：开发 9/9、量产 9/9，覆盖「陈旧 meta 降级」与「量产直接判 INVALID 回滚」两条策略。尺寸：Boot 开发 51,996 / 量产 51,896（与基线一致）；App 量产 241,084 与基线逐字节一致。**待上板**：H1/H2（bootfault meta-crc + 连续复位看回滚）、H3（meta-blank）以及分段 CRC 的选槽耗时。"
     },
     {
      "text": "擦写中断电测试",

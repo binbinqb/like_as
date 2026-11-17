@@ -162,6 +162,42 @@ typedef enum {
 /** @brief 允许的最大连续启动尝试次数，超过即判 INVALID */
 #define BOOT_MAX_BOOT_ATTEMPTS      (3u)
 
+/* ============================ [ 运行模式 ] ============================ */
+
+/**
+ * @brief 量产模式：关掉所有"为了开发方便"的宽松判定
+ *
+ * @details 开发时有一条必须保留的路径：用 J-Link 直接烧 app 之后，槽尾 meta
+ *          还是**旧镜像的 CRC**，此时若严格按"CRC 不符就拒绝启动"，会形成
+ *          "烧完能跑一次、一复位就停住"的死锁 —— 因为唯一能修正 meta 的 app
+ *          根本没机会启动。
+ *
+ *          但这条路径对量产是不成立的：量产不存在"J-Link 重烧"这个场景，
+ *          却要为它保留一个"跳过未验证镜像"的通道。所以把它做成**编译期**开关，
+ *          而不是运行时启发式：
+ *
+ *          | 开关 | 0（开发，默认） | 1（量产） |
+ *          |------|------------------|-----------|
+ *          | `BOOT_ALLOW_STALE_META` | CRC 不符 → 降级 TESTING 后照跳（计数器兜底） | CRC 不符 → 直接判 INVALID，回滚另一槽 |
+ *          | `BOOT_ALLOW_VECTOR_FALLBACK` | 无有效 meta 时只看 SP/PC 就跳 | 无有效 meta 一律停 UDS |
+ *
+ *          @warning **为什么用编译期而不是运行期标志**：运行期标志要存在
+ *          Flash / NvM 里，它本身就会被损坏或误写 —— 而"这块板是不是量产件"
+ *          在编译时就是确定的。开量产构建：
+ *          @code
+ *          build.bat --app=Boot --prod
+ *          @endcode
+ */
+#ifndef BOOT_MODE_PRODUCTION
+#define BOOT_MODE_PRODUCTION        (0)
+#endif
+
+/** @brief 是否允许"陈旧 meta 降级照跳"（开发专用，量产必须为 0） */
+#define BOOT_ALLOW_STALE_META       (BOOT_MODE_PRODUCTION == 0)
+
+/** @brief 是否允许"只看向量表就跳"（首次烧写兜底，开发专用） */
+#define BOOT_ALLOW_VECTOR_FALLBACK  (BOOT_MODE_PRODUCTION == 0)
+
 /* ============================ [ 元数据 ] ============================ */
 
 /** @brief meta 魔数：`'M' 'E' 'T' 'A'`（小端存储后读出即 0x4154454D） */

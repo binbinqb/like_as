@@ -52,6 +52,12 @@ Std_ReturnType Platform_FlashWrite(uint32_t addr, const void *data, uint32_t len
 /** @brief 擦除一个扇区（真实实现按 2 KB 扇区；这里按 2 KB 填 0xFF） */
 Std_ReturnType Platform_FlashEraseSector(uint32_t addr);
 
+/** @brief 串口输出（真实实现轮询 UART TDRE；这里直接写 stdout） */
+void Platform_Puts(const char *s);
+
+/** @brief 格式化输出（`BOOTSIM_QUIET=1` 时静音，方便只看断言结果） */
+int Platform_Printf(const char *fmt, ...);
+
 #ifdef __cplusplus
 }
 #endif

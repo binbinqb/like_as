@@ -46,6 +46,7 @@
 #include "platform_cvm0146.h"
 #include "boot_meta.h"
 #include "boot_flash_map.h"
+#include "boot_choice.h"
 #include "Crc.h"
 
 #include "NvM.h"        /* boot 也带存储栈：编程会话下读 VIN 用 */
@@ -73,7 +74,7 @@
 /**
  * @brief 各模块配置表的外部声明
  *
- * @note  这些符号由 boot 自己的 `config/*_Cfg.c` 定义（不是 app 的那份）。
+ * @note  这些符号由 boot 自己的 `config` 目录下 `_Cfg.c` 定义（不是 app 的那份）。
  *        它们**没有**在公共头里声明 —— as-master 的做法是让 EcuM 的
  *        驱动表直接引用，走的是"配置层知道配置层"的路子。
  *        boot 没有 EcuM，所以在这里显式声明，顺便把"boot 用哪份配置"写明白。
@@ -297,37 +298,6 @@ static void Boot_StorageSelfTest(void)
 		Platform_Printf("[boot] nvm: VIN not programmed (rc=%u)\n",
 		                (unsigned)stVin);
 	}
-}
-
-/**
- * @brief 打印镜像校验的中间量（排查 CRC 不一致时用）
- * @param[in] slot 槽索引
- * @note  正式版可以删掉，但它只占几十字节，留着方便现场定位
- *        "boot 说 CRC 错、但工具算出来是对的"这类问题。
- */
-static void Boot_DebugImage(uint8_t slot)
-{
-	const Boot_SlotInfoType *info = BootMeta_GetSlot(slot);
-	uint32_t base;
-	uint32_t sp;
-	uint32_t pc;
-	uint32_t crc;
-
-	if ((info == NULL) || (info->metaValid == 0u)) {
-		return;
-	}
-
-	base = BOOT_SLOT_BASE(slot);
-	Platform_FlashRead(base, &sp, 4u);
-	Platform_FlashRead(base + 4u, &pc, 4u);
-	crc = Crc_CalculateCRC32((const uint8_t *)base, info->meta.imageSize,
-	                         0xFFFFFFFFu, TRUE);
-
-	Platform_Printf("[boot] dbg slot %c: sp=%08X pc=%08X size=%u crc=%08X expect=%08X\n",
-	                (slot == BOOT_SLOT_INDEX_A) ? 'A' : 'B',
-	                (unsigned)sp, (unsigned)pc,
-	                (unsigned)info->meta.imageSize,
-	                (unsigned)crc, (unsigned)info->meta.imageCrc);
 }
 
 /**
@@ -561,37 +531,6 @@ static uint8_t Boot_EnterUds(const char *reason, uint32_t idleTimeoutMs)
 }
 
 /**
- * @brief 没有 meta 时的兜底判断：这个地址上像不像一个应用镜像
- *
- * @details 只看向量表头（不做 CRC —— 没有 meta 就没有期望的 CRC 值）：
- *          1. 初始 MSP 落在 SRAM 区间且 8 字节对齐；
- *          2. Reset_Handler 落在本槽的可执行范围内（Thumb 位允许为 1）。
- *
- * @param[in] base 槽基址
- * @retval 1 像
- * @retval 0 不像
- */
-static uint8_t Boot_LooksLikeImage(uint32_t base)
-{
-	uint32_t sp = *(volatile uint32_t *)(base);
-	uint32_t pc = *(volatile uint32_t *)(base + 4u);
-	uint32_t entry;
-
-	/* SP：SRAM_L(0x1FFF0000) ~ StackTop(0x2000F000)，且 8 字节对齐 */
-	if ((sp < 0x1FFF0000u) || (sp > 0x2000F000u) || ((sp & 0x7u) != 0u)) {
-		return 0u;
-	}
-
-	/* PC：Thumb 模式下最低位是 1，比对地址前先清掉 */
-	entry = pc & ~1u;
-	if ((entry < base) || (entry >= (base + BOOT_SLOT_IMAGE_MAX))) {
-		return 0u;
-	}
-
-	return 1u;
-}
-
-/**
  * @brief 打印一个槽的关键信息（一行）
  * @param[in] slot 槽索引
  */
@@ -627,9 +566,8 @@ static void Boot_PrintSlot(uint8_t slot)
 
 int main(void)
 {
-	uint8_t slot;
-	uint8_t other;
-	uint8_t chosen = BOOT_NO_ACTIVE_SLOT;
+	uint8_t chosen;
+	Boot_ChoiceType choice;
 
 	Platform_Init();
 
@@ -694,74 +632,25 @@ int main(void)
 		}
 	}
 
-	/* ---- 第一步：按 meta 选活动槽 ---- */
-	slot = BootMeta_GetActiveSlot();
+	/* ---- 第一步~第三步：选槽 → 校验 → 计数 / 回滚 ----
+	 *
+	 * 判定本身搬到了 `boot_choice.c`：它要按开发/量产两套策略分支，而留在这里
+	 * 就只能上板验证。抽出去之后 Host 用例能把两套策略各跑一遍。
+	 *
+	 * 本函数只负责"按结论行动"：等刷写 或 跳转。 */
+	choice = Boot_ChooseSlot();
 
-	if (slot != BOOT_NO_ACTIVE_SLOT) {
-		Platform_Printf("[boot] active slot : %c (rolling counter)\n",
-		                (slot == BOOT_SLOT_INDEX_A) ? 'A' : 'B');
-
-		Boot_DebugImage(slot);
-
-		/* ---- 第二步：校验镜像，坏了就换另一个槽 ---- */
-		if (BootMeta_CheckImage(slot) == E_OK) {
-			chosen = slot;
-		} else if (BootMeta_DemoteToTesting(slot) == E_OK) {
-			/* meta 完好但镜像对不上 —— 最常见的原因是"用 J-Link 重烧了 app，
-			 * 但槽尾 meta 还是旧镜像的 CRC"。此时**不能直接判死**：
-			 * 那会形成"烧完能跑一次、一复位就 HALT"的死锁，因为
-			 * 唯一能修正 meta 的 app 根本没机会启动。
-			 *
-			 * 降级成 TESTING 再跳，两种结局都安全：
-			 *   - app 起来了 → 它按当前镜像重写 meta；
-			 *   - app 起不来 → 复位后尝试次数累加，3 次后判 INVALID 并回滚。 */
-			Platform_Printf("[boot] slot %c check failed, "
-			                "boot anyway as TESTING (meta may be stale)\n",
-			                (slot == BOOT_SLOT_INDEX_A) ? 'A' : 'B');
-			chosen = slot;
-		} else {
-			other = (slot == BOOT_SLOT_INDEX_A) ? BOOT_SLOT_INDEX_B : BOOT_SLOT_INDEX_A;
-			Platform_Printf("[boot] slot %c image CRC failed, try slot %c\n",
-			                (slot == BOOT_SLOT_INDEX_A) ? 'A' : 'B',
-			                (other == BOOT_SLOT_INDEX_A) ? 'A' : 'B');
-			if (BootMeta_CheckImage(other) == E_OK) {
-				chosen = other;
-			} else if (Boot_LooksLikeImage(BOOT_SLOT_BASE(other)) != 0u) {
-				/* 另一个槽也没有可用 meta，但向量表像话 —— 首次烧写路径 */
-				chosen = other;
-			}
-		}
-	} else {
-		/* ---- 首次烧写：没有任何有效 meta，靠向量表兜底 ---- */
-		Platform_Puts("[boot] no valid meta, fallback to vector table probe\n");
-
-		if (Boot_LooksLikeImage(BOOT_SLOT_A_BASE) != 0u) {
-			chosen = BOOT_SLOT_INDEX_A;
-		} else if (Boot_LooksLikeImage(BOOT_SLOT_B_BASE) != 0u) {
-			chosen = BOOT_SLOT_INDEX_B;
-		}
-	}
-
-	if (chosen == BOOT_NO_ACTIVE_SLOT) {
-		/* 没有可启动镜像 —— 这是 D1 第二步的核心场景：
-		 * app 被擦掉了，boot 停在 UDS 等诊断仪刷写，而不是死等 J-Link。 */
+	if (choice.decision == BOOT_DECISION_WAIT_FLASH) {
+		/* 没有可启动镜像 —— 这是 D1 第二步的核心场景：app 被擦掉了（或两槽都
+		 * 校验不过），boot 停在 UDS 等诊断仪刷写，而不是死等 J-Link。
+		 *
+		 * idleTimeout = 0：不超时。刷写完成后由 0x11 复位离开，
+		 * 所以这个函数正常情况下**不返回**。 */
 		(void)Boot_EnterUds("no valid image in slot A or B, waiting for flash", 0u);
+		Boot_Halt("uds wait returned");
 	}
 
-	/* ---- 第三步：跳转前的尝试计数（回滚触发点） ---- */
-	if (BootMeta_PrepareJump(chosen) != E_OK) {
-		/* 该槽刚被判 INVALID（连续启动失败超限），换另一个 */
-		other = (chosen == BOOT_SLOT_INDEX_A) ? BOOT_SLOT_INDEX_B : BOOT_SLOT_INDEX_A;
-		Platform_Printf("[boot] slot %c exceeded boot attempts, rollback to slot %c\n",
-		                (chosen == BOOT_SLOT_INDEX_A) ? 'A' : 'B',
-		                (other == BOOT_SLOT_INDEX_A) ? 'A' : 'B');
-
-		if (BootMeta_CheckImage(other) != E_OK) {
-			/* 回滚目标也坏了 —— 同样进 UDS，让诊断仪能救回来 */
-			(void)Boot_EnterUds("rollback target also invalid, waiting for flash", 0u);
-		}
-		chosen = other;
-	}
+	chosen = choice.slot;
 
 	Platform_Printf("[boot] jump to slot %c  base=0x%06X  entry=0x%06X\n",
 	                (chosen == BOOT_SLOT_INDEX_A) ? 'A' : 'B',

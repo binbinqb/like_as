@@ -80,6 +80,7 @@ class ApplicationBoot(Application):
         #    CPPPATH 是按序搜索的，boot 版头文件要压过 app 版。
         #    （CanTp_Cfg.h 与 Can_Cfg.h 刻意不覆盖：参数/硬件配置与 app 完全一致。）
         self.CPPPATH = [os.path.join(CWD, "config"),      # boot 版 CanIf/PduR/Dcm 头
+                        os.path.join(CWD, "include"),     # boot_choice.h
                         "$Cvm0146", "$INFRAS", "$MEMORY", "$MEMORY_VENDOR",
                         "$NvM_Cfg", "$Can_Cfg",
                         "$CanIf_Cfg", "$CanTp_Cfg", "$PduR_Cfg", "$Dcm_Cfg",
@@ -97,6 +98,24 @@ class ApplicationBoot(Application):
         # ⚠ 量产构建**不要**设这个环境变量，否则永远停在 boot。
         if os.environ.get("BOOT_FORCE_UDS") == "1":
             self.Append(CPPDEFINES=["BOOT_FORCE_UDS=1"])
+
+        # ------------------------------------------------------------------
+        # 量产构建：关掉所有"为了开发方便"的宽松判定（22.3）
+        #
+        # 关掉的是两条：
+        #   1) 镜像 CRC 不符时"降级 TESTING 后照跳"（J-Link 重烧 app 的便利）
+        #   2) 没有有效 meta 时"只看向量表就跳"（首次烧写便利）
+        # 量产的规则是"不执行未经验证的镜像"：CRC 不符直接判 INVALID 并回滚，
+        # 两槽都不可用就停在 UDS 等刷写。
+        #
+        # 为什么不设成默认：开发时 J-Link 直烧后槽尾 meta 还是旧 CRC，
+        # 严格模式下会形成"烧完能跑一次、一复位就停住"的死锁 ——
+        # 而唯一能修正 meta 的 app 根本没机会启动。
+        #
+        # 用法：build.bat --app=Boot --prod
+        # ------------------------------------------------------------------
+        if GetOption("prod"):
+            self.Append(CPPDEFINES=["BOOT_MODE_PRODUCTION=1"])
 
         # ------------------------------------------------------------------
         # boot 单独开 -Os（app 保持 -O0）
