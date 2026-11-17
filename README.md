@@ -2959,7 +2959,24 @@ Host 用例 `test_rte.c` **14/14**（含 raw=2 与 raw=3 的区分：前者是"�
 后者是"没有消息"）；原 `test_bcm` 14/14 作为回归。
 
 ARM 侧 `text` 不变（240,072）：RTE 目前还没有调用者，`--gc-sections` 把它回收了。
-10.4 迁移 BcmBiz 之后才会真正占空间。
+
+### ✅ 10.4 迁移 BcmBiz：业务层不再 include 绑定层
+
+`bcm_biz.c` 现在只 include `rte.h`，输入换成 `Rte_Read_ParkBrake()`、
+输出换成 `Rte_Write_BrakeLamp()`，四态判断从 `BCM_SIG_*` 改成 `RTE_E_*`。
+**决策规则一行没改**（TIMEOUT 去抖 3 s、INVALID 保持、ERROR 关灯都在）。
+
+| 验证 | 结果 |
+|---|---|
+| Host `test_bcm`（行为等价） | 14/14 |
+| Host `test_rte`（运行时） | 14/14 |
+| 上板 `a9_biz_check`（端到端） | **18/18** |
+| 上板 `m23_check`（信号绑定） | 24/24 |
+
+ARM `text` 240,072 → 240,516（+444，RTE 真正被链接进来）。
+
+这条迁移的价值不是"多了一层"，而是**换信号类型时业务文件不用动**：
+`bcm_biz.c` 里已经没有 `Com`、`BCM_SIG_*`、报文号、字节号。
 
 ### 尚未完成（下一步）
 

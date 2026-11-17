@@ -29,12 +29,19 @@
  *          对方短暂无效时制动灯会灭 —— 而制动灯灭是**其他车看到的信号**，
  *          不该因为我们这边读不懂就改变。保持上一次的结论更安全。
  *
+ * @note    @section BIZC_RTE 与 RTE 的关系（10.4）
+ *
+ *          本文件**只** include `rte.h`，不再 include `bcm_sig.h`。
+ *          输入用 `Rte_Read_ParkBrake()`、输出用 `Rte_Write_BrakeLamp()`；
+ *          `RTE_E_*` 四种状态与上表的"输入有效性"一一对应。
+ *          好处是换信号类型、换绑定方式时，这个文件一行都不用改。
+ *
  * @author  binbina
- * @version V1.0.0
+ * @version V1.1.0
  */
 
 #include "bcm_biz.h"
-#include "bcm_sig.h"
+#include "rte.h"                /* 业务只认端口；绑定层/Com 细节到此为止 */
 
 #include "platform.h"           /* Platform_NowMs：去抖计时（芯片无关，Host 也编这一份） */
 
@@ -75,8 +82,8 @@ void BcmBiz_Init(void)
 
 void BcmBiz_MainFunction(void)
 {
-	Bcm_SwStateType st = BCM_SW_STATE_UNKNOWN;
-	Bcm_SigValidityType v;
+	Rte_SwitchType st = RTE_SWITCH_INVALID;
+	Rte_StatusType v;
 	boolean lampOn = FALSE;
 	boolean hold = FALSE;
 
@@ -85,37 +92,40 @@ void BcmBiz_MainFunction(void)
 		return;   /* 没接管：不读输入、不写输出，把信号完全让给手工命令 */
 	}
 
-	v = BcmSig_RxRead(BCM_SIG_RX_PARK_BRAKE, &st);
+	/* 这一行就是 RTE 的全部价值：值从指针出，有效性从返回值出。
+	 * 业务不知道这个值来自 Com、来自哪个报文、第几位。 */
+	v = Rte_Read_ParkBrake(&st);
 
 	switch (v)
 	{
-	case BCM_SIG_VALID:
+	case RTE_E_OK:
 		s_lostTiming = FALSE;
-		if (BCM_SW_STATE_ON == st)
+		if (RTE_SWITCH_ON == st)
 		{
 			lampOn = TRUE;
 			s_health = BCM_BIZ_OK;
 		}
-		else if (BCM_SW_STATE_OFF == st)
+		else if (RTE_SWITCH_OFF == st)
 		{
 			lampOn = FALSE;
 			s_health = BCM_BIZ_OK;
 		}
 		else
 		{
-			/* VALID 但值是 FAULT（对方报错）：关输出，安全侧 */
+			/* 值有效但内容是 ERROR（对方报错）：关输出，安全侧 */
 			lampOn = FALSE;
 			s_health = BCM_BIZ_PEER_ERROR;
 		}
 		break;
 
-	case BCM_SIG_INVALID:
+	case RTE_E_INVALID:
 		/* 见 @ref BIZC_WHYHOLD：保持上一次的输出 */
 		hold = TRUE;
 		s_health = BCM_BIZ_INVALID;
 		break;
 
-	case BCM_SIG_TIMEOUT:
+	case RTE_E_MAX_AGE_EXCEEDED:
+		/* 超时：与旧版同一条去抖逻辑，只是判断入口从绑定层换成了 RTE */
 		if (FALSE == s_lostTiming)
 		{
 			s_lostTiming = TRUE;
@@ -133,7 +143,7 @@ void BcmBiz_MainFunction(void)
 		}
 		break;
 
-	case BCM_SIG_NEVER_RECEIVED:
+	case RTE_E_NEVER_RECEIVED:
 	default:
 		s_lostTiming = FALSE;
 		lampOn = FALSE;
@@ -143,8 +153,7 @@ void BcmBiz_MainFunction(void)
 
 	if (FALSE == hold)
 	{
-		(void)BcmSig_TxSet(BCM_SIG_BRAKE,
-		                   (TRUE == lampOn) ? BCM_SW_STATE_ON : BCM_SW_STATE_OFF);
+		(void)Rte_Write_BrakeLamp((TRUE == lampOn) ? RTE_SWITCH_ON : RTE_SWITCH_OFF);
 	}
 }
 

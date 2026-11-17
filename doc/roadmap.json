@@ -98,9 +98,9 @@
  ],
  "current": {
   "module": 10,
-  "task": 3,
-  "text": "10.4 迁移 BcmBiz 示例：业务改走 Rte_Read_ParkBrake / Rte_Write_BrakeLamp",
-  "next": "迁移后用 Host 用例回归，确认行为不变、业务不再 include bcm_sig.h"
+  "task": 4,
+  "text": "10.5 验证缓存与执行顺序：一拍内多次读是否要求同值",
+  "next": "先测现状（Rte_Read 每次穿透到 BcmSig），再决定要不要加一致性快照"
  },
  "modules": [
   {
@@ -555,8 +555,8 @@
     {
      "text": "迁移 BcmBiz 示例",
      "check": "驻车信号逻辑不直接依赖 Com/MCU",
-     "state": "PARTIAL",
-     "evidence": "BcmBiz 已不依赖 MCU 头（改 include platform.h），仍直接调 BcmSig、未走 RTE 端口"
+     "state": "PASS",
+     "evidence": "bcm_biz.c 只 include rte.h；Host 28/28（bcm 14 + rte 14）；上板 a9 18/18、m23 24/24"
     },
     {
      "text": "验证缓存与执行顺序",
@@ -565,7 +565,7 @@
      "evidence": ""
     }
    ],
-   "statusNote": "已有生成器基础（tools/generator/Rte.py），尚无运行时实现（Rte.h 为空壳）"
+   "statusNote": "最小运行时已落地（switch 端口 + 四态映射）；数值端口、调度表待做"
   },
   {
    "id": 11,
