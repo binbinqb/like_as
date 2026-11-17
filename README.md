@@ -3012,6 +3012,38 @@ RTE 再加缓存只是把同一份数据存两遍，还多出一个"缓存何时
 验证：Host **29/29**（bcm 14 + rte 15，新增"拍中改动底层缓冲 → 本拍读值不变"）；
 上板 `a9_biz_check` **18/18**、`m23_check` **24/24**；`text` 240,516 不变。
 
+### ✅ 02.2 配置工具统一入口：`tools/config.py`
+
+V1 的配置链是散的（matrix2json / sync_canif / sync_pdur / a4_gen_check /
+mat_report，五套参数五种输出）。现在收成三个子命令，其余脚本仍可单独用：
+
+| 子命令 | 作用 | 写文件 |
+|---|---|---|
+| `import-dbc` | 解析 DBC、统计报文/信号/周期、核对三份 JSON 是否指向同一份 DBC | 否 |
+| `validate` | DBC vs 硬件邮箱 vs CanIf 过滤 vs Hoh 交叉对账，缺口按条列出 | 否 |
+| `generate` | 生成 → 注入 `@generated` 区块 → 拷 Com 产物 → a4 静态复核 | **是** |
+
+**判定逻辑不在新脚本里**：`validate` 直接复用 `mat_report.analyze_channel()`。
+拆函数时先存了 `mat_report.py` 的输出，改完 `diff` **逐字节一致**——报告和
+校验必须是同一套规则，否则会出现"报告说没事、校验说有缺口"。
+
+真实数据上跑出来（客户 DBC 本地有）：
+
+```
+$ python tools/config.py validate
+硬件邮箱条目 28 组 / CanIf RX 条目 48 条 / TX Hoh 12 条
+[CAN1] 报文 40 条，缺口 0 条
+[CAN0] 报文 2 条，缺口 2 条
+  rx-not-in-canif  0x18FDCD55  SSM_OWW
+  rx-not-in-canif  0x18FE4155  SSM_LightCom
+[FAIL] 共 2 处覆盖缺口 → exit 1
+```
+
+缺 DBC 时返回 **2**（不是 0）：`缺输入 ≠ 校验通过`，这是最危险的假绿。
+
+`generate` 跑完 `git status` 只显示脚本自身的改动（产物零差异），说明
+CLI 没改变生成结果——它是入口，不是新逻辑。
+
 ### 尚未完成（下一步）
 
 1. **0x27 换成真算法**：现在 `27 01/02` 是桩（种子返回 0、key 任意），

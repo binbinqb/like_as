@@ -215,72 +215,109 @@ def fmt_hex(idv, ext):
     return "0x%03X" % idv
 
 
+def analyze_channel(ch, dbc_msgs, mbtab, rxlist, txtab):
+	"""把一条通道的"DBC 事实 vs 硬件邮箱 vs 软件过滤"对成结构化结果。
+
+	返回值（供 validate 与报告共用，避免两套判定各说各话）：
+	  skip  : DBC 缺失
+	  rows  : 每条报文一行（已格式化成报告要显示的字符串）
+	  gaps  : 覆盖缺口，每项 {kind, id, name, detail}
+	  extra : CanIf 表里有、DBC 没列的条目（测试/诊断入口）
+	"""
+	if dbc_msgs is None:
+		return {"skip": True, "rows": [], "gaps": [], "extra": []}
+
+	rows = []
+	gaps = []
+
+	for m in sorted(dbc_msgs, key=lambda x: x["id"]):
+		is_me_tx = (m["tx"] == ME)
+		direction = "TX" if is_me_tx else "RX"
+		proto = protocol_of(m["id"], m["ext_gen"], m["name"])
+
+		mbstr = "\u2014"
+		rx_entry = None
+		if direction == "RX":
+			# 1) 软件过滤表：掩码能放行即算覆盖（不要求完全相等）
+			for e in rxlist:
+				if e["ch"] == ch and (m["id"] & e["mask"]) == (e["canid"] & e["mask"]):
+					rx_entry = e
+					break
+			# 2) 硬件邮箱：段基址 & 掩码 == 报文 & 掩码 即放行
+			for key in sorted(mbtab.keys()):
+				if key[0] != ch:
+					continue
+				for b in mbtab[key]:
+					if b["dir"] != "RX":
+						continue
+					if (m["id"] & b["mask"]) == (key[1] & b["mask"]):
+						mbstr = "mb%u(基址 %s/掩码 0x%08X)" % (
+							b["mb"], fmt_hex(key[1], b["ext_hw"]), b["mask"])
+						break
+				if mbstr != "\u2014":
+					break
+			if rx_entry and mbstr != "\u2014":
+				pdu = rx_entry["pduId"].replace("CANIF_RX_", "")
+				route = rx_target(rx_entry["rxInd"])
+			elif rx_entry:
+				pdu, route = rx_entry["pduId"].replace("CANIF_RX_", ""), "**硬件未放行**"
+			else:
+				pdu, route = "**未覆盖**", "**未覆盖**"
+
+			if rx_entry is None:
+				gaps.append({"kind": "rx-not-in-canif", "id": fmt_hex(m["id"], m["ext_gen"]),
+				             "name": m["name"], "detail": "CanIf 软件过滤表没有能匹配它的条目"})
+			elif mbstr == "\u2014":
+				gaps.append({"kind": "rx-hw-blocked", "id": fmt_hex(m["id"], m["ext_gen"]),
+				             "name": m["name"], "detail": "软件配了，但硬件邮箱掩码不放行"})
+		else:
+			for t in txtab:
+				if t["ch"] == ch and t["id"] == m["id"]:
+					mbstr = "mb%u" % t["mb"]
+					break
+			pdu, route = "TX shadow", "Com\u2192CanIf"
+			if mbstr == "\u2014":
+				gaps.append({"kind": "tx-no-hoh", "id": fmt_hex(m["id"], m["ext_gen"]),
+				             "name": m["name"], "detail": "DBC 说本节点发，但 Hoh 表里没有"})
+
+		rows.append({
+			"frame": "扩展" if m["ext_gen"] else "标准",
+			"id": fmt_hex(m["id"], m["ext_gen"]),
+			"name": m["name"],
+			"dir": direction,
+			"proto": proto,
+			"cycle": str(m["cycle"]) if m["cycle"] else "\u2014",
+			"nsig": m["nSigs"],
+			"mb": mbstr,
+			"pdu": pdu,
+			"route": route,
+		})
+
+	extra = [e for e in rxlist
+	         if e["ch"] == ch and not any(mm["id"] == e["canid"] for mm in dbc_msgs)]
+	return {"skip": False, "rows": rows, "gaps": gaps, "extra": extra}
+
+
 def report_channel(ch, name, dbc_msgs, mbtab, rxlist, txtab):
-    print("\n### %s（CAN%u）\n" % (name, ch))
-    print("| 帧类型 | ID | DBC 报文 | 方向 | 协议 | 周期ms | 信号数 | 硬件邮箱 | CanIf PDU | 路由 |")
-    print("|---|---|---|---|---|---|---|---|---|---|")
+	print("\n### %s（CAN%u）\n" % (name, ch))
+	print("| 帧类型 | ID | DBC 报文 | 方向 | 协议 | 周期ms | 信号数 | 硬件邮箱 | CanIf PDU | 路由 |")
+	print("|---|---|---|---|---|---|---|---|---|---|")
 
-    if dbc_msgs is None:
-        print("| — | — | — | — | — | — | — | — | — | （DBC 缺失，SKIP） |")
-        return
+	res = analyze_channel(ch, dbc_msgs, mbtab, rxlist, txtab)
+	if res["skip"]:
+		print("| \u2014 | \u2014 | \u2014 | \u2014 | \u2014 | \u2014 | \u2014 | \u2014 | \u2014 | （DBC 缺失，SKIP） |")
+		return
 
-    seen_rx = set()
-    for m in sorted(dbc_msgs, key=lambda x: x["id"]):
-        is_me_tx = (m["tx"] == ME)
-        direction = "TX" if is_me_tx else "RX"
-        proto = protocol_of(m["id"], m["ext_gen"], m["name"])
+	for r in res["rows"]:
+		print("| %s | %s | %s | %s | %s | %s | %u | %s | %s | %s |"
+		      % (r["frame"], r["id"], r["name"], r["dir"], r["proto"],
+		         r["cycle"], r["nsig"], r["mb"], r["pdu"], r["route"]))
 
-        mbstr = "—"
-        rx_entry = None
-        if direction == "RX":
-            # 1) 软件过滤表：掩码能放行即算覆盖（不要求完全相等）
-            for e in rxlist:
-                if e["ch"] == ch and (m["id"] & e["mask"]) == (e["canid"] & e["mask"]):
-                    rx_entry = e
-                    break
-            # 2) 硬件邮箱：段基址 & 掩码 == 报文 & 掩码 即放行
-            for key in sorted(mbtab.keys()):
-                if key[0] != ch:
-                    continue
-                for b in mbtab[key]:
-                    if b["dir"] != "RX":
-                        continue
-                    if (m["id"] & b["mask"]) == (key[1] & b["mask"]):
-                        mbstr = "mb%u(基址 %s/掩码 0x%08X)" % (
-                            b["mb"], fmt_hex(key[1], b["ext_hw"]), b["mask"])
-                        break
-                if mbstr != "—":
-                    break
-            if rx_entry and mbstr != "—":
-                pdu = rx_entry["pduId"].replace("CANIF_RX_", "")
-                route = rx_target(rx_entry["rxInd"])
-                seen_rx.add(m["id"])
-            elif rx_entry:
-                pdu, route = rx_entry["pduId"].replace("CANIF_RX_", ""), "**硬件未放行**"
-            else:
-                pdu, route = "**未覆盖**", "**未覆盖**"
-        else:
-            for t in txtab:
-                if t["ch"] == ch and t["id"] == m["id"]:
-                    mbstr = "mb%u" % t["mb"]
-                    break
-            pdu, route = "TX shadow", "Com→CanIf"
-
-        frame = "扩展" if m["ext_gen"] else "标准"
-        idstr = fmt_hex(m["id"], m["ext_gen"])
-        cyc = str(m["cycle"]) if m["cycle"] else "—"
-        print("| %s | %s | %s | %s | %s | %s | %u | %s | %s | %s |"
-              % (frame, idstr, m["name"], direction, proto, cyc, m["nSigs"],
-                 mbstr, pdu, route))
-
-    # 软件过滤表里有、DBC 没有的（测试/诊断入口）
-    extra = [e for e in rxlist
-             if e["ch"] == ch and not any(mm["id"] == e["canid"] for mm in dbc_msgs)]
-    if extra:
-        print("\nCanIf 表中存在但 DBC 未列的条目（测试/诊断入口）：")
-        for e in extra:
-            print("- %s 0x%08X mask=0x%08X → %s" % (e["pduId"], e["canid"], e["mask"],
-                                                    rx_target(e["rxInd"])))
+	if res["extra"]:
+		print("\nCanIf 表中存在但 DBC 未列的条目（测试/诊断入口）：")
+		for e in res["extra"]:
+			print("- %s 0x%08X mask=0x%08X \u2192 %s" % (e["pduId"], e["canid"], e["mask"],
+			                                                rx_target(e["rxInd"])))
 
 
 def main():

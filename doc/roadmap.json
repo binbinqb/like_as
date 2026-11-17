@@ -105,9 +105,9 @@
  ],
  "current": {
   "module": 2,
-  "task": 1,
-  "text": "02.2 统一 CLI import / validate / generate（无 GUI 跑通全链路）",
-  "next": "先把 validate 做出来：矩阵 vs 邮箱表 vs 过滤表交叉对账，现有 mat_report.py 是可用的起点"
+  "task": 2,
+  "text": "02.3 共享 PDU 注册（EcuC 风格）：重复 / 悬空引用 / ID 冲突可检测",
+  "next": "先把三份 JSON 的 PDU 名单抽出来对账：同一个报文在 Com/CanIf/PduR 里的符号是否一致"
  },
  "modules": [
   {
@@ -208,8 +208,8 @@
     {
      "text": "统一 CLI import / validate / generate",
      "check": "无 GUI 完成一次全链路",
-     "state": "TODO",
-     "evidence": ""
+     "state": "PASS",
+     "evidence": "tools/config.py：import-dbc / validate / generate 三个子命令；validate 复用 mat_report.analyze_channel，输出逐字节不变；缺 DBC 返回 2"
     },
     {
      "text": "引入 EcuC 风格共享 PDU 注册",
