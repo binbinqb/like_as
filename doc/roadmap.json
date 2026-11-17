@@ -550,8 +550,8 @@
     {
      "text": "明确端口、类型、来源与有效性",
      "check": "覆盖布尔、枚举、数值和超时",
-     "state": "TODO",
-     "evidence": ""
+     "state": "PARTIAL",
+     "evidence": "switch（枚举）端口已定义并覆盖超时/无效；boolean 与数值端口（需 factor/offset）未做"
     },
     {
      "text": "明确为**新建最小 RTE 运行时**（生成器已有 Rte.py，运行时 Rte.h 是空壳）",
