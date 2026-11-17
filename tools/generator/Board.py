@@ -27,6 +27,11 @@ def Gen_Board(cfg, dir):
 	H.write("#define BOARD_CONSOLE_UART          (%uU)\n" % cfg.get("console", {}).get("uart", 2))
 	H.write("#define BOARD_CONSOLE_BAUD          (%uU)\n" % cfg.get("console", {}).get("baud", 115200))
 	H.write("#define BOARD_CAN_NUM               (%uU)\n" % len(cfg.get("can", [])))
+	# 每通道波特率：Can_Cfg.c 直接引用这里，不再自己在 Can_Cfg.h 里写一份
+	# （02.1 唯一来源：Board.json 的 can[].bitrate）。
+	for _i, _c in enumerate(cfg.get("can", [])):
+		H.write("#define BOARD_CAN%u_BITRATE          (%uU)\n"
+		        % (_i, _c.get("bitrate", 500000)))
 	H.write("#define BOARD_PWM_FREQ_HZ           (%uU)\n" % cfg.get("pwm", {}).get("frequencyHz", 100))
 	H.write("#define BOARD_PWM_CHANNELS          (%uU)\n" % cfg.get("pwm", {}).get("channels", 0))
 	H.write("#define BOARD_ADC_GROUPS            (%uU)\n" % cfg.get("adc", {}).get("groups", 0))

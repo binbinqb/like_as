@@ -113,6 +113,13 @@ def main():
 			miss_mb.append("%s→mb%d" % (pf, mb))
 	check(not miss_mb, "rxPfToMb 的邮箱号都在 Can_Cfg.c", ", ".join(miss_mb))
 
+	# 5) 波特率唯一来源：Can_Cfg 不许再有自己的一份 define
+	can_h = read("app/platform/cvm0146/src/config/Can_Cfg.h")
+	can_c = read("app/platform/cvm0146/src/config/Can_Cfg.c")
+	check("#define CAN_CFG_BAUDRATE" not in can_h, "Can_Cfg.h 无重复波特率定义")
+	check("BOARD_CAN0_BITRATE" in can_c and "BOARD_CAN1_BITRATE" in can_c,
+	      "Can_Cfg.c 使用 Board.json 生成的波特率")
+
 	print("\n%d passed, %d failed" % (PASS, FAIL))
 	return 0 if FAIL == 0 else 1
 

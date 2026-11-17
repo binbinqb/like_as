@@ -3134,6 +3134,36 @@ Motorola、有符号、factor/offset、跨报文同名信号、缓存失效、�
 **证伪过**：往 `sync_canif.py` 末尾加一行 `ID_BASE = 99`，检查器立刻 FAIL；
 还原后 PASS。不做这一步的话，"守卫"可能只是永远打印 PASS 的摆设。
 
+### ✅ 02.5 续：波特率收敛到 `Board.json`，Can_Cfg 不再自己写一份
+
+`Can_Cfg.h` 原来有 `#define CAN_CFG_BAUDRATE (500000u)`，而 `Board.json` 的
+`can[].bitrate` 也写着 500000 —— 两个地方各一份，改一边没人发现。
+
+现在：`Board.py` 按 `can[]` 逐通道生成 `BOARD_CAN0_BITRATE` / `BOARD_CAN1_BITRATE`，
+`Can_Cfg.c` 直接引用，`Can_Cfg.h` 里的重复定义删除。
+
+**证伪过**：把 `Board.json` 的 `can[0].bitrate` 改成 250000 → 重新生成后
+`BOARD_CAN0_BITRATE` 变成 250000、`CAN1` 仍 500000；还原后两个都回 500000。
+说明链路是 JSON → 生成头 → 编译期常量，中间没有第二份。
+
+配套：`infras/mcal/Can/SConscript` 的 CPPPATH 加 `$Board_Cfg`（与 Port/Dio 一致）。
+`hardcode_check.py` 从 7 项增到 **9 项**，新增"Can_Cfg.h 不许再有波特率定义"。
+
+### ⚠ 本轮发现：Boot 镜像链接失败（与本轮改动无关）
+
+跑 `build.bat --app=Boot` 时报：
+
+```
+undefined reference to `Dcm_DspRequestDownload' / `Dcm_DspTransferData'
+                     / `Dcm_DspRequestTransferExit'
+undefined reference to `PerfMon_TickIsr' / `PerfMon_TickResync'
+```
+
+`PerfMon_*` 是 A6 给 `platform_cvm0146.c` 加的计时钩子，而 `perf_mon.c` 在
+`app/app/src/`，Boot 的 keep 列表里没有它；`Dcm_Dsp*` 是 boot 版 Dcm 配置引用了
+未编入的服务函数。**两处都不是本轮引入**，但说明"三镜像构建"这条验收从来没真正
+跑过 Boot —— 已记入看板，作为 02.6/02.8 的前置缺陷。
+
 ### 尚未完成（下一步）
 
 1. **0x27 换成真算法**：现在 `27 01/02` 是桩（种子返回 0、key 任意），

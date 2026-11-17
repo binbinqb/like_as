@@ -28,8 +28,9 @@
 /** @brief 启用的控制器数量（M2：CAN0 + CAN1 双通道） */
 #define CAN_CFG_NUM_CHANNELS    (2u)
 
-/** @brief 波特率（Kvaser 两路都配 500 kbps） */
-#define CAN_CFG_BAUDRATE        (500000u)
+/* 波特率不在这里定义：唯一来源是 config/Board/Board.json 的 can[].bitrate，
+ * 由 Board.py 生成 BOARD_CAN0_BITRATE / BOARD_CAN1_BITRATE。
+ * 以前这里另写一份 500000，Board.json 改了对不上也没人发现（02.1）。 */
 
 /** @brief 采样点，单位 1%（75% 是 CAN 的通用推荐值） */
 #define CAN_CFG_SAMPLE_POINT    (75u)

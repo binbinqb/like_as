@@ -13,5 +13,7 @@ class LibraryCan(Library):
     def config(self):
         self.include = [CWD]
         # $Dio_Cfg：Can.h/Can_Priv.h 在 USE_PORT 下要用 Dio_ChannelType
-        self.CPPPATH = ["$INFRAS", "$Dio_Cfg"]
+        # $Board_Cfg：Can_Cfg.c 的波特率来自 Board.json（BOARD_CANx_BITRATE），
+        # 与 Port/Dio 库同一处理。02.1：波特率只有一个权威来源。
+        self.CPPPATH = ["$INFRAS", "$Dio_Cfg", "$Board_Cfg"]
         self.source = objs

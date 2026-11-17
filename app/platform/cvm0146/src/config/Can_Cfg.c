@@ -29,6 +29,7 @@
 #include "Can_Cfg.h"
 #include "Can_Priv.h"
 #include "Can_HwCfg.h"
+#include "Board_Cfg.h"   /* BOARD_CANx_BITRATE：波特率唯一来源是 Board.json */
 
 #include "Dio_Cfg.h"
 
@@ -45,7 +46,7 @@ static Can_ChannelContextType Can_ChannelContexts[CAN_CFG_NUM_CHANNELS];
 static const Can_ChannelConfigType Can_ChannelConfigs[CAN_CFG_NUM_CHANNELS] = {
 	{
 		&Can_ChannelContexts[0],              /* context */
-		CAN_CFG_BAUDRATE,                     /* baudrate */
+		BOARD_CAN0_BITRATE,                   /* baudrate（来自 Board.json） */
 		DIO_CHANNEL_CAN0_STB,                 /* TrcvPinSTB（USE_PORT 分支） */
 		(uint8_t)CAN_CFG_SAMPLE_POINT,        /* samplePoint，单位 1% */
 		0u,                                   /* hwInstanceId = CAN0 */
@@ -53,7 +54,7 @@ static const Can_ChannelConfigType Can_ChannelConfigs[CAN_CFG_NUM_CHANNELS] = {
 	},
 	{
 		&Can_ChannelContexts[1],              /* context */
-		CAN_CFG_BAUDRATE,                     /* baudrate */
+		BOARD_CAN1_BITRATE,                   /* baudrate（来自 Board.json） */
 		DIO_CHANNEL_CAN1_STB,                 /* TrcvPinSTB：PTE13 */
 		(uint8_t)CAN_CFG_SAMPLE_POINT,        /* samplePoint */
 		1u,                                   /* hwInstanceId = CAN1 */
