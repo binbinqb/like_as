@@ -26,8 +26,9 @@
  *          `LMEM.CACHE_CTRL`（`0xE0082000`）的 `EN` 位若为 1，DFlash 读会走缓存。
  *          FEE 的写流程是"擦除 → 写 → **回读校验**"，缓存会让回读拿到旧值，
  *          表现为 `FLS_STATE_READ_BACK_FAIL`，而且**只在使能过缓存的板子上复现**。
- *          本板复位后该寄存器全 0（缓存关），`FeeAc_Init()` 再写一次 0 是防御性的：
- *          将来若有人为提性能打开缓存，这里会把它关回去，而不是让存储悄悄坏掉。
+ *          但**只能清 `FLS_EN` 这一位**，不能整寄存器写 0 —— 整写 0 会连带关掉
+ *          全局缓存 `EN` 与 PFlash 预取 `PFB_EN`，整机执行慢到 1/3.2（实测见
+ *          `FeeAc_Init()` 里的表格）。
  *
  *          @section FEEAC_ALIGN 8 字节是硬约束
  *          DFlash 的最小烧写单位是 **phrase = 8 字节**，SDK 的 `FlashDrv_*Phrase()`
@@ -76,8 +77,8 @@
 /** @brief LMEM 缓存控制寄存器（`LMEM.CACHE_CTRL`，RM 30.3.2） */
 #define FEEAC_CACHE_CTRL_ADDR   (0xE0082000u)
 
-/** @brief `CACHE_CTRL.EN`：0=关闭缓存，1=使能 */
-#define FEEAC_CACHE_CTRL_OFF    (0x00000000u)
+/** @brief `CACHE_CTRL.FLS_EN`（bit1）：Flash 侧缓存使能。FEE 回读校验必须绕过它 */
+#define FEEAC_CACHE_CTRL_FLS_EN (0x00000002u)
 
 /* ============================ [ CRC8 查表 ] ============================ */
 
@@ -389,7 +390,26 @@ void FeeAc_Init(void)
 {
 	FlashDrv_ConfigType cfg;
 
-	*((volatile uint32_t *)FEEAC_CACHE_CTRL_ADDR) = FEEAC_CACHE_CTRL_OFF;
+	/* 只清 `FLS_EN`，**不能整寄存器写 0**。
+	 *
+	 * 整写 0 会把 `EN`（全局缓存）、`PFB_EN`（PFlash 预取）、`MCNT/HCNT`、
+	 * `R0_MODE` 一起关掉 —— 而 `SystemInit()` 启动时设的是 `0x1C7`（全开）。
+	 * 后果不是"稍微慢一点"：整个应用（含代码取指与常量表访问）慢到 1/3.2。
+	 * 上板实测（245 KB 镜像 CRC，CYCCNT 计时）：
+	 *
+	 * | `CACHE_CTRL` | CRC 耗时 |
+	 * |--------------|----------|
+	 * | `0x1C5`（只 FLS_EN=0） | 84 ms |
+	 * | `0x000`（整写 0）      | 267 ms |
+	 *
+	 * 曾经的注释写"本板复位后该寄存器全 0"，那是错的：`SystemInit()`
+	 * （`sdk/drivers/cpu/startup/system_M014x.c`）明确写了 `CACHE->CTRL = 0x1C7`。 */
+	{
+		uint32_t cacheCtrl = *((volatile uint32_t *)FEEAC_CACHE_CTRL_ADDR);
+
+		*((volatile uint32_t *)FEEAC_CACHE_CTRL_ADDR) =
+			(cacheCtrl & ~FEEAC_CACHE_CTRL_FLS_EN);
+	}
 
 	FlashDrv_GetDefaultConfig(&cfg);
 	FlashDrv_Configure(&g_mcu.flashDrv, &cfg);

@@ -119,7 +119,6 @@ static void Boot_DebugImage(uint8_t slot)
 	uint32_t base;
 	uint32_t sp;
 	uint32_t pc;
-	uint32_t crc;
 
 	if ((info == NULL) || (info->metaValid == 0u)) {
 		return;
@@ -128,14 +127,57 @@ static void Boot_DebugImage(uint8_t slot)
 	base = BOOT_SLOT_BASE(slot);
 	Platform_FlashRead(base, &sp, 4u);
 	Platform_FlashRead(base + 4u, &pc, 4u);
-	/* 与 `BootMeta_CheckImage()` 用同一份算法，避免"打印说对、校验说错" */
-	crc = BootMeta_CalcImageCrc(base, info->meta.imageSize);
 
-	Platform_Printf("[boot] dbg slot %c: sp=%08X pc=%08X size=%u crc=%08X expect=%08X\n",
+	/* 这里**只**读向量表两个字。CRC 由紧接着的 `Boot_VerifyImage()` 算一次
+	 * 并连同时一并打印 —— 原先为了打印在这里算了一遍 244 KB，
+	 * 校验时又算一遍，等于每次选槽白白多算一倍。 */
+	Platform_Printf("[boot] dbg slot %c: sp=%08X pc=%08X size=%u expect=%08X\n",
 	                (slot == BOOT_SLOT_INDEX_A) ? 'A' : 'B',
 	                (unsigned)sp, (unsigned)pc,
 	                (unsigned)info->meta.imageSize,
-	                (unsigned)crc, (unsigned)info->meta.imageCrc);
+	                (unsigned)info->meta.imageCrc);
+}
+
+/**
+ * @brief 校验某个槽的镜像，打印一行实测值（整个 boot 里唯一算整镜像 CRC 的地方）
+ *
+ * @details @section BOOTVERIFY_NO_TIME 为什么这里不打印耗时
+ *
+ *          boot 里现成的时基只有 DWT 周期计数器（`PerfMon_Cycles()`），实测不可用：
+ *          正常启动路径上 `DEMCR` 会在 NVM / Flash 初始化之后被清成 0，
+ *          `DWT_CTRL.CYCCNTENA` 随之失效，计数器**冻结**。上板实测：
+ *
+ *          @code
+ *          [boot] DBG DEMCR=01000000 CTRL=40000001 CYCCNT=00000066   // 刚初始化，正常
+ *          [boot] DBG spin cyc 773207 -> 773207 (delta=0)  demcr=00000000
+ *          // 10 万次自旋循环，计数器一步没走
+ *          @endcode
+ *
+ *          同一个 `PerfMon_Cycles()` 在 App 里是准的（与 SysTick 标定得
+ *          119,599,765 Hz ≈ 120 MHz），所以耗时改在 App 侧用 SysTick 量，
+ *          实测 246 KB 镜像：裸指针一次算 77 ms、64 B 分段 87 ms。
+ *
+ *          结论：**不在这里输出自己都信不过的微秒数**，只报校验结论与两个 CRC。
+ *          （谁清了 DEMCR 尚未查清，记为 25.x 待办。）
+ *
+ * @param[in] slot 槽索引
+ * @retval E_OK     可以跳转
+ * @retval E_NOT_OK 同 `BootMeta_CheckImage()`
+ */
+static Std_ReturnType Boot_VerifyImage(uint8_t slot)
+{
+	const Boot_SlotInfoType *info = BootMeta_GetSlot(slot);
+	uint32_t crc = 0u;
+	uint32_t size = ((info != NULL) && (info->metaValid != 0u)) ? info->meta.imageSize : 0u;
+	uint32_t expect = ((info != NULL) && (info->metaValid != 0u)) ? info->meta.imageCrc : 0u;
+	Std_ReturnType st = BootMeta_CheckImageEx(slot, &crc);
+
+	Platform_Printf("[boot] check slot %c: crc=%08X expect=%08X  size=%u  %s\n",
+	                (slot == BOOT_SLOT_INDEX_A) ? 'A' : 'B',
+	                (unsigned)crc, (unsigned)expect, (unsigned)size,
+	                (st == E_OK) ? "ok" : "MISMATCH");
+
+	return st;
 }
 
 /**
@@ -154,7 +196,7 @@ static uint8_t Boot_TryOtherSlot(uint8_t badSlot)
 	                (badSlot == BOOT_SLOT_INDEX_A) ? 'A' : 'B',
 	                (other == BOOT_SLOT_INDEX_A) ? 'A' : 'B');
 
-	if (BootMeta_CheckImage(other) == E_OK) {
+	if (Boot_VerifyImage(other) == E_OK) {
 		return other;
 	}
 
@@ -191,7 +233,7 @@ Boot_ChoiceType Boot_ChooseSlot(void)
 		Boot_DebugImage(slot);
 
 		/* ---- 第二步：校验镜像 ---- */
-		if (BootMeta_CheckImage(slot) == E_OK) {
+		if (Boot_VerifyImage(slot) == E_OK) {
 			chosen = slot;
 		} else {
 #if BOOT_ALLOW_STALE_META
@@ -249,7 +291,7 @@ Boot_ChoiceType Boot_ChooseSlot(void)
 		                (chosen == BOOT_SLOT_INDEX_A) ? 'A' : 'B',
 		                (other == BOOT_SLOT_INDEX_A) ? 'A' : 'B');
 
-		if (BootMeta_CheckImage(other) != E_OK) {
+		if (Boot_VerifyImage(other) != E_OK) {
 			/* 回滚目标也坏了 —— 进 UDS，让诊断仪能救回来 */
 			return choice;                   /* WAIT_FLASH */
 		}

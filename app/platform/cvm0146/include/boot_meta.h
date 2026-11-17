@@ -100,6 +100,22 @@ uint8_t BootMeta_GetActiveSlot(void);
 Std_ReturnType BootMeta_CheckImage(uint8_t slot);
 
 /**
+ * @brief 同 `BootMeta_CheckImage()`，但把实测 CRC 带出来
+ *
+ * @details 用途：调用方要打印"实测 vs meta 期望"时，不必自己再算一遍。
+ *          `Boot_DebugImage()` 原先为了打印已经把 244 KB 的 CRC 算了一次，
+ *          `CheckImage()` 又算一次 —— 每次选槽算两遍，量产启动时间是白送的。
+ *
+ * @param[in]  slot       槽索引
+ * @param[out] measuredCrc 实测 CRC；可为 NULL（等同 `BootMeta_CheckImage`）。
+ *                         早退（长度/向量表不合法）时写 0
+ *
+ * @retval E_OK     可以跳转
+ * @retval E_NOT_OK meta 无效 / 镜像损坏 / 参数越界
+ */
+Std_ReturnType BootMeta_CheckImageEx(uint8_t slot, uint32_t *measuredCrc);
+
+/**
  * @brief 写某个槽的 meta（主备各一份，先备后主）
  * @param[in] slot 槽索引
  * @param[in] meta meta 内容（`crc` 字段由本函数重算并覆盖）

@@ -28,6 +28,7 @@
 
 #include "boot_sim.h"
 #include "Crc.h"
+#include "perf_mon.h"
 #include "Std_Types.h"
 
 /* ============================ [ 假 Flash ] ============================ */
@@ -99,6 +100,30 @@ void Platform_Puts(const char *s)
 		return;
 	}
 	(void)fputs(s, stdout);
+}
+
+/* ============================ [ PerfMon 替身 ] ============================ */
+
+/**
+ * @brief 周期计数器替身
+ *
+ * @details 真实现读 DWT->CYCCNT，Host 上没有这个寄存器。这里给一个**确定性**
+ *          的递增计数器：每读一次前进 1200 周期（= 10 µs @120 MHz）。
+ *          目的是让 `Boot_CheckImageTimed()` 那条打印能算出数来，
+ *          **不是**用来断言"校验耗时多少" —— 那个数只有板上才有意义。
+ */
+static uint32_t s_cyc;
+
+uint32_t PerfMon_Cycles(void)
+{
+	s_cyc += 1200u;
+	return s_cyc;
+}
+
+/** @brief 周期 → 微秒（主频 120 MHz，与 Board.json 的 coreClockHz 一致） */
+uint32_t PerfMon_CyclesToUs(uint32_t cycles)
+{
+	return cycles / 120u;
 }
 
 /* ============================ [ 现场构造 ] ============================ */

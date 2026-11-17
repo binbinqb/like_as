@@ -133,16 +133,30 @@
   {
    "id": "D-META-VER",
    "date": "2026-11-17",
-   "title": "UDS 刷写后 meta 版本号变 v0.0.0",
-   "decision": "暂不修，记为 25.x 候选：0x37 写 meta 时没有版本字段（memset 后逐字段赋值），而 App 的 self-register 只在 imageSize/imageCrc 不符时触发，UDS 刷写两者本就一致，所以版本永远是 0.0.0。",
-   "impact": "仅影响可追溯性（版本不参与启动决策）；修法二选一：0x37 从镜像读版本，或 App 启动时对账版本。"
+   "title": "UDS 刷写后 meta 版本变 v0.0.0（已修）",
+   "decision": "已修：`BootApp_Init()` 在「meta 与镜像一致」分支里补一步版本对账 —— 只补 versionMajor/Minor/Patch 三个字节，其余字段（rollingCounter / state / bootAttempts）一字不动。只在版本不一致时写，正常启动不擦 meta。",
+   "impact": "上板实测：UDS 刷写后 boot 显示 `v0.0.0` → App 打印 `[app] meta version -> 2.8.0` → 再复位显示 `v2.8.0` 且不再重复写。只影响可追溯性，不参与启动决策。"
+  },
+  {
+   "id": "D-TIMEBASE",
+   "date": "2026-11-17",
+   "title": "Boot 里的耗时怎么量（DWT 在此处不可用）",
+   "decision": "Boot 内不用 `PerfMon_Cycles()`（DWT）：NVM/Flash 初始化后 `DEMCR` 被清成 0，CYCCNT 冻结（实测 10 万次自旋 delta=0）。改在 App 侧用 CYCCNT 量，并用 `bootperf`（开发构建）随时复现；关中断场景禁用 `Platform_NowMs()`，它靠 SysTick 中断推进，关中断时原地不动（曾量出 0 ms 的假数）。",
+   "impact": "选槽耗时 = 81 ms（245 KB 镜像，256 B 分段）。两个时基交叉标定 CYCCNT=119,599,765 Hz；心跳间隔用主机时间戳复核 1.00 s/拍。"
+  },
+  {
+   "id": "D-FLASCACHE",
+   "date": "2026-11-17",
+   "title": "FeeAc_Init 把 CACHE_CTRL 整写 0，整机慢 3.2 倍",
+   "decision": "只清 `FLS_EN`（bit1），保留 `EN`/`PFB_EN`/`MCNT`/`HCNT`/`R0_MODE`。原写法整寄存器写 0，理由是注释里\"本板复位后该寄存器全 0\"——该论断是错的，`SystemInit()` 设的是 `0x1C7`。",
+   "impact": "整机执行速度恢复 3.2 倍：245 KB 镜像 CRC 267 → 81 ms；NvM 读取 34 → 25 ms。存储路径已验：`nvm writeall` OK、四块 `st=0`、BOOTCNT/VIN 不变。"
   }
  ],
  "current": {
   "module": 2,
   "task": 5,
   "text": "PduR 42 条路径收口：让生成器直接产出项目形态，去掉二次注入",
-  "next": "先盘点 sync_pdur.py 到底在生成之外还做了什么（编号/命名/宏名/校验），把能搬的搬进 PduR.json + generator/PduR.py，搬不动的写清理由。"
+  "next": "先盘点 sync_pdur.py 在生成之外还做了什么（编号/命名/宏名/校验），把能搬的搬进 PduR.json + generator/PduR.py，搬不动的写清理由。"
  },
  "modules": [
   {
@@ -1012,7 +1026,7 @@
      "text": "验证镜像及 metadata",
      "check": "损坏镜像拒绝、元数据原子更新",
      "state": "PASS",
-     "evidence": "**上板通过**（2026-11-17，`tools/boot_accept.py` 自动跑，15/15 断言）。「损坏镜像拒绝」：注入 meta-crc 后刷量产 Boot，串口 `[boot] slot A image rejected (production build)` → `unusable, try slot B` → `vector fallback disabled (production build)` → `no valid image ... waiting for flash`，即 CRC 不符时不执行该镜像、无有效 meta 时也不看向量表。「元数据原子更新」：主备双份 + 每份自带 CRC + 先备后主（`BootMeta_WriteOne` 顺序），Host B8 验证主份损坏时用备份仍可启动。另跑 H3（meta-blank → 开发版 `fallback to vector table probe`）、H4（10 02 交棒 → UDS → 30.0 s 空闲 → `resume normal boot after idle timeout`）。**边界**：掉电瞬间的写入原子性属任务 4（SKIP，缺程控电源），不在本条证据内。"
+     "evidence": "**上板通过**（2026-11-17，`tools/boot_accept.py` 自动跑，15/15 断言）。「损坏镜像拒绝」：注入 meta-crc 后刷量产 Boot，串口 `[boot] slot A image rejected (production build)` → `unusable, try slot B` → `vector fallback disabled (production build)` → `no valid image ... waiting for flash`，即 CRC 不符时不执行该镜像、无有效 meta 时也不看向量表。「元数据原子更新」：主备双份 + 每份自带 CRC + 先备后主（`BootMeta_WriteOne` 顺序），Host B8 验证主份损坏时用备份仍可启动。另跑 H3（meta-blank → 开发版 `fallback to vector table probe`）、H4（10 02 交棒 → UDS → 30.0 s 空闲 → `resume normal boot after idle timeout`）。**边界**：掉电瞬间的写入原子性属任务 4（SKIP，缺程控电源），不在本条证据内。 ｜ 版本对账已实现并上板验证（UDS 刷写后 v0.0.0 → App 补写 2.8.0，再复位保持）；选槽耗时可复现：`bootperf` 量得 245 KB 镜像 81 ms（详见 doc/整机执行速度与Flash缓存.md）。"
     },
     {
      "text": "复位恢复",

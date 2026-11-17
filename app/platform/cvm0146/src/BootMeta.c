@@ -50,7 +50,7 @@
  *          1 KB；取 8 B 则要调 5 万多次（444 KB 上限）。64 B 时约 7000 次，
  *          全镜像校验实测仍是毫秒级 —— 它只在选槽时算**一次**。
  */
-#define BOOTMETA_CRC_CHUNK      (64u)
+#define BOOTMETA_CRC_CHUNK      (256u)
 
 /* ============================ [ 内部数据 ] ============================ */
 
@@ -78,8 +78,16 @@ static uint8_t s_initialized = 0u;
  *             `BootMeta_CheckImage` 只好整段不测 —— 而选槽 / 回滚正是最需要
  *             反复回归的一段（见 `test_boot_meta.c`）。
  *
- *          代价是 444 KB 分成约 7000 次 `Platform_FlashRead`。该函数本身就是
- *          `memcpy`，且只在选槽时算一次，实测对启动时间无可观测影响。
+ *          代价是分段：`BOOTMETA_CRC_CHUNK`（256 B）一段，245 KB 镜像约 960 次
+ *          `Platform_FlashRead`。这段代价是**量过的**（上板 `bootperf`，CYCCNT 计时）：
+ *
+ *          | 取数方式 | 245 KB 耗时 |
+ *          |----------|-------------|
+ *          | 裸指针一次算（改造前的写法） | 76 ms |
+ *          | 256 B 分段（现在）           | 81 ms |
+ *
+ *          即离板可测换 5 ms（约 6%）。选槽只算一次，且这一版把"多算一次"也去掉了
+ *          （原先调试打印为了显示实测 CRC 会再算一遍整镜像）。
  *
  * @param[in] base 镜像基址
  * @param[in] len  镜像长度（字节）
@@ -257,12 +265,16 @@ uint8_t BootMeta_GetActiveSlot(void)
 	return best;
 }
 
-Std_ReturnType BootMeta_CheckImage(uint8_t slot)
+Std_ReturnType BootMeta_CheckImageEx(uint8_t slot, uint32_t *measuredCrc)
 {
 	uint32_t base;
 	uint32_t sp;
 	uint32_t pc;
 	const Boot_SlotInfoType *info;
+
+	if (measuredCrc != NULL) {
+		*measuredCrc = 0u;
+	}
 
 	if ((s_initialized == 0u) || (BootMeta_IsSlotValid(slot) == 0u)) {
 		return E_NOT_OK;
@@ -308,8 +320,19 @@ Std_ReturnType BootMeta_CheckImage(uint8_t slot)
 	}
 
 	/* 3) 整镜像 CRC32 */
-	return (BootMeta_CalcImageCrc(base, info->meta.imageSize) == info->meta.imageCrc)
-	       ? E_OK : E_NOT_OK;
+	{
+		uint32_t crc = BootMeta_CalcImageCrc(base, info->meta.imageSize);
+
+		if (measuredCrc != NULL) {
+			*measuredCrc = crc;
+		}
+		return (crc == info->meta.imageCrc) ? E_OK : E_NOT_OK;
+	}
+}
+
+Std_ReturnType BootMeta_CheckImage(uint8_t slot)
+{
+	return BootMeta_CheckImageEx(slot, NULL);
 }
 
 Std_ReturnType BootMeta_Write(uint8_t slot, Boot_MetaType *meta)

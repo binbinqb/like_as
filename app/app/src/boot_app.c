@@ -112,7 +112,7 @@ void BootApp_Init(void)
 	 * 表现是"刚烧完还能跑，一复位就 HALT: no valid image"。
 	 * 这类问题会让人误以为 boot 有 bug。
 	 *
-	 * 代价是每次启动多算一次 CRC（159 KB 约 8 ms），换来的是
+	 * 代价是每次启动多算一次 CRC（245 KB 实测约 77 ms，见 `bootperf`），换来的是
 	 * "J-Link 烧完直接能跑"，值。
 	 */
 	BootMeta_Init();
@@ -127,6 +127,39 @@ void BootApp_Init(void)
 		                (unsigned)info->meta.state,
 		                (unsigned)info->meta.rollingCounter,
 		                (unsigned)crc);
+
+		/* ---- 3b) 版本对账 ----
+		 *
+		 * 为什么需要它：UDS 刷写（`0x37`）写 meta 时不带版本字段 ——
+		 * `FlashLoader_TransferExit()` 是 `memset` 之后逐字段赋值的，
+		 * 只填 rollingCounter / imageSize / imageCrc / programmingCounter /
+		 * state / attempts，版本停在 0.0.0。
+		 *
+		 * 而本分支说明 `imageSize/imageCrc` 与 meta 完全一致，所以**不会**
+		 * 走下面的 self-register —— 版本就永远补不上。上板实测：
+		 * 刷写前 `v2.8.0`，刷写后 `v0.0.0`，之后再怎么复位都还是 0.0.0。
+		 *
+		 * 只补版本这三个字节，**其余字段一字不动**：rollingCounter 参与选槽，
+		 * state/bootAttempts 参与回滚，动它们等于改变启动行为。
+		 * 只有"版本不一致"才写，所以正常启动不会反复擦 meta。 */
+		if ((info->meta.versionMajor != (uint8_t)APP_VERSION_MAJOR) ||
+		    (info->meta.versionMinor != (uint8_t)APP_VERSION_MINOR) ||
+		    (info->meta.versionPatch != (uint8_t)APP_VERSION_PATCH)) {
+			Boot_MetaType vmeta = info->meta;
+
+			vmeta.versionMajor = (uint8_t)APP_VERSION_MAJOR;
+			vmeta.versionMinor = (uint8_t)APP_VERSION_MINOR;
+			vmeta.versionPatch = (uint8_t)APP_VERSION_PATCH;
+
+			if (BootMeta_Write(s_slot, &vmeta) == E_OK) {
+				Platform_Printf("[app] meta version -> %u.%u.%u\n",
+				                (unsigned)vmeta.versionMajor,
+				                (unsigned)vmeta.versionMinor,
+				                (unsigned)vmeta.versionPatch);
+			} else {
+				Platform_Puts("[app] meta version write failed\n");
+			}
+		}
 	} else {
 		Platform_Printf("[app] slot %c meta %s, self-register  size=%u crc=%08X\n",
 		                (s_slot == BOOT_SLOT_INDEX_A) ? 'A' : 'B',
