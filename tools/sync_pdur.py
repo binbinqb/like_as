@@ -50,7 +50,13 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CFG_DIR = os.path.join(ROOT, "app", "platform", "cvm0146", "src", "config")
 HDR = os.path.join(CFG_DIR, "PduR_Cfg.h")
 SRC = os.path.join(CFG_DIR, "PduR_Cfg.c")
-DBC = os.path.join(CFG_DIR, "dbc", "can1.dbc")
+# DBC 路径也不写死：`PduR.json` 的 `networks[0].dbc` 早就有了这个字段，
+# 只是脚本一直绕开它自己拼路径。两处各写一份，换项目时必然漏改一处。
+PDUR_JSON = os.path.join(CFG_DIR, "PduR", "PduR.json")
+with io.open(PDUR_JSON, encoding="utf-8") as _f:
+    _PDUR = json.load(_f)
+_PDUR_NET = _PDUR["networks"][0]
+DBC = os.path.normpath(os.path.join(os.path.dirname(PDUR_JSON), _PDUR_NET["dbc"]))
 
 BEGIN_MARK = "/* @generated BEGIN: CAN1 real matrix */"
 END_MARK = "/* @generated END: CAN1 real matrix */"
@@ -91,17 +97,15 @@ for _e in _CAN["txPdus"]:
 		                 % (_e["dbc"], _key))
 	CANIF_TX_MAP[_e["dbc"]] = _CANIF_TX_OF[_key]
 
-# 本工程的"诊断/测试"报文不在 dbc 里，手工补两条 Com↔CanIf 路径。
-# 它们的 Com PDU 宏来自 Com.json 的 CANTEST 网络（生成器保证同名）。
-MANUAL_TX = [
-	# (path 宏名, Com PDU 宏, CanIf TX PDU 宏, 注释)
-	("PDUR_CANTEST_TX_TEST", "COM_CANTEST_TX_TEST", "CANIF_TX_COM_TEST",
-	 "0x200 信号测试帧（M10）"),
-]
-MANUAL_RX = [
-	("PDUR_CANTEST_RX_TEST", "COM_CANTEST_RX_TEST",
-	 "0x201 信号测试帧（M10）"),
-]
+# "诊断/测试"报文不在 DBC 里，手工补 Com↔CanIf 路径。
+#
+# 这两条是**项目参数**（哪条测试报文要路由、用哪个宏），原来写在本脚本里，
+# 换项目就要改工具本身。02.6 方案 B 起来自 `PduR.json` 的
+# `networks[0].manualPaths`（tx / rx 两组）。
+MANUAL_TX = [(e["path"], e["com"], e.get("canIf"), e.get("note", ""))
+             for e in _PDUR_NET.get("manualPaths", {}).get("tx", [])]
+MANUAL_RX = [(e["path"], e["com"], e.get("note", ""))
+             for e in _PDUR_NET.get("manualPaths", {}).get("rx", [])]
 
 
 def to_macro(s):
@@ -112,6 +116,11 @@ def to_macro(s):
 
 
 def build():
+	if not os.path.isfile(DBC):
+		raise SystemExit(
+			"找不到 DBC：%s\n"
+			"（客户通信矩阵不入公开仓库；公开克隆只能构建、不能重新生成 PduR）" % DBC)
+
 	# 走共享解析（02.4）：同一份 DBC 与 Com/CanIf 用同一套解析与节点筛选，
 	# 不再维护这个脚本自己的正则版 parse_dbc。
 	from generator.dbc.database import DbcDatabase, classify

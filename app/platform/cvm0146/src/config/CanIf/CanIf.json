@@ -10,7 +10,9 @@
       "me": "BCM",
       "dbc": "../dbc/can1.dbc",
       "RxPdus": [],
-      "TxPdus": []
+      "TxPdus": [],
+      "shimPrefixRx": "CanIfCfg_RxPduR_",
+      "shimPrefixTx": "CanIfCfg_TxPduR_"
     }
   ]
 }

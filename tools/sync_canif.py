@@ -62,8 +62,15 @@ ID_BASE = _CAN["canIfPduIdBase"]      # CAN0 已用 0~22，起点在 Can.json �
 # M19 的 34 项验收全靠它判"CanIf 软件过滤有没有把帧丢掉或投错项"。
 # 所以每条报文生成一个 3 行 shim：先喂调试计数（保留可观测性），
 # 再交给 PduR。把统计放在 shim 里而不是删掉，是因为"能看见"比"干净"重要。
-SHIM_PREFIX_RX = "CanIfCfg_RxPduR_CAN1_"
-SHIM_PREFIX_TX = "CanIfCfg_TxPduR_CAN1_"
+# 前缀来自 `CanIf.json` 的 `shimPrefixRx/Tx`，**不含网络名**：网络名由下面拼，
+# 这样多网络时自动正确，也不会把 "CAN1" 写死在模板里（02.6 方案 B）。
+CANIF_JSON = os.path.join(CFG_DIR, "CanIf", "CanIf.json")
+with io.open(CANIF_JSON, encoding="utf-8") as _f:
+    _CANIF = json.load(_f)
+_NET = _CANIF["networks"][0]
+
+SHIM_PREFIX_RX = _NET.get("shimPrefixRx", "CanIfCfg_RxPduR_") + _NET["name"] + "_"
+SHIM_PREFIX_TX = _NET.get("shimPrefixTx", "CanIfCfg_TxPduR_") + _NET["name"] + "_"
 
 # CAN1 发送报文 → (shim 后缀, CanIf TX PDU 宏, PduR 路径宏)
 # 后缀与 `CANIF_TX_MAP`（tools/sync_pdur.py）保持一致的短名，

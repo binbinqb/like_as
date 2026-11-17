@@ -106,8 +106,8 @@
  "current": {
   "module": 2,
   "task": 5,
-  "text": "02.6 方案 B：把 sync_canif / sync_pdur 里的项目常量搬进 JSON",
-  "next": "盘点脚本里还剩哪些硬编码（SHIM 前缀、编号规则、MANUAL_TX/RX），逐项决定进 CanIf.json 还是 PduR.json"
+  "text": "02.6 方案 A：CanIf 的 34 条 RX 去掉注入（把 up / 命名 / 编号规则进 CanIf.json）",
+  "next": "先确认 CanIf.py 的模板要改哪几处（up 恒 PduR、hoh 递增、name 规则），再决定改动范围与回退方案"
  },
  "modules": [
   {

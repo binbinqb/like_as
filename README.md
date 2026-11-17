@@ -3413,6 +3413,52 @@ sync_can.py    →  直接读 canIfMacro      → 生成 CanIf_TxPdus[]
 - **CAN0 的 23 条 RX 仍保持手写**——它们是验证资产（测试 ID、诊断、NM、边界值），
   跟着 DBC 变会让 M1/M2/M8/M14 失去稳定基线。
 
+### ✅ 02.6 方案 B：脚本里的项目常量搬进 JSON（产物零差异）
+
+方案 C 做完后，`sync_canif.py` / `sync_pdur.py` 里还剩四类项目常量。这四类都不该
+待在通用脚本里——换一个 BCM 项目就要改工具本身。
+
+| 常量 | 原来 | 现在 |
+|---|---|---|
+| shim 命名前缀 `CanIfCfg_RxPduR_CAN1_` | `sync_canif.py` 写死 | `CanIf.json` 的 `shimPrefixRx/Tx`（**不含网络名**，脚本拼） |
+| `MANUAL_TX/RX`（0x200/0x201 测试路径） | `sync_pdur.py` 写死 | `PduR.json` 的 `manualPaths` |
+| DBC 路径 | `sync_pdur.py` 自己拼 `dbc/can1.dbc` | `PduR.json` 的 `networks[0].dbc` |
+| `to_macro` 转换规则 | 两个脚本各一份 | **保留在脚本**——这是通用算法，不是项目参数 |
+
+**DBC 路径那条最典型**：`PduR.json` 早就有 `dbc` 字段，但脚本绕开它自己拼路径。
+两处各写一份，换项目时必然漏改一处——而漏改的表现是"生成成功但路由指向上一版矩阵"。
+
+前缀拆成"模板 + 网络名"而不是整串：`"CanIfCfg_RxPduR_" + "CAN1" + "_"`。
+整串写死等于把 `CAN1` 编进模板，多网络时必然错。
+
+#### 验证：零差异 + 防回退守卫
+
+| 项 | 结果 |
+|---|---|
+| `sync_canif.py` 重跑 | `CanIf_Cfg.c/.h` **零差异** |
+| `sync_pdur.py` 重跑 | `PduR_Cfg.c/.h` **零差异** |
+| `config.py generate` 全链路 | rc=0，全部产物零差异 |
+| App | `text 241,084` 不变（根本没重新编译） |
+
+`hardcode_check.py` 从 10 项增到 **13 项**，新增三条防回退：
+
+```
+PASS  sync_canif 不再写死 shim 前缀（应在 CanIf.json）
+PASS  sync_pdur 不再写死手工路径（应在 PduR.json 的 manualPaths）
+PASS  sync_pdur 不再写死 DBC 文件名（应在 PduR.json 的 networks[].dbc）
+```
+
+**证伪过**：往两个脚本末尾注入这三类字符串，守卫立刻 3 条全 FAIL、rc=1；
+还原后 rc=0。
+
+#### 一个反复踩的坑（记下来）
+
+`hardcode_check.py` 里有**两处**同样的 `print("\n%d passed...")`：一处在
+`if not os.path.isfile(CAN_JSON):` 的早退分支里，一处在函数末尾。
+用 `str.replace(old, new, 1)` 插新检查时命中了前一处 → 缩进错位报
+`IndentationError`。**02.5 那次是同一个坑**。以后插代码要用带唯一上下文的锚点
+（例如把 `return 0 if FAIL == 0 else 1` 一起放进 old 串）。
+
 ### 尚未完成（下一步）
 
 1. **0x27 换成真算法**：现在 `27 01/02` 是桩（种子返回 0、key 任意），

@@ -126,6 +126,22 @@ def main():
 	check("BOARD_CAN0_BITRATE" in can_c and "BOARD_CAN1_BITRATE" in can_c,
 	      "Can_Cfg.c 使用 Board.json 生成的波特率")
 
+	# 6) 项目常量必须待在 JSON 里，不许回到通用脚本
+	#
+	# 这几条是 02.6 方案 B 的"防回退"：
+	#   - shim 前缀 → CanIf.json 的 shimPrefixRx/Tx
+	#   - 手工路径 → PduR.json 的 manualPaths
+	#   - DBC 路径 → PduR.json 的 networks[].dbc
+	# 一旦有人图省事又写死回去，这里会立刻失败。
+	sync_canif = read("tools/sync_canif.py")
+	sync_pdur = read("tools/sync_pdur.py")
+	check("CanIfCfg_RxPduR_CAN1_" not in sync_canif,
+	      "sync_canif 不再写死 shim 前缀（应在 CanIf.json）")
+	check('"PDUR_CANTEST_TX_TEST"' not in sync_pdur,
+	      "sync_pdur 不再写死手工路径（应在 PduR.json 的 manualPaths）")
+	check('"can1.dbc"' not in sync_pdur,
+	      "sync_pdur 不再写死 DBC 文件名（应在 PduR.json 的 networks[].dbc）")
+
 	print("\n%d passed, %d failed" % (PASS, FAIL))
 	return 0 if FAIL == 0 else 1
 
