@@ -94,13 +94,20 @@
    "title": "infras 修改权限",
    "decision": "有条件开放：允许修复、升级与增量扩展；禁止无依据的整体重构。每次改动记录上游实现、修改原因、影响范围、回归结果。",
    "impact": "0x27 与 DTC 映射不再被权限挡住，改由 OEM 资料进度决定。"
+  },
+  {
+   "id": "D-SNAPSHOT",
+   "date": "2026-11-17",
+   "title": "RTE 读一致性",
+   "decision": "RTE 不建读缓存：一致性快照已由 BcmSig_MainFunction 的 s_rxState 提供；Com_RxIndication 在中断里改的是底层 IPdu 缓冲，不是业务读到的值。",
+   "impact": "应用层执行顺序从\"Com 之前\"移到\"Com 之后\"（端到端 2 拍→1 拍）；同帧多信号的撕裂风险记为已知边界。"
   }
  ],
  "current": {
-  "module": 10,
-  "task": 4,
-  "text": "10.5 验证缓存与执行顺序：一拍内多次读是否要求同值",
-  "next": "先测现状（Rte_Read 每次穿透到 BcmSig），再决定要不要加一致性快照"
+  "module": 2,
+  "task": 1,
+  "text": "02.2 统一 CLI import / validate / generate（无 GUI 跑通全链路）",
+  "next": "先把 validate 做出来：矩阵 vs 邮箱表 vs 过滤表交叉对账，现有 mat_report.py 是可用的起点"
  },
  "modules": [
   {
@@ -561,8 +568,8 @@
     {
      "text": "验证缓存与执行顺序",
      "check": "一致性、错误返回、Host 测试",
-     "state": "TODO",
-     "evidence": ""
+     "state": "PASS",
+     "evidence": "不加缓存（BcmSig 影子即快照，有 Com_Cfg.c:10819 证据）；应用层移到 BSW 之后，端到端 2 拍→1 拍；Host 29/29、上板 a9 18/18 + m23 24/24"
     }
    ],
    "statusNote": "最小运行时已落地（switch 端口 + 四态映射）；数值端口、调度表待做"

@@ -140,7 +140,18 @@ int main(void)
 	check(E_NOT_OK == Rte_Write(RTE_PORT_BRAKE_LAMP, (Rte_SwitchType)9),
 	      "越界枚举值（9）被拒");
 
-	/* ---------- 10. 恢复后重新可用 ---------- */
+	/* ---------- 10. 一拍内一致性：影子即快照 ---------- */
+	inject_park_brake(1u);
+	BcmSig_MainFunction();
+	(void)Rte_Read_ParkBrake(&v);          /* 本拍读到 ON */
+	/* 模拟中断在拍中改掉底层缓冲，但**不跑** BcmSig_MainFunction：
+	 * 绑定层影子没刷新，所以本拍后续读必须还是 ON。 */
+	HostCom_SetRx((Com_SignalIdType)COM_SID_ParkingBrakeSwitch, 0u);
+	st = Rte_Read_ParkBrake(&v);
+	check((RTE_E_OK == st) && (RTE_SWITCH_ON == v),
+	      "拍中改动底层缓冲 → 本拍读值不变（影子即快照）");
+
+	/* ---------- 11. 恢复后重新可用 ---------- */
 	inject_park_brake(1u);
 	BcmSig_MainFunction();
 	st = Rte_Read_ParkBrake(&v);

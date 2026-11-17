@@ -428,22 +428,11 @@ int main(void)
 		 *    `tools/a1_sched_check.py` 的静态唯一性判据拦住。
 		 *
 		 *    应用层不在此列：`BcmSig_MainFunction()` / `ComApp_Tick()`
-		 *    不在 BSW 调度表里，必须留在下面，且**必须在
-		 *    `EcuM_BswService()` 之前**（要抢在 Com 打包前把新值写进报文
-		 *    缓冲，否则第一帧发出去的是上一拍的旧值，差一帧）。
+		 *    不在 BSW 调度表里。它们**排在 `EcuM_BswService()` 之后**，
+		 *    理由（以及旧顺序为什么改）见下面那段说明。
 		 */
 		if ((uint32_t)(Platform_NowMs() - nextBsw) >= BSW_PERIOD_MS) {
 			nextBsw = Platform_NowMs();
-
-			/* 车身信号绑定层（M23）先跑：把业务语义翻成 raw 写进 Com。
-			 * 必须排在任何消费信号的业务逻辑之前（读到的是本拍输入）。 */
-			BcmSig_MainFunction();
-
-			/* 业务骨架（A9）：读上一行更新好的 shadow 做决策，再写回发送 shadow。
-			 * 顺序反了就会用上一拍的输入做决策（见 bcm_biz.h）。 */
-			BcmBiz_MainFunction();
-
-			ComApp_Tick();
 
 			/* BSW 调度交给 EcuM：按 `EcuM_DriverMainList` 的顺序跑一遍
 			 * （CanSM → ComM → Com → ComFast → CanNm → Nm → CanTp →
@@ -459,6 +448,26 @@ int main(void)
 			t0 = PerfMon_Cycles();
 			EcuM_BswService();
 			PerfMon_RecordBswCycles(PerfMon_Cycles() - t0);
+
+			/* ===== 应用层：在 BSW **之后**跑（10.5 的顺序决策）=====
+			 *
+			 * | 顺序 | 读到的输入 | 决策→上总线 | 端到端 |
+			 * |------|-----------|-------------|--------|
+			 * | Com 之前（旧） | 上一拍解包的 | 同一拍发出 | **2 拍** |
+			 * | Com 之后（现在） | 本拍刚解包的 | 下一拍发出 | **1 拍** |
+			 *
+			 * 旧顺序只想优化发送方向（"抢在 Com 打包前写进缓冲"），代价是
+			 * **读永远晚一拍**：业务拿 N-1 的输入做决定，输出在 N+1 发出，
+			 * 整条链仍是两拍。移到 Com 之后，读变新一拍、写晚一拍，
+			 * 总延迟少一拍，也与 AUTOSAR 的 RTE 任务位置一致。
+			 *
+			 * 内部依赖没变：BcmSig 仍必须在 BcmBiz 之前（BcmBiz 读的是
+			 * 本拍刚刷新的 shadow）；`Rte_Write` 的"下一拍进 Com"语义
+			 * 也仍然成立（见 rte.h）。
+			 */
+			BcmSig_MainFunction();
+			BcmBiz_MainFunction();
+			ComApp_Tick();
 
 			/* 状态机单独推进：负责 RUN / POST_RUN / SLEEP 的迁移，
 			 * 与 BSW 主函数是两件事（AUTOSAR 里也是两个入口），

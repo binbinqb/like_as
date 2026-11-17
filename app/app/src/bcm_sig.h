@@ -190,8 +190,15 @@ void BcmSig_Init(void);
  * @brief 绑定层周期任务：接收侧取语义、发送侧下 raw
  *
  * @details 由主循环按 `COM_MAIN_FUNCTION_PERIOD`（10 ms）节拍调用，
- *          **必须在 `Com_MainFunctionTx()` 之前** —— 否则本次写入的
- *          发送值要等到下一拍才进缓冲，总线上的值会整体滞后 10 ms。
+ *          **位置在 `EcuM_BswService()`（含 Com）之后**（10.5 的顺序决策）：
+ *
+ *          | 方向 | 时序 |
+ *          |------|------|
+ *          | 上行读 | 本拍 Com 刚解包的值，**不再晚一拍** |
+ *          | 下行写 | 写进 Com 缓冲后，由**下一拍** `Com_MainFunctionTx()` 发出 |
+ *
+ *          旧顺序（Com 之前）能省掉发送方向的那一拍，但读取永远滞后一拍，
+ *          端到端总数不变且业务看到的是旧输入。取舍见 `main.c` 的说明。
  *
  *          实现上分两趟：
  *          - **上行**：逐个 `Com_ReceiveSignal()` → 查映射表 → 存 shadow

@@ -67,11 +67,15 @@ typedef enum
 void BcmBiz_Init(void);
 
 /**
- * @brief 业务周期任务（10 ms，在 `BcmSig_MainFunction()` **之后**、`Com_MainFunctionTx()` **之前**）
+ * @brief 业务周期任务（10 ms，在本拍 `BcmSig_MainFunction()` **之后**）
  *
  * @details 顺序不能反：`BcmSig_MainFunction()` 负责把总线值搬进 shadow，
- *          本函数读 shadow 做决策，然后 `BcmSig_TxSet()` 把结论写回发送 shadow。
- *          放反了决策就会用上一拍的输入。
+ *          本函数读 shadow 做决策，然后 `Rte_Write` → `BcmSig_TxSet()` 把结论
+ *          写回发送 shadow。
+ *
+ *          本函数整体位于 `EcuM_BswService()` **之后**（见 `main.c`）：
+ *          读的是本拍刚解包的值，结论在下一拍上总线，端到端 1 拍。
+ *          放反了（在 BcmSig 之前）决策就会用上一拍的输入。
  */
 void BcmBiz_MainFunction(void);
 
