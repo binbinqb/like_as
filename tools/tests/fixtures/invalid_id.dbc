@@ -1,0 +1,12 @@
+VERSION ""
+
+NS_ :
+	BA_
+	CM_
+
+BS_:
+
+BU_: ECU_A ECU_B
+
+BO_ 536870912 BadId: 8 ECU_A
+ SG_ S : 0|8@1+ (1,0) [0|255] "" ECU_B

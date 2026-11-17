@@ -1,0 +1,42 @@
+VERSION ""
+
+NS_ :
+	BA_
+	CM_
+
+BS_:
+
+BU_: ECU_A ECU_B ECU_C
+
+BO_ 291 S_123: 8 ECU_A
+ SG_ StdSig : 0|8@1+ (1,0) [0|255] "" ECU_B
+
+BO_ 2047 S_7FF: 8 ECU_A
+ SG_ EdgeSig : 0|8@1+ (1,0) [0|255] "" ECU_B
+
+BO_ 2147483939 E_123: 8 ECU_B
+ SG_ ExtSig : 0|8@1+ (1,0) [0|255] "" ECU_C
+
+BO_ 2566844672 E_Big: 8 ECU_C
+ SG_ Speed : 0|16@1+ (0.01,0) [0|250] "km/h" ECU_A,ECU_B
+ SG_ Temp : 16|8@1- (1,-40) [-40|215] "C" ECU_A
+ SG_ Mot : 24|8@0+ (2,1) [0|255] "" ECU_A
+
+BO_ 536870911 E_Max: 8 ECU_B
+ SG_ MaxSig : 0|8@1+ (1,0) [0|255] "" ECU_A
+
+BO_ 292 Other: 8 ECU_B
+ SG_ Oth : 0|8@1+ (1,0) [0|255] "" ECU_C
+
+BO_ 293 Both: 8 ECU_B
+ SG_ SharedName : 0|8@1+ (1,0) [0|255] "" ECU_A,ECU_B
+
+BO_ 294 Both2: 8 ECU_B
+ SG_ SharedName : 0|8@1+ (1,0) [0|255] "" ECU_A
+
+CM_ SG_ 291 StdSig "standard frame signal";
+BA_ "GenMsgCycleTime" BO_ 291 100;
+BA_ "GenMsgCycleTime" BO_ 2566844672 20;
+BA_ "GenSigStartValue" SG_ 2566844672 Speed 1500;
+BA_ "GenSigStartValue" SG_ 293 SharedName 7;
+BA_ "GenSigStartValue" SG_ 294 SharedName 9;

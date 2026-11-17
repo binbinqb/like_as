@@ -105,9 +105,9 @@
  ],
  "current": {
   "module": 2,
-  "task": 4,
-  "text": "02.4 统一 DBC 解析与节点筛选（标准/扩展帧、初值、周期测试）",
-  "next": "把 Com/CanIf/PduR 各自调用 get_messages 改成一次解析+缓存，并补标准帧样例"
+  "task": 2,
+  "text": "02.3 补齐 EcuC 共享 PDU 注册表（生成前引用解析，而非生成后检查）",
+  "next": "先读 AS 的 json.editor/schema.json 与 EcuC 用法，再定最小 PduRef 结构"
  },
  "modules": [
   {
@@ -220,8 +220,8 @@
     {
      "text": "统一 DBC 解析与节点筛选",
      "check": "标准/扩展帧、接收节点、初值、周期测试",
-     "state": "TODO",
-     "evidence": ""
+     "state": "PASS",
+     "evidence": "database.py：sha256 内容缓存 + deepcopy + 三段式筛选；dbc_parser_check 25/25；8 个产物哈希一致；dbc_init 12/12、pdu_selftest 3/3、a4 6/6"
     },
     {
      "text": "迁移 PF 邮箱、TX 映射及 ID_BASE",

@@ -5,6 +5,10 @@ __all__ = ["dbc"]
 
 from . import ascyacc
 
+#: 解析/后处理语义版本。字段名、单位、后处理规则一改就 +1：
+#: `database.py` 把它放进缓存键，否则同一进程里旧结果会被当成新结果。
+PARSER_VERSION = 1
+
 
 def get_period(p, msg):
     CycleTime, FirstTime = None, None
@@ -71,11 +75,32 @@ def post_process_init(p):
 
 
 def post_process_id_type(p):
+    """给每条消息补一个明确的帧类型字段 `ext`（02.4）。
+
+    背景：DBC 用 **ID 的 bit31** 表示扩展帧（`0x80000000 | CAN_ID`）。
+    原实现只按"数值大于 0x7FF 就补标记"处理，**没有把帧类型单独存下来**，
+    于是下游只能靠 `id > 0x7FF` 反推 —— 扩展帧 ID 恰好是 0x123 时就会
+    判成标准帧。这是规范明确禁止的推断方式。
+
+    这里保留原来的补标记行为（兼容没写 bit31 但 ID 超过标准帧范围的
+    DBC），同时把 `ext` 落成独立字段，下游一律读 `msg["ext"]`。
+
+    @note `id` 仍然带 bit31（CanIf 生成时再 `& 0x1FFFFFFF`），这样现有
+    产物逐字节不变；`can_id` 是去掉标记后的总线 ID，给新代码用。
+    """
     for msg in p["messages"]:
         id = msg["id"]
         if id > 0x7FF:
             id |= 0x80000000
             msg["id"] = id
+        msg["ext"] = True if (id & 0x80000000) else False
+        msg["can_id"] = id & 0x1FFFFFFF
+        # CAN 规范里扩展帧最大 0x1FFFFFFF。超过说明 DBC 的 ID 本身写错了
+        # （例如把 0x20000000 当成普通 ID），这种"看起来能解析"的错误
+        # 必须在解析期拒绝，否则会生成一个永远匹配不上的过滤器。
+        if msg["can_id"] > 0x1FFFFFFF:
+            raise Exception("DBC: invalid CAN ID 0x%X (>0x1FFFFFFF) in message %s"
+                            % (msg["can_id"], msg.get("name", "?")))
 
 
 def reject_unsupported(file, data):
@@ -116,17 +141,26 @@ def reject_unsupported(file, data):
                             % (file, i))
 
 
-def parse(file):
-    print(f"DBC: {file}")
-    fp = open(file, "r")
-    data = fp.read()
-    fp.close()
-    reject_unsupported(file, data)
+def parse_content(data, label="<memory>"):
+    """从**已读入的内容**解析。
+
+    单独拆出来是为了让缓存层能"哈希哪份字节就解析哪份字节"：
+    如果先哈希、再让解析器自己去 open 一次，中间文件被改就会得到
+    "用旧键缓存了新内容"的错配。
+    """
+    reject_unsupported(label, data)
     p = ascyacc.parse(data)
     post_process_period(p)
     post_process_init(p)
     post_process_id_type(p)
     return p
+
+
+def parse(file):
+    print(f"DBC: {file}")
+    with open(file, "r", encoding="utf-8", errors="replace") as fp:
+        data = fp.read()
+    return parse_content(data, file)
 
 
 def dbc(path):

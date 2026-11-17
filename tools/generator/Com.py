@@ -642,11 +642,23 @@ def Gen_Com(cfg, dir):
     C.close()
 
 
-def get_messages(path):
-    from .dbc import dbc
+#: 进程内共享的 DBC 库（02.4）。放在模块级而不是每次 new：
+#: 一次联合生成里 Com/CanIf/PduR 都走这里，同一份 DBC 只解析一次。
+_DBC_DB = None
 
-    p = dbc(path)
-    return p
+
+def get_messages(path):
+    """兼容入口：保留原签名，内部改走共享缓存。
+
+    @note 返回的是**副本**，调用方可以就地改（Com 会改 id、加 callout）。
+    历史行为也是每次返回新 list（每次重新解析），所以这条兼容不会改变
+    任何调用方的语义。
+    """
+    global _DBC_DB
+    if _DBC_DB is None:
+        from .dbc.database import DbcDatabase
+        _DBC_DB = DbcDatabase()
+    return _DBC_DB.get_messages(path)
 
 
 def get_signals(signalNames, network):
@@ -883,7 +895,12 @@ def extract(cfg, dir):
                 path = os.path.abspath(os.path.join(dir, "..", path))
             if not os.path.isfile(path):
                 raise Exception("File %s not exists" % (path))
-            network_["messages"].extend(get_messages(path))
+            from .dbc.database import classify
+            msgs = get_messages(path)
+            # 只保留与本 ECU 有关的报文：发送方是本节点（TX），或接收方
+            # 包含本节点（RX）。接收方一栏全是 Vector__XXX 时 classify 会
+            # 退回"非发送方即接收"，见 database.py 的三段式说明。
+            network_["messages"].extend(classify(msgs, network.get("me", "")))
             handle_groups(network_)
             cfg_["networks"].append(network_)
         else:

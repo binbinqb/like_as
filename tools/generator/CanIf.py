@@ -7,6 +7,7 @@ import json
 from .helper import *
 
 from .Com import get_messages
+from .dbc.database import classify
 
 __all__ = ["Gen"]
 
@@ -216,13 +217,13 @@ def extract(cfg, dir):
                 path = os.path.abspath(os.path.join(dir, "..", path))
             if not os.path.isfile(path):
                 raise Exception("File %s not exists" % (path))
-            messages = get_messages(path)
+            messages = classify(get_messages(path), me)
             for msg in messages:
                 if msg["name"] in ignore:
                     continue
                 rn = "%s_%s" % (name, toMacro(msg["name"]))
                 rn = rn.upper()
-                if msg["node"] == me:
+                if msg["dir"] == "TX":
                     if "TX" not in rn:
                         rn += "_TX"
                     kl = "TxPdus"
