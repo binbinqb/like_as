@@ -51,11 +51,25 @@ APP_SRCS = [
 
 HOST_SRCS = sorted(glob.glob(os.path.join(ROOT, "app/platform/host/src/*.c")))
 
-# (名称, 用例源文件)：每个用例单独一个可执行文件
+# (名称, 用例源文件, 附加源, 附加头文件目录)：每个用例单独一个可执行文件。
+# 附加源/目录为空表示"用根目录的 APP_SRCS + HOST_SRCS 那套"。
 TESTS = [
-	("bcm", "app/platform/host/test/test_bcm.c"),
-	("rte", "app/platform/host/test/test_rte.c"),
+	("bcm", "app/platform/host/test/test_bcm.c", [], []),
+	("rte", "app/platform/host/test/test_rte.c", [], []),
+	# 22.3 启动判定：**只**编板上同一份 `BootMeta.c` + 真 CRC32 实现，
+	# 平台层换成 `boot_sim` 里的 Flash 内存替身。不拉 APP_SRCS/HOST_SRCS ——
+	# 那些是应用层与 Host 平台，与 boot 选槽逻辑无关，编进来只会互相打架。
+	("boot_meta", "app/platform/host/test/test_boot_meta.c",
+	 ["app/platform/cvm0146/src/BootMeta.c", "infras/libraries/crc/src/Crc_32.c"],
+	 # 顺序有意义：boot_sim 必须在 cvm0146/include **之前**，
+	 # 否则 `platform_cvm0146.h` 会命中真实平台头，把 SDK 拉进来。
+	 # 而 `boot_meta.h` / `boot_flash_map.h` 仍从 cvm0146/include 取（同一份真头）。
+	 ["app/platform/host/include/boot_sim", "app/platform/cvm0146/include"]),
 ]
+
+# 这些用例**不**套用 APP_SRCS + HOST_SRCS：它们验证的是与宿主平台无关的
+# 纯判定逻辑，源码集合由 TESTS 的第 3 项显式给出。
+STANDALONE_TESTS = {"boot_meta"}
 
 INCLUDES = [
 	"app/include",
@@ -93,8 +107,12 @@ def run(cmd, cwd=ROOT, env=None):
 	return subprocess.run(cmd, cwd=cwd, env=env).returncode
 
 
-def build_gcc(gcc, srcs, exe):
+def build_gcc(gcc, srcs, exe, extra_incs=None):
 	inc = []
+	# 附加头文件目录排在**最前**：`boot_sim/platform_cvm0146.h` 要能遮蔽
+	# 同名真实平台头，否则 Host 会去 include 厂商 SDK。
+	for i in (extra_incs or []):
+		inc += ["-I", os.path.join(ROOT, i)]
 	for i in INCLUDES:
 		inc += ["-I", os.path.join(ROOT, i)]
 	cmd = [gcc] + CFLAGS_COMMON + inc + srcs + ["-o", exe]
@@ -142,8 +160,10 @@ def msvc_env_manual():
 	return env, cl
 
 
-def build_msvc_manual(env, cl, srcs, exe):
+def build_msvc_manual(env, cl, srcs, exe, extra_incs=None):
 	inc = []
+	for i in (extra_incs or []):
+		inc.append("/I" + os.path.join(ROOT, i))
 	for i in INCLUDES:
 		inc.append("/I" + os.path.join(ROOT, i))
 	cmd = [cl, "/nologo", "/std:c11", "/utf-8", "/W3",
@@ -152,16 +172,21 @@ def build_msvc_manual(env, cl, srcs, exe):
 	return subprocess.run(cmd, cwd=ROOT, env=env).returncode
 
 
-def build_and_run(gcc, msvc, name, test_src):
+def build_and_run(gcc, msvc, name, test_src, extra_srcs=None, extra_incs=None):
 	exe = os.path.join(OUT_DIR, "%s_test.exe" % name)
-	srcs = [os.path.join(ROOT, s) for s in APP_SRCS] + HOST_SRCS
+	if name in STANDALONE_TESTS:
+		# 独立用例：源码集合完全由 TESTS 决定（见那里的注释）
+		srcs = [os.path.join(ROOT, s) for s in (extra_srcs or [])]
+	else:
+		srcs = [os.path.join(ROOT, s) for s in APP_SRCS] + HOST_SRCS
+		srcs += [os.path.join(ROOT, s) for s in (extra_srcs or [])]
 	srcs.append(os.path.join(ROOT, test_src))
 
 	print("\n=== build %s ===" % name)
 	if gcc:
-		rc = build_gcc(gcc, srcs, exe)
+		rc = build_gcc(gcc, srcs, exe, extra_incs)
 	else:
-		rc = build_msvc_manual(msvc[0], msvc[1], srcs, exe)
+		rc = build_msvc_manual(msvc[0], msvc[1], srcs, exe, extra_incs)
 
 	if rc != 0:
 		print("[ERROR] %s 编译失败，rc=%d" % (name, rc))
@@ -184,8 +209,8 @@ def main():
 		return 2
 
 	bad = 0
-	for name, src in TESTS:
-		rc = build_and_run(gcc, msvc, name, src)
+	for name, src, extra_srcs, extra_incs in TESTS:
+		rc = build_and_run(gcc, msvc, name, src, extra_srcs, extra_incs)
 		if rc != 0:
 			bad += 1
 			print("[FAIL] %s rc=%d" % (name, rc))

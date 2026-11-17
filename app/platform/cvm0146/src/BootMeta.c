@@ -44,6 +44,14 @@
 /** @brief SRAM 下界（SRAM_L 起始） */
 #define BOOTMETA_SRAM_BOTTOM    (0x1FFF0000u)
 
+/** @brief 算镜像 CRC 时每次从 Flash 取的字节数
+ *
+ * @details 64 B 是"栈占用 + 调用次数"的折中：boot 的栈不大，取 1 KB 会白占
+ *          1 KB；取 8 B 则要调 5 万多次（444 KB 上限）。64 B 时约 7000 次，
+ *          全镜像校验实测仍是毫秒级 —— 它只在选槽时算**一次**。
+ */
+#define BOOTMETA_CRC_CHUNK      (64u)
+
 /* ============================ [ 内部数据 ] ============================ */
 
 /** @brief 两个槽的扫描缓存（`BootMeta_Init` 填充，之后只读） */
@@ -53,6 +61,53 @@ static Boot_SlotInfoType s_slotInfo[BOOT_SLOT_NUM];
 static uint8_t s_initialized = 0u;
 
 /* ============================ [ 内部函数 ] ============================ */
+
+/**
+ * @brief 算一段 Flash 的 CRC32（经平台层分段读，不做裸指针访问）
+ *
+ * @details @section BOOTMETA_CRC_WHY 为什么不用 `(const uint8_t *)addr`
+ *
+ *          原先这一句是 `Crc_CalculateCRC32((const uint8_t *)base, ...)`，
+ *          把 Flash 地址直接当指针用。板上 Flash 内存映射，能跑；但它带来两个
+ *          实际问题：
+ *
+ *          1. **同一个函数里两条取数路径**：向量表用 `Platform_FlashRead()`，
+ *             整镜像 CRC 用裸指针。将来 Flash 若加了缓存 / ECC / 间接映射，
+ *             两条路径会静默分叉，表现是"向量表读得到、CRC 永远不对"。
+ *          2. **无法离板验证**：Host 上 `(uint8_t *)0x20000` 是野地址，
+ *             `BootMeta_CheckImage` 只好整段不测 —— 而选槽 / 回滚正是最需要
+ *             反复回归的一段（见 `test_boot_meta.c`）。
+ *
+ *          代价是 444 KB 分成约 7000 次 `Platform_FlashRead`。该函数本身就是
+ *          `memcpy`，且只在选槽时算一次，实测对启动时间无可观测影响。
+ *
+ * @param[in] base 镜像基址
+ * @param[in] len  镜像长度（字节）
+ * @return CRC32（AUTOSAR 初值 0xFFFFFFFF）
+ */
+static uint32_t BootMeta_ImageCrc(uint32_t base, uint32_t len)
+{
+	uint8_t  buf[BOOTMETA_CRC_CHUNK];
+	uint32_t crc = BOOTMETA_CRC_INIT;
+	uint32_t done = 0u;
+	boolean  first = TRUE;
+
+	while (done < len) {
+		uint32_t n = len - done;
+
+		if (n > (uint32_t)sizeof(buf)) {
+			n = (uint32_t)sizeof(buf);
+		}
+		Platform_FlashRead(base + done, buf, n);
+		/* AUTOSAR 的分段约定：上一次的**结果**作为本次 startValue，
+		 * 且 isFirstCall = FALSE（函数内部会先反 finalize 再续算）。 */
+		crc = Crc_CalculateCRC32(buf, n, crc, first);
+		first = FALSE;
+		done += n;
+	}
+
+	return crc;
+}
 
 /**
  * @brief 判断 slot 参数是否合法
@@ -207,7 +262,6 @@ Std_ReturnType BootMeta_CheckImage(uint8_t slot)
 	uint32_t base;
 	uint32_t sp;
 	uint32_t pc;
-	uint32_t crc;
 	const Boot_SlotInfoType *info;
 
 	if ((s_initialized == 0u) || (BootMeta_IsSlotValid(slot) == 0u)) {
@@ -254,10 +308,8 @@ Std_ReturnType BootMeta_CheckImage(uint8_t slot)
 	}
 
 	/* 3) 整镜像 CRC32 */
-	crc = Crc_CalculateCRC32((const uint8_t *)base, info->meta.imageSize,
-	                         BOOTMETA_CRC_INIT, TRUE);
-
-	return (crc == info->meta.imageCrc) ? E_OK : E_NOT_OK;
+	return (BootMeta_ImageCrc(base, info->meta.imageSize) == info->meta.imageCrc)
+	       ? E_OK : E_NOT_OK;
 }
 
 Std_ReturnType BootMeta_Write(uint8_t slot, Boot_MetaType *meta)
