@@ -223,11 +223,72 @@ slot A : 0x020000  TESTING    rc=28  size=244576  crc=DDDA994E  v2.8.0
 这条在**修复前必然失败**：旧代码 `DemoteToTesting` 每次把 `bootAttempts` 清零，
 计数永远是 1，日志里永远不会出现 `exceeded boot attempts`。
 
-### 7.3 尚未上板的部分
+### 7.3 H4 刷写请求后不连接 → 30 s 自动回退（通过）
+
+`tools/boot_accept.py` 自动跑（J-Link 复位 + UDS 单发 + 独占串口抓取）：
+
+```
+[dcm] session 1 -> 2 (requested)
+[app] programming session -> will reboot into bootloader
+=== boot 横幅（App 已自行复位）===
+[boot] flash requested by app (10 02 programming session)
+[boot] entering UDS flash mode ...
+（★ 此后 30.0 s 内没有任何诊断请求）
+[boot] no tester, leaving flash mode
+[boot] resume normal boot after idle timeout
+[boot] jump to slot A  base=0x020000  entry=0x020400
+```
+
+**结论**：交棒与超时回退都对，实测空闲计时 **30.0 s** 命中。
+
+> 之前手动验证时这条一直"验不出来"，原因是**人手会顺手再连一次工具**——
+> 那条 `10 02` 本身就是诊断请求，会把空闲计时重置。这也是把复位与等待
+> 自动化的直接动机。
+
+### 7.4 H3 无 meta（开发版兜底）/ H3' 量产拒绝坏镜像（均通过）
+
+H3（`bootfault meta-blank` + 开发版 Boot）：
+
+```
+[boot] no valid meta, fallback to vector table probe
+[boot] jump to slot A  base=0x020000  entry=0x020400
+```
+
+H3'（`bootfault meta-crc` + `--app=Boot --prod` 刷入量产 Boot）：
+
+```
+slot A : 0x020000  CONFIRMED  rc=2  size=244584  crc=63C75C3B  v2.8.0
+[boot] dbg slot A: ... crc=9C38A3C4 expect=63C75C3B      ← 镜像好、meta 被改坏
+[boot] slot A image rejected (production build)          ← 判据：不执行未验证镜像
+[boot] slot A unusable, try slot B
+[boot] vector fallback disabled (production build)       ← 量产不做向量表兜底
+[boot] no valid image in slot A or B, waiting for flash
+```
+
+**结论**：量产构建在 CRC 不符时**不跳**，把该槽判死后试图换槽；无有效 meta 时
+也不再看向量表，直接停在 UDS。与验证 1（开发版降级照跳）形成对照。
+
+> `63C75C3B ^ 0xFFFFFFFF = 9C38A3C4` —— 与 `meta-crc` 的取反实现一致。
+
+### 7.5 一个待修的元数据问题（25.x 候选）
+
+UDS 刷写后 meta 的版本号变成 `v0.0.0`：
+
+```
+刷写前：slot A : ... CONFIRMED  rc=3  size=244584  crc=9C38A3C4  v2.8.0
+刷写后：slot A : ... TESTING    rc=1  size=244584  crc=9C38A3C4  v0.0.0
+```
+
+原因：`0x37` 写 meta 时字段是 `memset` 后逐个赋值的，**没有版本字段**；而 App
+的 self-register 只在 `imageSize/imageCrc` 不符时才触发 —— UDS 刷进去的镜像
+两者本来就一致，所以永远不会补写版本。
+
+影响：仅可追溯性（版本不参与任何启动决策）。修法二选一：`0x37` 从镜像里读版本，
+或 App 每次启动顺带对账版本。**未实施。**
+
+### 7.6 仍未上板
 
 | 用例 | 状态 |
 |---|---|
-| H3 `meta-blank` 开发兜底 | 待跑 |
-| H3' 量产 Boot 拒绝坏镜像 | 待跑（需刷 `--app=Boot --prod`） |
-| H4/H5 刷写超时回退 | 待跑 |
-| 选槽耗时 | 日志无时间戳，未测 |
+| 选槽耗时 | 日志无时间戳，未测（要测需在 `dbg slot` 前后加 `Platform_NowMs()`） |
+| 擦写中断电 | 属 M22 任务 4，SKIP（缺程控电源） |

@@ -129,13 +129,20 @@
    "title": "配置生成的依赖怎么声明到 SCons 图上",
    "decision": "用 stamp 节点（env.Command('.gen.stamp', 70 个输入, sync动作)）+ 每个目标文件 env.Depends，而不是把 7 个产物直接声明成 Command 的 target。App 自己的 .c 也显式 env.Object 后才能挂依赖。",
    "impact": "依赖可用 --tree 复核、-c 不会删入库产物；缺 DBC 时它不在输入清单里，SCons 不报源缺失，自动退回已入库产物 —— 不需要为降级写特例。"
+  },
+  {
+   "id": "D-META-VER",
+   "date": "2026-11-17",
+   "title": "UDS 刷写后 meta 版本号变 v0.0.0",
+   "decision": "暂不修，记为 25.x 候选：0x37 写 meta 时没有版本字段（memset 后逐字段赋值），而 App 的 self-register 只在 imageSize/imageCrc 不符时触发，UDS 刷写两者本就一致，所以版本永远是 0.0.0。",
+   "impact": "仅影响可追溯性（版本不参与启动决策）；修法二选一：0x37 从镜像读版本，或 App 启动时对账版本。"
   }
  ],
  "current": {
-  "module": 22,
-  "task": 1,
-  "text": "验证镜像及 metadata：损坏镜像拒绝（量产）与 meta-blank 兜底尚未上板",
-  "next": "刷 --app=Boot --prod 跑 H3'，再用 bootfault meta-blank 跑 H3；H4/H5 用 10 03 起刷写后不连诊断仪看 30 s 回退。跑完 M22 任务 1 可转 PASS。"
+  "module": 2,
+  "task": 5,
+  "text": "PduR 42 条路径收口：让生成器直接产出项目形态，去掉二次注入",
+  "next": "先盘点 sync_pdur.py 到底在生成之外还做了什么（编号/命名/宏名/校验），把能搬的搬进 PduR.json + generator/PduR.py，搬不动的写清理由。"
  },
  "modules": [
   {
@@ -1004,8 +1011,8 @@
     {
      "text": "验证镜像及 metadata",
      "check": "损坏镜像拒绝、元数据原子更新",
-     "state": "PARTIAL",
-     "evidence": "Host 用例真编译 BootMeta.c（Flash 换 1 MB 内存替身）20/20：主备 meta 择优成立（B8）、长度/向量表/CRC 三道检查各自独立（B2/B9）。「损坏镜像拒绝」已由量产策略补齐：boot_choice 在 BOOT_MODE_PRODUCTION=1 下把 CRC 失败的槽判 INVALID 并回滚（C2），开发模式仍保留降级（C2/C3）。待上板 H1~H3 复核。"
+     "state": "PASS",
+     "evidence": "**上板通过**（2026-11-17，`tools/boot_accept.py` 自动跑，15/15 断言）。「损坏镜像拒绝」：注入 meta-crc 后刷量产 Boot，串口 `[boot] slot A image rejected (production build)` → `unusable, try slot B` → `vector fallback disabled (production build)` → `no valid image ... waiting for flash`，即 CRC 不符时不执行该镜像、无有效 meta 时也不看向量表。「元数据原子更新」：主备双份 + 每份自带 CRC + 先备后主（`BootMeta_WriteOne` 顺序），Host B8 验证主份损坏时用备份仍可启动。另跑 H3（meta-blank → 开发版 `fallback to vector table probe`）、H4（10 02 交棒 → UDS → 30.0 s 空闲 → `resume normal boot after idle timeout`）。**边界**：掉电瞬间的写入原子性属任务 4（SKIP，缺程控电源），不在本条证据内。"
     },
     {
      "text": "复位恢复",
