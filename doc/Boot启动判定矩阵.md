@@ -111,18 +111,26 @@
 |---|---|---|
 | `bootfault meta-crc` | 活动槽 `meta.imageCrc ^= 0xFFFFFFFF` | ✅ 只改 meta |
 | `bootfault meta-blank` | 擦掉两槽的 meta（模拟从未烧写） | ✅ |
+| `bootfault testing N` | 活动槽置 TESTING 且 `bootAttempts=N` | ✅ 只改 meta |
 
 只改 meta 是刻意的：最坏情况只是"启动判定走另一条分支"，不会让板子变砖
 （镜像本身是好的，开发模式下照常启动）。**刻意不提供"改镜像字节"** —— 那会让
 下一次启动必然跑飞，恢复只能靠 J-Link。
+
+> **为什么必须有 `testing N`**：只用 `meta-crc` 验不到"计数累加 → 回滚"。
+> CRC 改坏之后，App 只要还能起来，`BootApp_Init` 就会发现 `imageSize/imageCrc`
+> 与 meta 不符并**重写 meta**（self-register）—— 计数随之清零。于是每轮上电都是
+> "降级一次、修好一次"，永远累加不到阈值。`testing 3` 直接把"已失败 3 次"摆出来，
+> 下一轮 `PrepareJump` 累加到 4 就判 INVALID 回滚，一轮看完。
 
 ### 4.3 上板用例
 
 | 编号 | 注入 | 期望（修复后） |
 |---|---|---|
 | H1 | `bootfault meta-crc` + 复位 | 开发：日志出现 "boot anyway as TESTING"，板子照常启动 |
-| H2 | H1 后连续复位 4 次 | 第 4 次日志出现 "exceeded boot attempts, rollback"，回滚另一槽 |
+| H2 | `bootfault testing 3` + 复位 | 日志出现 "exceeded boot attempts, rollback to slot B"；B 无效则停 UDS |
 | H3 | `bootfault meta-blank` + 复位 | 开发：向量表兜底启动；量产：停 UDS，`0x22` 读 VIN 可响应 |
+| H3' | 刷量产 Boot 后 `meta-crc` + 复位 | 日志出现 "image rejected (production build)"，不跳坏镜像 |
 | H4 | `10 03` 写刷写标志后复位，诊断仪不连接 | 30 s 后自动恢复启动 |
 | H5 | H4 中 30 s 内开始刷写 | 不超时，正常刷完 |
 | H6 | 刷写过程中断电 | 复位后旧槽仍可启动 |

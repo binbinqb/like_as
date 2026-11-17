@@ -108,18 +108,89 @@ static int bf_meta_blank(void)
 	return 0;
 }
 
+/** @brief 十进制解析（不用 `strtoul`：它会拉进 newlib 的 locale 数据，实测 +1 KB） */
+static uint32_t bf_dec(const char *s)
+{
+	uint32_t v = 0u;
+
+	while ((*s >= '0') && (*s <= '9')) {
+		v = (v * 10u) + (uint32_t)(*s - '0');
+		s++;
+	}
+	return v;
+}
+
+/**
+ * @brief 把活动槽置为 TESTING 并直接设定"已启动失败次数"
+ *
+ * @details @section BF_TESTING 为什么需要它
+ *
+ *          只靠 `meta-crc` 验不到"计数累加 → 判 INVALID → 回滚"：
+ *          CRC 改坏之后，App 只要还能起来，就会在启动自检里发现
+ *          `imageSize/imageCrc` 与 meta 不符并**重写 meta**（`BootApp_Init` 的
+ *          self-register），计数随之清零。于是每次上电都是"降级一次、修好一次"，
+ *          永远累加不到阈值 —— 除非镜像真的坏到起不来（那就要靠另一槽兜底，
+ *          成本高且不好反复做）。
+ *
+ *          这条命令直接把"已经连续失败 N 次"这个状态摆出来：下一轮上电
+ *          `PrepareJump` 累加到 N+1，超过 3 就判 INVALID 并回滚。
+ *          镜像本身是好的，所以**最坏结果只是回滚到另一槽**，不会变砖。
+ *
+ * @param[in] attempts 要设定的已失败次数（0~255）
+ * @return 0 成功
+ */
+static int bf_testing(uint32_t attempts)
+{
+	uint8_t slot = BootMeta_GetActiveSlot();
+	const Boot_SlotInfoType *info;
+	Boot_MetaType meta;
+
+	if (slot == BOOT_NO_ACTIVE_SLOT) {
+		sh_print("<+1, no active slot\r\n");
+		return -1;
+	}
+
+	info = BootMeta_GetSlot(slot);
+	if ((info == NULL) || (info->metaValid == 0u)) {
+		sh_print("<+1, slot %c has no valid meta\r\n",
+		         (slot == BOOT_SLOT_INDEX_A) ? 'A' : 'B');
+		return -1;
+	}
+
+	if (attempts > 0xFFu) {
+		attempts = 0xFFu;
+	}
+
+	meta = info->meta;
+	meta.state        = (uint8_t)BOOT_SLOT_TESTING;
+	meta.bootAttempts = (uint8_t)attempts;
+
+	if (BootMeta_Write(slot, &meta) != E_OK) {
+		sh_print("<+1, write meta failed\r\n");
+		return -1;
+	}
+
+	sh_print("<+0, slot %c TESTING attempts=%u; reset -> next boot will be %u "
+	         "(>3 => INVALID + rollback)\r\n",
+	         (slot == BOOT_SLOT_INDEX_A) ? 'A' : 'B',
+	         (unsigned)attempts, (unsigned)(attempts + 1u));
+	return 0;
+}
+
 /**
  * @brief bootfault —— 制造 Boot 启动判定的故障现场
  * @param[in] argc 参数个数（1 = 打印用法）
- * @param[in] argv 参数数组：`meta-crc` | `meta-blank`
+ * @param[in] argv 参数数组：`meta-crc` | `meta-blank` | `testing <n>`
  * @return 0 成功
  */
 static int sh_cmd_bootfault(int argc, char *argv[])
 {
 	if (argc < 2) {
-		sh_print("usage: bootfault <meta-crc|meta-blank>\r\n");
-		sh_print("  meta-crc   : active slot's meta.imageCrc ^= 0xFFFFFFFF (image untouched)\r\n");
-		sh_print("  meta-blank : erase both slots' meta (simulate never-programmed)\r\n");
+		sh_print("usage: bootfault <meta-crc|meta-blank|testing N>\r\n");
+		sh_print("  meta-crc    : active slot's meta.imageCrc ^= 0xFFFFFFFF (image untouched)\r\n");
+		sh_print("  meta-blank  : erase both slots' meta (simulate never-programmed)\r\n");
+		sh_print("  testing N   : active slot -> TESTING with bootAttempts=N\r\n");
+		sh_print("                (N=3 -> next boot hits the 3-attempt limit)\r\n");
 		sh_print("  dev build only; reset the board to observe boot decision\r\n");
 		return SH_OK;
 	}
@@ -128,6 +199,12 @@ static int sh_cmd_bootfault(int argc, char *argv[])
 		(void)bf_meta_crc();
 	} else if (strcmp(argv[1], "meta-blank") == 0) {
 		(void)bf_meta_blank();
+	} else if (strcmp(argv[1], "testing") == 0) {
+		if (argc < 3) {
+			sh_print("<+1, usage: bootfault testing <n>\r\n");
+		} else {
+			(void)bf_testing(bf_dec(argv[2]));
+		}
 	} else {
 		sh_print("<+1, unknown action '%s'\r\n", argv[1]);
 	}
