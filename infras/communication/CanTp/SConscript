@@ -7,5 +7,8 @@ objs = Glob("*.c")
 @register_library
 class LibraryCanTp(Library):
     def config(self):
-        self.CPPPATH = ["$INFRAS", "$CanIf_Cfg", "$PduR_Cfg", CWD]
+        # $CanTp_Cfg：CanTp.c 第 14 行就 include "CanTp_Cfg.h"。原来没写，
+        # 靠 $CanIf_Cfg 目录里"顺带"有这份头才编得过 —— boot 把 CanIf 指向
+        # 自己的 config（里面没有 CanTp_Cfg.h）后立刻暴露。
+        self.CPPPATH = ["$INFRAS", "$CanIf_Cfg", "$PduR_Cfg", "$CanTp_Cfg", CWD]
         self.source = objs

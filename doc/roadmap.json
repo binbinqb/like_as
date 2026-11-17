@@ -104,10 +104,10 @@
   }
  ],
  "current": {
-  "module": 2,
-  "task": 4,
-  "text": "02.6 Can Generator 前置：确认 Can_Cfg 哪些表可生成、哪些必须手写",
-  "next": "CanHw_MsgCfgs/Hohs 结构与 Mailbox 编号策略先写清，再决定生成边界"
+  "module": 0,
+  "task": 3,
+  "text": "02.6 前置：为 Boot 单独编一份 Dcm 库（按 app 复制库，或独立 target 名）",
+  "next": "先在 building.py 里确认库能否带 app 后缀；否则在 boot SConscript 里用唯一对象路径编 Dcm 源"
  },
  "modules": [
   {
@@ -143,7 +143,7 @@
      "text": "冻结构建与现有回归",
      "check": "三镜像构建、现有 M/A 用例通过或注明 SKIP",
      "state": "PARTIAL",
-     "evidence": "App 可构建；**Boot 链接失败**（PerfMon_TickIsr/TickResync、Dcm_Dsp* 未定义），A6 引入，非本轮"
+     "evidence": "App 240,516 / AppB 可构建；**Boot BLOCKED**：Dcm_Dsp 三个服务未编入共享库（app 头关着、boot 头开着）。perf_mon 与 CanTp 头路径已修"
     }
    ]
   },

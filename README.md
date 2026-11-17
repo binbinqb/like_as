@@ -3149,7 +3149,35 @@ Motorola、有符号、factor/offset、跨报文同名信号、缓存失效、�
 配套：`infras/mcal/Can/SConscript` 的 CPPPATH 加 `$Board_Cfg`（与 Port/Dio 一致）。
 `hardcode_check.py` 从 7 项增到 **9 项**，新增"Can_Cfg.h 不许再有波特率定义"。
 
-### ⚠ 本轮发现：Boot 镜像链接失败（与本轮改动无关）
+### ⚠ Boot 构建：修掉一半，剩下一半是结构性缺陷（BLOCKED）
+
+本轮先修了两处**明确正确**的：
+
+| 修复 | 原因 |
+|---|---|
+| `perf_mon.c` 加入 boot 的 keep 列表 | A6 给 `platform_cvm0146.c` 的 SysTick 加了 `PerfMon_TickIsr/TickResync`，boot 编这份平台代码却没编实现 → 链接期 undefined |
+| `CanTp` 库 CPPPATH 显式加 `$CanTp_Cfg` | `CanTp.c:14` 就 include 它，原来靠 `$CanIf_Cfg` 目录"顺带"有这份头才编得过 |
+
+剩下的 `Dcm_DspRequestDownload / TransferData / RequestTransferExit` **不是改配置能解决的**：
+
+- `Dcm` 库全工程只编一次，用的是 **app 的** `Dcm_Cfg.h`（`$Dcm_Cfg` 指向 app 配置）；
+- `Dcm_Dsp.c` 里 0x34/0x36/0x37 被 `#ifdef DCM_USE_SERVICE_*` 包着，app 头里是注释掉的；
+- boot 的 `Dcm_Cfg.c` 用的是 boot 头（这三个是打开的）→ 引用了库里不存在的符号。
+
+**试过并否掉的两条路**（都记下来，避免下一个人重走）：
+
+1. 把 Dcm 的 4 个 `.c` 编进 boot 应用 → 与库对象落在同一 `Dcm.o` 路径，链接期
+   `multiple definition of Dcm_GetContext`；
+2. 在 app 的 `Dcm_Cfg.h` 打开三个宏 → `Dcm_Cfg.c` 内有对应 `#ifdef` 条目，**app 真的会
+   多出 0x34/0x36/0x37 服务**，属于行为变更，已回退（App `text` 确认仍是 240,516）。
+
+**正确修法**（下一任务）：给 boot 单独编一份 Dcm 库——同一组源码 + boot 的 cfg 头，
+输出到独立 target 名；或在 `building.py` 支持"按 app 复制库"。这不是配置问题，是构建
+架构问题，不该在 02.x 里顺手改。
+
+当前状态：App 240,516（0 警告）/ AppB 可构建 / **Boot 链接失败（3 个 Dcm 符号）**。
+
+### 旧记录：Boot 链接失败（已定位）
 
 跑 `build.bat --app=Boot` 时报：
 

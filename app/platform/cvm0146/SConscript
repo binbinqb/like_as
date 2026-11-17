@@ -169,9 +169,12 @@ class LibraryCvm0146(Library):
             # FlashLoader.c 为什么进 boot：0x31 擦槽 / 0x34 登记目标槽 /
             # 0x36 写数据 / 0x37 收尾 / 0x11 复位，全在这一份里。
             # 它只碰 PFlash（FlashAc），与 NvM 走的 DFlash（FeeAc）互不干扰。
+            # perf_mon.c：A6 给 platform_cvm0146.c 的 SysTick 加了
+            # PerfMon_TickIsr / PerfMon_TickResync 调用。boot 也编这份平台
+            # 代码，却漏了这两个实现 —— 链接期 undefined reference。
             keep = ("platform_cvm0146.c", "FlashAc.c", "BootMeta.c",
                     "FeeAc.c", "CanAc.c", "FlashLoader.c",
-                    "PortAc.c", "DioAc.c")
+                    "PortAc.c", "DioAc.c", "perf_mon.c")
             self.source = [o for o in acObjs if os.path.basename(str(o)) in keep] + sdkObjs
         else:
             self.source = list(objs) + _board_srcs
