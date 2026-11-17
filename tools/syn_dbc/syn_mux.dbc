@@ -1,0 +1,16 @@
+VERSION ""
+
+NS_ :
+	NS_DESC_
+	CM_
+	BA_DEF_
+	BA_
+
+BS_:
+
+BU_: BCM EP
+
+BO_ 600 SYN_MuxMsg: 8 EP
+ SG_ Selector : 0|4@1+ (1,0) [0|3] ""  BCM
+ SG_ FieldA m1 : 4|8@1+ (1,0) [0|255] ""  BCM
+ SG_ FieldB m2 : 4|8@1+ (1,0) [0|255] ""  BCM

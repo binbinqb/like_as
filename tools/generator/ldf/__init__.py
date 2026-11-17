@@ -26,7 +26,7 @@ def post_process_messages(p):
                 "min": 0,
                 "max": (1 << size - 1),
                 "unit": "",
-                "InitValue": sigi2["initial"],
+                "InitialValue": sigi2["initial"],  # DBC-01：与 dbc/Com 统一字段名
                 "node": sigi2["subscriber"],
             }
             msg["signals"].append(signal)

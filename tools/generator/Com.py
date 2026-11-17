@@ -98,12 +98,29 @@ def get_signal(msg, name):
     raise Exception("sinal %s not found in msg %s" % (name, msg["name"]))
 
 
+def sig_initial_value(sig, name="<unnamed>"):
+    """读信号的初值，兼容新旧两个字段名，冲突时报错（DBC-01）。
+
+    旧输入用 InitValue（dbc/ldf 历史产物、内联 JSON），新输入统一用
+    InitialValue。两个都有且不相等说明配置来源有冲突 —— 这种情况必须
+    报错停止，不能悄悄挑一个，否则"改了 DBC 但产物没变"这种事故没人发现。
+    """
+    a = sig.get("InitialValue")
+    b = sig.get("InitValue")
+    if (a is not None) and (b is not None) and (a != b):
+        raise Exception("signal %s: InitialValue(%s) != InitValue(%s), fix the source"
+                        % (name, a, b))
+    return a if a is not None else b
+
+
 def gen_signal_init_value(sig, C):
     if sig.get("isGroup", False):
         return
     t0, t1, nBytes = get_signal_info(sig)
     if t0 in ["UINT8N", "SINT8N"]:
-        InitialValue = sig.get("InitialValue", "[0]")
+        InitialValue = sig_initial_value(sig, sig.get("name", "<unnamed>"))
+        if InitialValue is None:
+            InitialValue = "[0]"
         cstr = ""
         values = eval(InitialValue)
         if type(values) not in [list, tuple]:
@@ -112,7 +129,9 @@ def gen_signal_init_value(sig, C):
             cstr += "0x%x, " % (x)
         C.write("static const %s %s_InitialValue[%s] = { %s };\n" % (t1, sig["name"], nBytes, cstr))
     else:
-        InitialValue = sig.get("InitialValue", 0)
+        InitialValue = sig_initial_value(sig, sig.get("name", "<unnamed>"))
+        if InitialValue is None:
+            InitialValue = 0
         C.write("static const %s %s_InitialValue = %s;\n" % (t1, sig["name"], InitialValue))
 
 
@@ -888,10 +907,14 @@ def GenRTE(cfg, dir):
                 t0, t1, nBytes = get_signal_info(sig)
                 sig[".type"] = t0
                 if t0 in ["UINT8N", "SINT8N"]:
-                    InitialValue = sig.get("InitialValue", [0])
+                    InitialValue = sig_initial_value(sig, sig.get("name", "<unnamed>"))
+                    if InitialValue is None:
+                        InitialValue = [0]
                     continue  # TODO: has issue
                 else:
-                    InitialValue = sig.get("InitialValue", 0)
+                    InitialValue = sig_initial_value(sig, sig.get("name", "<unnamed>"))
+                    if InitialValue is None:
+                        InitialValue = 0
                 sig[".init"] = InitialValue
                 sigL.append(sig)
     for sig in sigL:

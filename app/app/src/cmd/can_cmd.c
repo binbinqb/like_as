@@ -8,7 +8,7 @@
  * @note 用法：
  *       - `can`                     状态（PDU / 控制器模式 / 自测自动发送）
  *       - `can pdu offline|online`  PDU 模式
- *       - `can ctrl stop|start`     控制器模式
+ *       - `can ctrl stop|start [ch]` 控制器模式（通道缺省 0，CAN-01 验收入口）
  *       - `can trcv sleep|normal`   收发器模式
  *       - `can auto on|off`         主循环自测帧（0x123/0x124/ext）自动发送
  *       - `can counters [clear]`    接收计数（按邮箱 / 按 PDU）
@@ -57,7 +57,7 @@ static void can_cmd_state(void)
  * @param[in] val  子命令值
  * @return 0 成功；非 0 失败
  */
-static int can_cmd_set(const char *kind, const char *val)
+static int can_cmd_set(const char *kind, const char *val, uint8_t ch)
 {
 	Std_ReturnType rc = E_NOT_OK;
 
@@ -71,10 +71,13 @@ static int can_cmd_set(const char *kind, const char *val)
 			return SH_ERR_PARAM;
 		}
 	} else if (strcmp(kind, "ctrl") == 0) {
+		/* CAN-01 验收入口：`can ctrl stop|start [ch]`，通道缺省 0。
+		 * 反复 stop/start 走的就是 CanSM 重启的驱动路径
+		 * （Can_SetControllerMode(STARTED) 每次都进 CanAc_Init）。 */
 		if (strcmp(val, "stop") == 0) {
-			rc = CanIf_SetControllerMode(0u, CAN_CS_STOPPED);
+			rc = CanIf_SetControllerMode(ch, CAN_CS_STOPPED);
 		} else if (strcmp(val, "start") == 0) {
-			rc = CanIf_SetControllerMode(0u, CAN_CS_STARTED);
+			rc = CanIf_SetControllerMode(ch, CAN_CS_STARTED);
 		} else {
 			sh_puts(SH_RET_PARA);
 			return SH_ERR_PARAM;
@@ -164,8 +167,18 @@ static int sh_cmd_can(int argc, char *argv[])
 		sh_puts(SH_RET_OK);
 		return SH_OK;
 	}
-	if (argc > 2) {
-		return can_cmd_set(sub, argv[2]);
+	if ((argc > 2) && (argc <= 4)) {
+		/* 可选第 4 参数是通道号（仅 ctrl 子命令用得上）：`can ctrl start 1` */
+		uint8_t ch = 0u;
+		if (argc == 4) {
+			uint32_t chv = 0u;
+			if (!sh_parse_u32(argv[3], &chv) || (chv > 1u)) {
+				sh_puts(SH_RET_PARA);
+				return SH_ERR_PARAM;
+			}
+			ch = (uint8_t)chv;
+		}
+		return can_cmd_set(sub, argv[2], ch);
 	}
 
 	sh_puts(SH_RET_PARA);

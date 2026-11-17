@@ -2882,6 +2882,31 @@ M23 的整帧对拍会变成随机失败。上车时这行应该是 on，且那�
 | 停发 > 3 s → LOST / byte5 = 0x00 | 一致 |
 | `biz off` 后 `bcm all on` 生效（byte5 = 0x50） | 一致 |
 
+### ✅ 推进指南批次 A：CAN-01/02 + IF-01（第三方评审通过后修复，9/9 上板）
+
+《like_as CAN 协议栈与 DBC 配置链推进指南》（基线 b0de2e9，事实核对 5/5 属实）
+第一轮任务单的驱动与 CanIf 部分：
+
+| ID | 问题 | 修复 | 证据 |
+|----|------|------|------|
+| CAN-01 | `CanAc_Init` 重启分支读栈垃圾 `cfg.msgNum/msgCfg`：`Can.c:84` 每次 STARTED 都进 Init，但 cfg 只在首次配置分支赋值，第二次起按垃圾数量解引用垃圾指针 | 循环前无条件重取 static 翻译表 | `can_restart_check.py` S1/S4a：双通道各 100 次 stop/start 全 OK，收发存活 |
+| CAN-02 | `Can_Write` 无忙检查：邮箱没发完就被覆盖，确认与句柄错位；CanIf 的 CAN_BUSY 排队路径永远不会触发 | 软件占用标志 `s_txPending`：受理置位、TX 完成中断先释放再报确认、bus-off 全清 | S5：无 ACK 时第二帧起被拒（failed 打印 x5，修复前一行都不会打）；S6：bus-off 后占用不死锁 |
+| IF-01 | `CanIf_GetPduMode` 指针检查写反（`DET_VALIDATE(NULL == PduModePtr)`）：合法指针被拒、空指针放过去解引用。DET 关闭时宏为空才碰巧能用 | 改 `NULL !=`；全库仅此一处同模式 | DET 开关两态行为核对 |
+
+DBC-01/02/05 一起修了（批次 C 前置）：
+- **DBC-01** 解析器写 `InitValue`、Com.py 读 `InitialValue` —— 非零初值永远进不了配置。统一字段名，消费端 `sig_initial_value()` 兼容旧名并拒绝冲突值
+- **DBC-02** `get_init`/`get_comment` 只比信号名不比对报文，跨报文同名信号初值串用。现在报文 ID + 信号名双匹配
+- **DBC-05** 多路复用 / SG_MUL_VAL_ / SIG_VALTYPE_ 显式拒绝（NS_ 段同名关键字已排除），不再丢信号后"成功"生成半套配置
+- 判据 `tools/dbc_init_check.py` 12/12（合成 DBC：两条报文同名 State 各自初值 170/85、冲突拒绝、真实矩阵 40 报文/372 信号解析回归）；真实 DBC 无 GenSigStartValue，生成产物零变化（a4 C1a/C4 复核）
+
+第一轮任务单第 6 条「真实矩阵清单」：`tools/mat_report.py` 运行时生成
+（客户 DBC 不入库），交叉对账 DBC / 硬件邮箱表 / CanIf 过滤表 / Hoh 表。
+**当前缺口**：`SSM_OWW 0x18FDCD55` 硬件+软件全未覆盖；`SSM_LightCom 0x18FE4155`
+硬件放行但软件过滤表没配 —— 两处都是真实收不到，不是报告误报。
+
+回归：m3 诊断多帧 18/18、m23 24/24、a1 静态 PASS、a4 7/7、a2 19/19。
+text 239,784 → 240,072（+288：占用表 + 三处检查）。
+
 ### 尚未完成（下一步）
 
 1. **0x27 换成真算法**：现在 `27 01/02` 是桩（种子返回 0、key 任意），

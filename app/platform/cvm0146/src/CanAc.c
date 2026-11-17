@@ -149,6 +149,21 @@ static uint32_t s_isrCount[CAN_CFG_NUM_CHANNELS];
 static PduIdType s_txHandle[CAN_CFG_NUM_CHANNELS][CANAC_MAX_MSG_CFGS];
 
 /**
+ * @brief 发送占用标志：`Can_Write()` 受理后置位，TX 完成中断释放
+ *
+ * @details CAN-02：邮箱只有一个，硬件层正在发或还没发完时再写同一邮箱，
+ *          **上一帧的数据和句柄会被静默覆盖** —— 确认回调里报出去的
+ *          TxPduId 就对不上号（CanTp 的分段流控会因此错乱）。
+ *          所以 `Can_Write()` 先查这个标志，忙就返回 `CAN_BUSY`，
+ *          由 CanIf 决定排队还是让上层重试。
+ *
+ * @note  软件跟踪而不是读硬件 CODE 字段：CODE 的读回值在不同厂商手册里
+ *          语义不一致（"请求中"与"发送中"难区分），软件标志的置位/清零
+ *          点是我们自己定义的，行为可断言。
+ */
+static bool s_txPending[CAN_CFG_NUM_CHANNELS][CANAC_MAX_MSG_CFGS];
+
+/**
  * @brief 每个控制器的 bus-off 累计次数（中断里 +1，主循环读）
  *
  * @details 用 `volatile uint16_t` 而不是 `uint32_t`：Cortex-M4 上 16 位对齐访问
@@ -462,6 +477,9 @@ static void CanAc_MbIsr(uint8_t controller, FlexCanDrvType *obj)
 		FlexCanDrv_ClearMsgObjFlag(obj, (uint8_t)cfg->msgBufId);
 
 		if (cfg->msgType == FLEXCANDRV_MSGTYPE_TX) {
+			/* 发送完成：先释放占用、再报确认 —— 确认回调（CanTp 的分段节拍）
+			 * 里可能立刻发下一帧，占用不先释放会被误判 CAN_BUSY */
+			s_txPending[controller][i] = false;
 			/* 发送完成：把 Can_Write() 时登记的 TxPduId 报上去 */
 			CanIf_TxConfirmation(s_txHandle[controller][i]);
 			continue;
@@ -576,6 +594,7 @@ void CAN1_ORed_0_15_MB_Handler(void)
 static void CanAc_OredIsr(uint8_t controller, FlexCanDrvType *obj)
 {
 	FlexCanDrv_ErrStatusType st;
+	uint32_t i;
 
 	if ((obj == NULL) || (controller >= CAN_CFG_NUM_CHANNELS)) {
 		return;
@@ -601,6 +620,15 @@ static void CanAc_OredIsr(uint8_t controller, FlexCanDrvType *obj)
 	}
 	if (s_busOffCnt[controller] != 0xFFFFu) {
 		s_busOffCnt[controller]++;
+	}
+
+	/* CAN-02：bus-off 时硬件丢弃所有待发帧，TX 完成中断不会来。
+	 * 不清占用标志的话，这个通道所有 TX 邮箱永远显示"忙"，
+	 * 之后所有 Can_Write 都返回 CAN_BUSY，发送功能整体死锁。 */
+	for (i = 0u; i < (uint32_t)s_flexCfgNum[controller]; i++) {
+		if (s_flexCfgs[controller][i].msgType == FLEXCANDRV_MSGTYPE_TX) {
+			s_txPending[controller][i] = false;
+		}
 	}
 
 	/* AUTOSAR 正规路径：Can 驱动在中断里上报 CanIf。
@@ -781,6 +809,13 @@ Std_ReturnType CanAc_Init(uint8_t Controller, const Can_ChannelConfigType *confi
 	/* 4) 打开邮箱中断并放开 NVIC
 	 *    按 intEnable 打开，而不是"只开 RX"：TX 完成中断是 CanTp 分段发送的
 	 *    节拍源，漏掉它会让上层永远等不到 confirmation。 */
+	/* CAN-01：`cfg` 是栈变量，msgNum/msgCfg 只在首次配置分支里赋值；
+	 * 重启分支（s_configured==true，CanSM 每次 NOCOM→FULLCOM 都会走）
+	 * 走到这里时它们还是栈垃圾 —— 下面的循环会按垃圾数量解引用垃圾指针。
+	 * 翻译表是 static 的（见 CanAc_TranslateMsgCfgs 的 @note），这里无条件
+	 * 重取一次即可；首次分支 Configure 用的也是同一份值，重复赋值无副作用。 */
+	cfg.msgNum = s_flexCfgNum[Controller];
+	cfg.msgCfg = s_flexCfgs[Controller];
 	for (i = 0u; i < (uint32_t)cfg.msgNum; i++) {
 		if (cfg.msgCfg[i].intEnable) {
 			FlexCanDrv_EnableMsgObjInterrupt(obj, (uint8_t)cfg.msgCfg[i].msgBufId);
@@ -970,13 +1005,26 @@ Std_ReturnType Can_Write(Can_HwHandleType Hth, const Can_PduType *PduInfo)
 	}
 
 	/* 登记发送句柄：中断里要靠它把"邮箱发完了"翻译成 TxPduId。
-	 * 用 msgBufId 反查配置表下标，找不到就说明 HTH 表与邮箱表不一致（配置错误） */
+	 * 用 msgBufId 反查配置表下标，找不到就说明 HTH 表与邮箱表不一致（配置错误）
+	 * —— 登记不上却照发，确认会报成别的 PDU 的句柄，静默错位比报错更难查 */
 	for (i = 0u; i < (uint32_t)s_flexCfgNum[hoh->controller]; i++) {
 		if (s_flexCfgs[hoh->controller][i].msgBufId == hoh->msgBufId) {
-			s_txHandle[hoh->controller][i] = PduInfo->swPduHandle;
 			break;
 		}
 	}
+	if (i == (uint32_t)s_flexCfgNum[hoh->controller]) {
+		return E_NOT_OK;
+	}
+
+	/* CAN-02：上一帧还没发完就拒绝 —— 忙时覆盖会让已受理的数据、
+	 * 登记的句柄被新请求替换，两边的确认全都对不上号。
+	 * 返回 CAN_BUSY 后由 CanIf 排队（packet pool）或让上层重试。 */
+	if (s_txPending[hoh->controller][i]) {
+		return CAN_BUSY;
+	}
+
+	s_txHandle[hoh->controller][i] = PduInfo->swPduHandle;
+	s_txPending[hoh->controller][i] = true;
 
 	memset(&msg, 0, sizeof(msg));
 	msg.msgBufId = (uint8_t)hoh->msgBufId;

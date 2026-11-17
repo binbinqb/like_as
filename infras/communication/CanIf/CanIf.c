@@ -345,8 +345,11 @@ Std_ReturnType CanIf_GetPduMode(uint8_t ControllerId, CanIf_PduModeType *PduMode
   DET_VALIDATE(ControllerId < CANIF_CONFIG->numOfCtrls, 0x0A, CANIF_E_PARAM_CONTROLLERID,
                return E_NOT_OK);
 
-  /* @SWS_CANIF_00657 */
-  DET_VALIDATE(NULL == PduModePtr, 0x0A, CANIF_E_PARAM_POINTER, return E_NOT_OK);
+  /* @SWS_CANIF_00657 —— IF-01：原来写成 `NULL == PduModePtr`，语义整个反了：
+   * DET_VALIDATE 是"条件为假才报错"，于是合法指针被拒（每次调用都 E_NOT_OK），
+   * 空指针反而放过去被 `*PduModePtr = ...` 解引用。DET 关掉时（USE_DET 未定义，
+   * 宏展开为空）碰巧能工作，所以一直没暴露 —— 这正是"生产防护不能只靠 DET"的例子。 */
+  DET_VALIDATE(NULL != PduModePtr, 0x0A, CANIF_E_PARAM_POINTER, return E_NOT_OK);
 
   *PduModePtr = CANIF_CONFIG->CtrlContexts[ControllerId].PduMode;
 
