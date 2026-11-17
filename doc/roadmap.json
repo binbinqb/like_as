@@ -122,13 +122,20 @@
    "title": "Boot 的开发宽松策略怎么与量产隔离",
    "decision": "用编译期 BOOT_MODE_PRODUCTION 而不是运行时标志：开发构建（默认）允许「陈旧 meta 降级照跳」与「向量表兜底」，量产构建（--prod）两者全关——CRC 不符直接判 INVALID 回滚，无有效 meta 一律停 UDS。",
    "impact": "build.bat --app=Boot --prod 出量产镜像（51,896，与旧基线一致）；app 侧同一宏剔除 bootfault 调试命令（量产 App 241,084、字符串 0 处）。代价：量产构建下 J-Link 直烧 app 后需要同时修 meta，否则会回滚到旧槽。"
+  },
+  {
+   "id": "D-GATE-NODE",
+   "date": "2026-11-17",
+   "title": "配置生成的依赖怎么声明到 SCons 图上",
+   "decision": "用 stamp 节点（env.Command('.gen.stamp', 70 个输入, sync动作)）+ 每个目标文件 env.Depends，而不是把 7 个产物直接声明成 Command 的 target。App 自己的 .c 也显式 env.Object 后才能挂依赖。",
+   "impact": "依赖可用 --tree 复核、-c 不会删入库产物；缺 DBC 时它不在输入清单里，SCons 不报源缺失，自动退回已入库产物 —— 不需要为降级写特例。"
   }
  ],
  "current": {
   "module": 22,
   "task": 3,
-  "text": "失败启动恢复：D1/D2/D3 已修（Host 双模式全过），待上板用 bootfault 复核回滚",
-  "next": "① 上板跑 H1~H3：bootfault meta-crc → 连续复位 4 次看回滚日志；meta-blank 看兜底与量产停 UDS；顺带量选槽耗时。② 再做 02.8 的 SCons 依赖边（env.Command/Depends）。"
+  "text": "失败启动恢复：D1/D2/D3 已修、Host 双模式全过；02.8 依赖边已上 SCons 图",
+  "next": "① 上板跑 H1~H3（bootfault meta-crc → 连续复位 4 次看回滚；meta-blank 看兜底/停 UDS）与选槽耗时；② 之后按顺序转 02.6 的 PduR 收口。"
  },
  "modules": [
   {
@@ -266,7 +273,7 @@
      "text": "SCons 自动生成集成",
      "check": "配置改动触发重编，无需手工跑生成器",
      "state": "PASS",
-     "evidence": "tools/gen_gate.py（输入指纹：4 JSON + 2 DBC + generator/**/*.py + 3 注入脚本 + config.py；产物指纹：7 个入库文件，LF 归一比对）；SConstruct 在 SConscript 之前短路 --generate，building.py 在 Building() 开头跑 config.py sync，-c/-n/-h 不触发；未变 0.5 s 跳过、变了跑完五步（7.2 s）；缺 DBC 三态：无状态→degrade 用入库产物、输入变→blocked rc=2、产物漂移→告警。自测 gen_gate_check 15/15（含证伪：手改产物、删产物、输入集变化、并发锁）。实测链路：给 Com.py 插探针 → [GEN] → 只重编 1 个 TU → 镜像 241084/1712/15040 不变；撤探针后回到基线、git diff 为空。顺带修：.gendb.pkl 缓存键漏了生成器源码（改生成器不生效）、Com_Cfg.c 工作区 CRLF 与仓库 LF 不一致（527384 vs 510550 B）、.gendb.pkl 原子落盘。三镜像全量重建：App 241084/1712/15040、AppB 241084/1716/15040、Boot 51896/168/9328。"
+     "evidence": "tools/gen_gate.py（输入指纹：4 JSON + 2 DBC + generator/**/*.py + 3 注入脚本 + config.py；产物指纹：7 个入库文件，LF 归一比对）；SConstruct 在 SConscript 之前短路 --generate，building.py 在 Building() 开头跑 config.py sync，-c/-n/-h 不触发；未变 0.5 s 跳过、变了跑完五步（7.2 s）；缺 DBC 三态：无状态→degrade 用入库产物、输入变→blocked rc=2、产物漂移→告警。自测 gen_gate_check 15/15（含证伪：手改产物、删产物、输入集变化、并发锁）。实测链路：给 Com.py 插探针 → [GEN] → 只重编 1 个 TU → 镜像 241084/1712/15040 不变；撤探针后回到基线、git diff 为空。顺带修：.gendb.pkl 缓存键漏了生成器源码（改生成器不生效）、Com_Cfg.c 工作区 CRLF 与仓库 LF 不一致（527384 vs 510550 B）、.gendb.pkl 原子落盘。三镜像全量重建：App 241084/1712/15040、AppB 241084/1716/15040、Boot 51896/168/9328。 ｜ 第二步（依赖边上图）：生成改为 SCons 节点 .gen.stamp —— env.Command 声明 70 个输入（复用 gen_gate.INPUT_*，单一事实来源），Library.objs() 与 Application.build() 给每个 .o 挂 env.Depends。--tree 实测：动作输入 70 项、.gen.stamp 是 56 个目标文件的前置；不改输入时动作根本不执行（连 SKIP 都不打印）；改一行 JSON 触发 [GEN]；scons -c 输出里生成相关行数为 0。App 源码显式 env.Object 后三镜像尺寸不变（App/AppB 242,184、Boot 51,996）。"
     },
     {
      "text": "按需接入原版 JSON Editor",

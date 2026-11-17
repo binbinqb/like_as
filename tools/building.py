@@ -3,6 +3,7 @@
 
 import os
 import glob
+import io
 import shutil
 import subprocess
 import SCons
@@ -2301,6 +2302,12 @@ class Library(BuildBase):
                 objs += env.Object(
                     c, CPPPATH=CPPPATH, CPPDEFINES=CPPDEFINES, CPPFLAGS=CPPFLAGS, CFLAGS=CFLAGS, CXXFLAGS=CXXFLAGS
                 )
+        # (02.8) 每个目标文件都依赖"配置已生成"这个节点。
+        # 生成的 *_Cfg.h 会被这些 TU include，顺序错了就会用到上一版配置。
+        _stamp = GetConfigStamp(env)
+        for _o in objs:
+            if isinstance(_o, SCons.Node.FS.File):
+                env.Depends(_o, _stamp)
         return objs
 
     def build(self):
@@ -2461,6 +2468,26 @@ class Application(BuildBase):
         LIBPATH = self.sortL(LIBPATH)
         CPPPATH = self.sortL(CPPPATH)
         CPPDEFINES = self.sortL(CPPDEFINES)
+        # (02.8) 把 App 自己的 .c 显式转成目标文件，才能给它们挂"生成已完成"依赖。
+        # 不转的话它们由 `env.Program` 内部编译，依赖关系挂不上去 ——
+        # 那样"配置刚改完、头文件还没重写就开始编 app"只是碰巧不出事（库先编完）。
+        _stamp = GetConfigStamp(env)
+        _explicit = []
+        for _obj in objs:
+            if isinstance(_obj, SCons.Node.FS.File) and str(_obj).endswith((".c", ".cpp")):
+                _o = env.Object(
+                    _obj,
+                    CPPPATH=CPPPATH,
+                    CPPDEFINES=CPPDEFINES,
+                    CPPFLAGS=CPPFLAGS,
+                    CXXFLAGS=CXXFLAGS,
+                )
+                env.Depends(_o, _stamp)
+                _explicit += _o
+            else:
+                _explicit.append(_obj)
+        objs = _explicit
+
         if "LINK_OPTION_FILE" in env:
             global BUILD_DIR
             with open(f"{BUILD_DIR}/objs_list.txt", "w") as fp:
@@ -2615,11 +2642,88 @@ class Qemu:
 def _is_passive_build():
     """判断这次 scons 调用会不会写文件：不写的（清理/干跑/帮助）不触发生成。
 
-    为什么要判：`scons -c` 把生成链也跑一遍，等于"清理时顺手改配置"，
-    之后 `git status` 一片脏；`scons -n` 更是名义上的 dry-run。
+    @note (02.8 第二步) 生成改成 SCons 节点（`ConfigStamp`）之后，这个判断
+          的主要作用只剩 `--generate` 之外的兜底：`scons -c` 不会去构建 stamp，
+          SCons 自己就不会跑生成动作。
     """
     passive = ("-c", "--clean", "-n", "--dry-run", "-h", "--help", "-H")
     return any(a in sys.argv[1:] for a in passive)
+
+
+def ConfigInputs():
+    """生成链的输入文件清单（**只列存在的**）。
+
+    @details 清单本身不在这里维护 —— 直接复用 `tools/gen_gate.py` 的
+             `INPUT_JSON` / `INPUT_DBC` / `INPUT_TOOLS` / `INPUT_GEN_DIR`。
+             两处各写一份的下场是"门禁认得的输入"与"SCons 认得的输入"慢慢分叉，
+             然后出现"改了却不重生成"或"没改却重生成"。
+
+    @note 客户 DBC 不入库：缺的时候它就不在清单里，SCons 不会因此报"源文件
+          缺失"，构建退回使用已入库的配置产物（`gen_gate` 的 degrade 路径）。
+          哪天 DBC 补进来，清单变化 → stamp 重建 → 自动生成。
+
+    @return 绝对路径列表
+    """
+    from gen_gate import INPUT_JSON, INPUT_DBC, INPUT_TOOLS, INPUT_GEN_DIR, cfg_dir
+
+    files = []
+    cd = cfg_dir(RootDir)
+    for rel in INPUT_JSON + INPUT_DBC:
+        p = os.path.join(cd, *rel.split("/"))
+        if os.path.isfile(p):
+            files.append(p)
+    for rel in INPUT_TOOLS:
+        p = os.path.join(RootDir, *rel.split("/"))
+        if os.path.isfile(p):
+            files.append(p)
+    genDir = os.path.join(RootDir, *INPUT_GEN_DIR.split("/"))
+    for p in sorted(glob.glob(os.path.join(genDir, "**", "*.py"), recursive=True)):
+        if os.path.basename(p) != "parsetab.py":
+            files.append(p)
+    return files
+
+
+def _ConfigStampAction(target, source, env):
+    """stamp 的构建动作：跑一次 `config.py sync`，成功后写 stamp 文件。
+
+    @note 返回非 0 时 SCons 会把这次构建判失败 —— 正是我们要的：配置链不通过
+          就不该继续编译（拿旧配置编出来的镜像"看起来成功"，比失败更危险）。
+    """
+    rc = ConfigSync(force=GetOption("gen"))
+    if rc != 0:
+        return rc if rc > 0 else 1
+    with io.open(str(target[0]), "w", encoding="utf-8", newline="\n") as f:
+        f.write("config generation stamp: %d inputs\n" % len(source))
+    return 0
+
+
+CONFIG_STAMP = None
+
+
+def GetConfigStamp(env):
+    """拿到（首次则创建）"配置生成"这个 SCons 节点。
+
+    @details 为什么用 stamp 文件而不是把 7 个产物声明成 `Command` 的 target：
+             那些产物里有 `Can_Cfg.c` / `CanIf_Cfg.c` 这类**手写 + @generated 区块**
+             的文件，一旦成为 SCons 的 target，`scons -c` 会把它们从工作区删掉 ——
+             而这几个文件是入库的。stamp 只表达"这批输入已经处理过"，
+             不碰任何产物。
+
+    @param[in] env 任一构建环境（动作是纯 Python 函数，用哪个 env 都一样）
+    @return stamp 节点
+    """
+    global CONFIG_STAMP
+
+    if CONFIG_STAMP is not None:
+        return CONFIG_STAMP
+
+    stampPath = os.path.join(RootDir, ".gen.stamp")
+    CONFIG_STAMP = env.Command(stampPath, ConfigInputs(), _ConfigStampAction)
+    # `--gen`：无条件重生成。默认 SCons 只在输入变化时跑动作，
+    # 这里把节点标成 AlwaysBuild 才能"输入没变也重跑一遍"。
+    if GetOption("gen"):
+        env.AlwaysBuild(CONFIG_STAMP)
+    return CONFIG_STAMP
 
 
 def ConfigSync(force=False):
@@ -2646,22 +2750,17 @@ def Building():
     libName = GetOption("library")
 
     # ------------------------------------------------------------------
-    # (02.8) 配置生成门禁
+    # (02.8) 配置生成：声明成一个 SCons 节点，由所有目标文件依赖它
     #
-    # 位置很关键：必须在**任何库的 config() 之前**。`RegisterConfig()` 在
-    # 那里调 `Generate()`，它按 `.gendb.pkl` 的哈希决定要不要重生成 ——
-    # 但注入（sync_can/sync_canif/sync_pdur）与 Com 拷入不在那条链上，
-    # 只靠它就会出现"GEN/ 是新的、config/ 是旧的"。
+    # 位置很关键：必须在**任何库的 config() / objs() 之前** —— `GetConfigStamp`
+    # 首次调用时才创建节点，这里先建好，后面 `Library.objs()` 才有东西可依赖。
     #
-    # `--generate`（只生成不编译）在 SConstruct 里就短路了，不走这里：
-    # 那个模式不能带 --app，一旦进到 SConscript 解析就会撞 variant_dir。
+    # 为什么不在这里直接跑：那样生成发生在解析阶段，SCons 的图上看不到这条边，
+    # 也就没法用 `--tree` 复核、`-c` 也没法清。现在它是一条真实的依赖：
+    #   输入（4 JSON + 2 DBC + generator/*.py + 注入脚本）→ .gen.stamp → 各 .o
     # ------------------------------------------------------------------
     if not _is_passive_build():
-        rc = ConfigSync(force=GetOption("gen"))
-        if rc != 0:
-            print("scons: *** 配置生成链未通过（config.py sync rc=%d），停止构建" % rc)
-            print("scons: *** 拿旧配置继续编会得到一个'看起来成功'的镜像，不做。")
-            sys.exit(rc)
+        GetConfigStamp(DefaultEnvironment())
 
     if appName not in __apps__ and libName not in __libraries__:
         print("avaliable apps:", [k for k in __apps__.keys()])

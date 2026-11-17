@@ -56,6 +56,12 @@ tools/generator/.gendb.pkl
 /.gendb.pkl.*.tmp
 # 生成锁：App / AppB 并发构建时串行化生成，进程崩溃会留下残留（超时自动清）。
 /.genlock
+# 配置生成的 stamp 节点（SCons Command 的 target，用来表达这批输入已处理过）。
+# 它是构建中间物，换机器/清构建都会重建。
+/.gen.stamp
+# 配置生成的 stamp 节点（SCons Command 的 target，用来表达这批输入已处理过）。
+# 它是构建中间物，换机器/清构建都会重建。
+/.gen.stamp
 tools/generator/dbc/parsetab.py
 tools/generator/dbc/parser.out
 tools/generator/dbc/*.out
