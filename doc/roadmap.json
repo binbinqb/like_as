@@ -97,10 +97,10 @@
   }
  ],
  "current": {
-  "module": 26,
-  "task": 0,
-  "text": "26.1 Host 最小构建（已完成，14/14）",
-  "next": "10.3 最小 RTE 运行时：先定端口/类型/有效性接口，再接入 Host 用例"
+  "module": 10,
+  "task": 3,
+  "text": "10.4 迁移 BcmBiz 示例：业务改走 Rte_Read_ParkBrake / Rte_Write_BrakeLamp",
+  "next": "迁移后用 Host 用例回归，确认行为不变、业务不再 include bcm_sig.h"
  },
  "modules": [
   {
@@ -537,8 +537,8 @@
     {
      "text": "运行上游最小 RTE 生成例程",
      "check": "记录输入、依赖和输出",
-     "state": "TODO",
-     "evidence": ""
+     "state": "PARTIAL",
+     "evidence": "已读 tools/generator/Rte.py 与 asar.py；未实跑（依赖 ARXML 输入）"
     },
     {
      "text": "明确端口、类型、来源与有效性",
@@ -549,8 +549,8 @@
     {
      "text": "明确为**新建最小 RTE 运行时**（生成器已有 Rte.py，运行时 Rte.h 是空壳）",
      "check": "生成接口与绑定可重复，运行时能编译链接",
-     "state": "TODO",
-     "evidence": "tools/generator/Rte.py 存在；infras/include/Rte.h 仅 include guard"
+     "state": "PASS",
+     "evidence": "rte.c / rte_cfg.c + rte.h：switch 端口、四态映射、方向校验；Host 14/14"
     },
     {
      "text": "迁移 BcmBiz 示例",

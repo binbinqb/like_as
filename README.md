@@ -2942,6 +2942,25 @@ text 239,784 → 240,072（+288：占用表 + 三处检查）。
 （源 `doc/roadmap.json`，渲染 `tools/roadmap_build.py`）——五态
 PASS/PARTIAL/TODO/BLOCKED/SKIP、阶段依赖图、开发顺序、验收证据、决策记录。
 
+### ✅ 10.3 最小 RTE 运行时：业务只认端口名，不再看绑定层的枚举
+
+新增 `app/app/src/rte.h` / `rte.c` / `rte_cfg.c`（端口表）。
+
+| 设计点 | 做法 | 为什么 |
+|---|---|---|
+| 值 + 有效性 | 值走指针出，有效性走返回值 | 业务不必每处写 `if (v == VALID)`；漏判就拿到 `INVALID` |
+| 四态映射 | VALID→`RTE_E_OK`、INVALID→`RTE_E_INVALID`、TIMEOUT→`RTE_E_MAX_AGE_EXCEEDED`、NEVER→`RTE_E_NEVER_RECEIVED` | **一一对应不合并**：TIMEOUT 该保持输出、INVALID 该进安全态，合并后业务失去判断依据 |
+| 端口方向 | 读输出端口、写输入端口一律拒绝 | 接反要在第一次调用暴露，而不是总线上出现自己发给自己的帧 |
+| 端口表 | `Rte_PortCfg[RTE_PORT_NUM]` + 负数组长度做编译期长度检查 | 少写一行 C 会补 0，端口会静默指到信号号 0 |
+| 不做 runnable 调度 | `BcmBiz_MainFunction()` 仍由 `main.c` 调用 | 调度表是 10.5 的事，先加只会多一层没人验证的间接 |
+| 不做 init | TX 初值仍由 `BcmSig_Init()` 写 | 两个初始化源 = 谁后跑谁赢 |
+
+Host 用例 `test_rte.c` **14/14**（含 raw=2 与 raw=3 的区分：前者是"有效的坏消息"，
+后者是"没有消息"）；原 `test_bcm` 14/14 作为回归。
+
+ARM 侧 `text` 不变（240,072）：RTE 目前还没有调用者，`--gc-sections` 把它回收了。
+10.4 迁移 BcmBiz 之后才会真正占空间。
+
 ### 尚未完成（下一步）
 
 1. **0x27 换成真算法**：现在 `27 01/02` 是桩（种子返回 0、key 任意），
