@@ -3044,6 +3044,35 @@ $ python tools/config.py validate
 `generate` 跑完 `git status` 只显示脚本自身的改动（产物零差异），说明
 CLI 没改变生成结果——它是入口，不是新逻辑。
 
+### ✅ 02.3 三方 PDU 一致性：`config.py check-pdu` + 自测
+
+真正的"共享注册表"还没做（三份 JSON 仍各自 `extract`），但**验收判据先立起来**：
+
+| 检查 | 抓什么 |
+|---|---|
+| dangling | PduR 引用的 `COM_*` / `CANIF_*` 在对应头文件里不存在 |
+| index-mismatch | `PDUR_NUM_ROUTING_PATHS` 与 Src/Dst 条目数不一致（路由索引错位） |
+| duplicate | 同一 `CANIF_RX_*` 在表里出现两次 |
+| id-conflict | 同通道内两条报文 `(canid & mask)` 相同 |
+
+真实配置跑出来是 **PASS**（Com 424 宏 / CanIf 79 宏 / 48 条 RX / 51 条路径）。
+
+**一个永远 PASS 的检查器等于没有**，所以加了 `tools/pdu_selftest.py`：
+把配置复制到临时目录，注入三类缺陷，要求检查器必须失败。
+
+```
+$ python tools/pdu_selftest.py
+  PASS  dup-rx → 报出 duplicate
+  PASS  drop-com → 报出 dangling
+  PASS  bad-paths → 报出 index-mismatch
+3/3 cases detected
+```
+
+过程中还砍掉一条**错误的检查**：原本想查"每条 CanIf RX 是否在 PduR 有对应
+符号"，跑出来 48 个假阳性——PduR 只有少数几条共享路径（`PDUR_CANIF_TO_COM_RX=7`），
+48 条报文复用同一条、靠 PDU id 区分。按符号查是错的方法，已删除并在代码里
+写明原因，避免下一个人再加回来。
+
 ### 尚未完成（下一步）
 
 1. **0x27 换成真算法**：现在 `27 01/02` 是桩（种子返回 0、key 任意），

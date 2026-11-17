@@ -17,6 +17,7 @@
          | `import-dbc` | 解析 DBC 并统计，核对三份 JSON 的引用 | 只读 |
          | `validate` | 矩阵 vs 硬件邮箱 vs CanIf 过滤 vs Hoh 对账 | 只读 |
          | `generate` | 跑生成器 + 注入 + 拷入 config，再用 a4 静态断言复核 | **会写** |
+         | `check-pdu` | 三方 PDU 注册一致性：重复 / 悬空引用 / ID 冲突 / 路由索引错位 | 只读 |
 
          @note @section CFGTOOL_GAPS `validate` 判据的来源
          判定逻辑**不在本文件**，而是复用 `mat_report.analyze_channel()`：
@@ -42,13 +43,16 @@
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-CFG = os.path.join(ROOT, "app", "platform", "cvm0146", "src", "config")
+# 允许指向别处：自测脚本用临时目录构造"有缺陷的配置"来证明判据能抓到问题。
+CFG = os.environ.get("LIKEAS_CFG_DIR") or os.path.join(
+	ROOT, "app", "platform", "cvm0146", "src", "config")
 
 sys.path.insert(0, HERE)
 import mat_report as mr  # noqa: E402  （同一目录下的对账实现，复用而不是复制）
@@ -186,6 +190,125 @@ def cmd_generate(args):
 	return 0
 
 
+# ============================== [ check-pdu ] ==============================
+
+def _defines(path, prefix):
+	"""收集 `#define <prefix>xxx <number>` 形式的符号（用于判断引用是否存在）。"""
+	import re
+	out = {}
+	if not os.path.isfile(path):
+		return out
+	text = mr.strip_comments(io_read(path))
+	for m in re.finditer(r"#define\s+(%s\w+)\s+\(?(\d+)u?\)?" % prefix, text):
+		out[m.group(1)] = int(m.group(2))
+	return out
+
+
+def io_read(path):
+	with open(path, encoding="utf-8", errors="replace") as f:
+		return f.read()
+
+
+def _pdu_macro(path, name):
+	"""读一个 `#define NAME (N)` 的数值（PDUR_MANUAL_PATHS 这类）。"""
+	import re
+	text = io_read(path)
+	m = re.search(r"#define\s+%s\s+\(?(\d+)\)?" % re.escape(name), text)
+	return int(m.group(1)) if m else None
+
+
+def _canif_rx_rows():
+	"""解析 CanIf_Cfg.c 的 RX 表：[(ch, rxInd, symbol, canid, mask, hoh)]。"""
+	import re
+	path = os.path.join(CFG, "CanIf_Cfg.c")
+	text = mr.strip_comments(io_read(path))
+	rows = []
+	for m in re.finditer(r"CanIf_RxPdus_(CAN\d+)\[\]\s*=\s*\{(.*?)\n\};", text, re.S):
+		ch = int(m.group(1)[-1])
+		for ent in re.finditer(r"\{([^{}]+)\}", m.group(2)):
+			f = [x.strip() for x in ent.group(1).split(",") if x.strip()]
+			if len(f) < 4:
+				continue
+			try:
+				canid = int(f[2].rstrip("uU"), 0)
+				mask = int(f[3].rstrip("uU"), 0)
+			except ValueError:
+				continue
+			rows.append({"ch": ch, "rxInd": f[0], "symbol": f[1],
+			             "canid": canid, "mask": mask,
+			             "hoh": f[4] if len(f) > 4 else "?"})
+	return rows
+
+
+def cmd_check_pdu(args):
+	"""三方 PDU 注册一致性。
+
+	"共享注册表"在当前架构里还不存在（三份 JSON 各自 extract），
+	所以这里做的是它的**验收判据**：如果三份产物之间出现重复、悬空引用、
+	ID 冲突或路由索引错位，必须能报出来，而不是等链接/上板才发现。
+	"""
+	print("== PDU 注册一致性：Com / CanIf / PduR ==")
+
+	com_syms = _defines(os.path.join(CFG, "Com_Cfg.h"), "COM_")
+	canif_syms = _defines(os.path.join(CFG, "CanIf_Cfg.h"), "CANIF_")
+	problems = []
+
+	# 1) 悬空引用：PduR 引用的符号必须在对应头里定义
+	pdur_text = mr.strip_comments(io_read(os.path.join(CFG, "PduR_Cfg.c")))
+	refs_com = set(re.findall(r"\bCOM_[A-Z0-9_]+\b", pdur_text))
+	refs_canif = set(re.findall(r"\bCANIF_[A-Z0-9_]+\b", pdur_text))
+	for sym in sorted(refs_com):
+		if sym not in com_syms:
+			problems.append(("dangling", "PduR → Com", sym, "Com_Cfg.h 没有这个宏"))
+	for sym in sorted(refs_canif):
+		if sym not in canif_syms:
+			problems.append(("dangling", "PduR → CanIf", sym, "CanIf_Cfg.h 没有这个宏"))
+
+	# 2) 路由索引错位：Src / Dst 条目数必须等于 PDUR_NUM_ROUTING_PATHS
+	manual = _pdu_macro(os.path.join(CFG, "PduR_Cfg.h"), "PDUR_MANUAL_PATHS")
+	gen = _pdu_macro(os.path.join(CFG, "PduR_Cfg.h"), "PDUR_CAN1_PATHS")
+	total = (manual or 0) + (gen or 0)
+	n_src = pdur_text.count("PDUR_MODULE_", 0, pdur_text.find("PduR_DstPdu"))
+	n_dst = pdur_text.count("PDUR_MODULE_", pdur_text.find("PduR_DstPdu"))
+	if (n_src != total) or (n_dst != total):
+		problems.append(("index-mismatch", "PduR", "PDUR_NUM_ROUTING_PATHS",
+		                 "声明的路径数 %d，Src 条目 %d / Dst 条目 %d" % (total, n_src, n_dst)))
+
+	# 3) 重复与 ID 冲突：同一通道内 (canid & mask) 不能出现两次
+	rows = _canif_rx_rows()
+	seen_sym, seen_id = {}, {}
+	for r in rows:
+		key = (r["ch"], r["canid"] & r["mask"])
+		if r["symbol"] in seen_sym:
+			problems.append(("duplicate", "CanIf RX", r["symbol"],
+			                 "同一 PDU 在表里出现两次（通道 %d）" % r["ch"]))
+		seen_sym[r["symbol"]] = True
+		if key in seen_id:
+			problems.append(("id-conflict", "CanIf RX", r["symbol"],
+			                 "与 %s 撞 ID/掩码（ch%d 0x%08X/0x%08X）"
+			                 % (seen_id[key], r["ch"], r["canid"], r["mask"])))
+		else:
+			seen_id[key] = r["symbol"]
+
+	# 注：不做"CanIf 每条报文是否在 PduR 有路径"的符号级检查 —— PduR 只有
+	# 少数几条**共享路径**（如 PDUR_CANIF_TO_COM_RX=7），48 条 RX 报文复用
+	# 同一条路径、靠 PDU id 区分。按符号查会得到 48 个假阳性。
+
+	print("Com 宏 %d 个 / CanIf 宏 %d 个 / CanIf RX 表 %d 条 / PduR 路径 %d 条"
+	      % (len(com_syms), len(canif_syms), len(rows), total))
+
+	if problems:
+		print("\n| 类型 | 位置 | 符号 | 说明 |")
+		print("|---|---|---|---|")
+		for kind, where, sym, detail in problems:
+			print("| %s | %s | %s | %s |" % (kind, where, sym, detail))
+		print("\n[FAIL] 共 %d 处不一致。" % len(problems))
+		return 0 if args.warn else 1
+
+	print("\n[PASS] 无重复、无悬空引用、无 ID 冲突、路由索引一致。")
+	return 0
+
+
 # ============================= [ import-dbc ] =============================
 
 
@@ -264,6 +387,10 @@ def main():
 	g = sub.add_parser("generate", help="生成 + 注入 + 拷入 + 静态复核")
 	g.add_argument("--force", action="store_true", help="忽略缓存强制重新生成")
 	g.set_defaults(func=cmd_generate)
+
+	c = sub.add_parser("check-pdu", help="三方 PDU 注册一致性（只读）")
+	c.add_argument("--warn", action="store_true", help="有不一致也返回 0")
+	c.set_defaults(func=cmd_check_pdu)
 
 	i = sub.add_parser("import-dbc", help="解析 DBC 并核对 JSON 引用（只读）")
 	i.add_argument("--dbc", default=DBC1, help="DBC 路径，默认 can1.dbc")
