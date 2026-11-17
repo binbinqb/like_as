@@ -1,0 +1,22 @@
+{
+  "class": "Can",
+  "canIfPduIdBase": 23,
+  "pdurIdBase": 9,
+  "rxPfToMb": {
+    "0xEB": 8,
+    "0xEC": 9,
+    "0xEE": 10,
+    "0xF0": 11,
+    "0xFD": 12,
+    "0xFE": 13,
+    "0xFF": 14
+  },
+  "txPdus": [
+    {"dbc": "BCM_LCSF", "short": "LCSF", "canIfMacro": "CANIF_TX_CAN1_LCSF", "pdurMacro": "PDUR_CAN1_BCM_LCSF_TX"},
+    {"dbc": "BCM_Ctrl", "short": "CTRL", "canIfMacro": "CANIF_TX_CAN1_CTRL", "pdurMacro": "PDUR_CAN1_BCM_CTRL_TX"},
+    {"dbc": "BCM_OEL", "short": "OEL", "canIfMacro": "CANIF_TX_CAN1_OEL", "pdurMacro": "PDUR_CAN1_BCM_OEL_TX"},
+    {"dbc": "BCM_OWW", "short": "OWW", "canIfMacro": "CANIF_TX_CAN1_OWW", "pdurMacro": "PDUR_CAN1_BCM_OWW_TX"},
+    {"dbc": "BCM_DoorCtrl", "short": "DOOR", "canIfMacro": "CANIF_TX_CAN1_DOOR", "pdurMacro": "PDUR_CAN1_BCM_DOOR_CTRL_TX"},
+    {"dbc": "BCM_DM1", "short": "DM1", "canIfMacro": "CANIF_TX_CAN1_DM1", "pdurMacro": "PDUR_CAN1_BCM_DM1_TX"}
+  ]
+}

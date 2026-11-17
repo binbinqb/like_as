@@ -35,6 +35,7 @@
 """
 
 import io
+import json
 import os
 import re
 import sys
@@ -47,7 +48,13 @@ GEN_DIR = os.path.join(CFG_DIR, "CanIf", "GEN")
 HDR = os.path.join(CFG_DIR, "CanIf_Cfg.h")
 SRC = os.path.join(CFG_DIR, "CanIf_Cfg.c")
 
-ID_BASE = 23                     # CAN0 已用 0~22
+# 项目参数从 Can.json 读（02.5）。原来这些常量写死在脚本里，换项目就要改
+# 工具本身 —— 那正是"项目参数混进通用脚本"的典型症状。
+CAN_JSON = os.path.join(CFG_DIR, "Can", "Can.json")
+with io.open(CAN_JSON, encoding="utf-8") as _f:
+    _CAN = json.load(_f)
+
+ID_BASE = _CAN["canIfPduIdBase"]      # CAN0 已用 0~22，起点在 Can.json 里
 
 # 上层回调：M22 起 CAN1 的 34 条统一走 PduR → Com（信号解包）。
 #
@@ -61,28 +68,16 @@ SHIM_PREFIX_TX = "CanIfCfg_TxPduR_CAN1_"
 # CAN1 发送报文 → (shim 后缀, CanIf TX PDU 宏, PduR 路径宏)
 # 后缀与 `CANIF_TX_MAP`（tools/sync_pdur.py）保持一致的短名，
 # 这样两个脚本生成的回调名与 PduR 宏名能对得上眼。
-TX_MAP = {
-    "BCM_LCSF":     ("LCSF", "CANIF_TX_CAN1_LCSF", "PDUR_CAN1_BCM_LCSF_TX"),
-    "BCM_Ctrl":     ("CTRL", "CANIF_TX_CAN1_CTRL", "PDUR_CAN1_BCM_CTRL_TX"),
-    "BCM_OEL":      ("OEL",  "CANIF_TX_CAN1_OEL",  "PDUR_CAN1_BCM_OEL_TX"),
-    "BCM_OWW":      ("OWW",  "CANIF_TX_CAN1_OWW",  "PDUR_CAN1_BCM_OWW_TX"),
-    "BCM_DoorCtrl": ("DOOR", "CANIF_TX_CAN1_DOOR", "PDUR_CAN1_BCM_DOOR_CTRL_TX"),
-    "BCM_DM1":      ("DM1",  "CANIF_TX_CAN1_DM1",  "PDUR_CAN1_BCM_DM1_TX"),
-}
+TX_MAP = {e["dbc"]: (e["short"], e["canIfMacro"], e["pdurMacro"])
+          for e in _CAN["txPdus"]}
 
 BEGIN_MARK = "/* @generated BEGIN: CAN1 real matrix */"
 END_MARK = "/* @generated END: CAN1 real matrix */"
 
 # PF → 硬件邮箱号（必须与 Can_Cfg.c 的 CanHw_MsgCfgs1[] 一致）
-PF_TO_MB = {
-    0xEB: 8,
-    0xEC: 9,
-    0xEE: 10,
-    0xF0: 11,
-    0xFD: 12,
-    0xFE: 13,
-    0xFF: 14,
-}
+# PF → 邮箱号。键在 JSON 里是字符串（"0xEB"），这里转成 int 再用。
+# 必须与 Can_Cfg.c 的 CanHw_MsgCfgs1[] 一致，由 config.py validate 对账。
+PF_TO_MB = {int(k, 0): v for k, v in _CAN["rxPfToMb"].items()}
 
 
 def generate():

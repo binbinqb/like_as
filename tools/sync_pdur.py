@@ -55,22 +55,25 @@ DBC = os.path.join(CFG_DIR, "dbc", "can1.dbc")
 BEGIN_MARK = "/* @generated BEGIN: CAN1 real matrix */"
 END_MARK = "/* @generated END: CAN1 real matrix */"
 
-# 手写路径已占用 0~8（见 PduR_Cfg.h），生成段从 9 开始
-ID_BASE = 9
+# 项目参数从 Can.json 读（02.5）：编号起点、TX 宏映射。
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+with io.open(os.path.join(CFG_DIR, "Can", "Can.json"), encoding="utf-8") as _f:
+    _CAN = json.load(_f)
+
+# 手写路径已占用 0~8（见 PduR_Cfg.h），生成段起点在 Can.json 里
+ID_BASE = _CAN["pdurIdBase"]
+
+# 本节点名来自网络配置，不写死 BCM
+with io.open(os.path.join(CFG_DIR, "CanIf", "CanIf.json"), encoding="utf-8") as _f:
+    _CANIF = json.load(_f)
+ME = _CANIF["networks"][0]["me"]
 
 # CAN1 发送报文 → CanIf 的 TX PDU 宏。
 # 不能按"报文名去 BCM 前缀"自动推：`BCM_DoorCtrl` 在 CanIf_Cfg.h 里叫
 # `CANIF_TX_CAN1_DOOR`（不是 DOOR_CTRL），自动推会拼出一个不存在的宏。
 # 这里显式列出，改矩阵时若新增发送报文，漏一条会在编译期就报"未定义"，
 # 不会静默丢帧。
-CANIF_TX_MAP = {
-	"BCM_LCSF":     "CANIF_TX_CAN1_LCSF",
-	"BCM_Ctrl":     "CANIF_TX_CAN1_CTRL",
-	"BCM_OEL":      "CANIF_TX_CAN1_OEL",
-	"BCM_OWW":      "CANIF_TX_CAN1_OWW",
-	"BCM_DoorCtrl": "CANIF_TX_CAN1_DOOR",
-	"BCM_DM1":      "CANIF_TX_CAN1_DM1",
-}
+CANIF_TX_MAP = {e["dbc"]: e["canIfMacro"] for e in _CAN["txPdus"]}
 
 # 本工程的"诊断/测试"报文不在 dbc 里，手工补两条 Com↔CanIf 路径。
 # 它们的 Com PDU 宏来自 Com.json 的 CANTEST 网络（生成器保证同名）。
@@ -92,30 +95,13 @@ def to_macro(s):
 	return s.upper()
 
 
-def parse_dbc(path):
-	"""极简 dbc 解析：只取 BO_ 的 id / 名字 / 发送节点。
-
-	@note 不引 canmatrix：本工程只用到这三样，而且 dbc 是**输入不是我方产物**，
-	      多一个第三方依赖就多一个版本风险。
-	"""
-	msgs = []
-	with io.open(path, encoding="utf-8", errors="replace") as f:
-		for line in f:
-			m = re.match(r"^BO_ (\d+) (\w+)\s*:\s*(\d+)\s+(\w+)", line)
-			if m:
-				msgs.append({
-					"id": int(m.group(1)) & 0x1FFFFFFF,
-					"name": m.group(2),
-					"dlc": int(m.group(3)),
-					"node": m.group(4),
-				})
-	return msgs
-
-
 def build():
-	msgs = parse_dbc(DBC)
-	tx = [m for m in msgs if m["node"] == "BCM"]
-	rx = [m for m in msgs if m["node"] != "BCM"]
+	# 走共享解析（02.4）：同一份 DBC 与 Com/CanIf 用同一套解析与节点筛选，
+	# 不再维护这个脚本自己的正则版 parse_dbc。
+	from generator.dbc.database import DbcDatabase, classify
+	msgs = classify(DbcDatabase().get_messages(DBC), ME)
+	tx = [m for m in msgs if m["dir"] == "TX"]
+	rx = [m for m in msgs if m["dir"] == "RX"]
 	if not tx or not rx:
 		raise SystemExit("dbc 解析异常：TX=%d RX=%d" % (len(tx), len(rx)))
 
@@ -133,7 +119,7 @@ def build():
 			"name": "PDUR_CAN1_%s_TX" % mac,
 			"com": "COM_CAN1_%s_TX" % mac,
 			"canif": CANIF_TX_MAP[m["name"]],
-			"note": "0x%08X %s（发送）" % (m["id"], m["name"]),
+			"note": "0x%08X %s（发送）" % (m["can_id"], m["name"]),
 		})
 		pid += 1
 
@@ -144,7 +130,7 @@ def build():
 			"name": "PDUR_CAN1_%s_RX" % mac,
 			"com": "COM_CAN1_%s_RX" % mac,
 			"canif": None,
-			"note": "0x%08X %s（接收，来自 %s）" % (m["id"], m["name"], m["node"]),
+			"note": "0x%08X %s（接收，来自 %s）" % (m["can_id"], m["name"], m["node"]),
 		})
 		pid += 1
 

@@ -3104,6 +3104,36 @@ Motorola、有符号、factor/offset、跨报文同名信号、缓存失效、�
 回归：`generate` 后 8 个配置产物全 same；`dbc_init_check` 12/12、
 `pdu_selftest` 3/3、`a4_gen_check --static` 6/6；ARM `text` 240,516 不变。
 
+### ✅ 02.5 第一刀：项目参数从通用脚本搬进 `Can.json`
+
+`sync_canif.py` / `sync_pdur.py` 里原来各写一份 `PF_TO_MB`、`TX_MAP`、
+`CANIF_TX_MAP`、`ID_BASE`，还有写死的 `"BCM"`。换一个 BCM 项目就要改工具本身。
+
+现在这些常量集中在
+`app/platform/cvm0146/src/config/Can/Can.json`：
+
+| 字段 | 原位置 | 用途 |
+|---|---|---|
+| `canIfPduIdBase` / `pdurIdBase` | 两个脚本各一个 `ID_BASE` | 生成段编号起点（前面留给手写路径） |
+| `rxPfToMb` | `PF_TO_MB` | J1939 扩展帧按 PF 分段的硬件邮箱号 |
+| `txPdus[]` | `TX_MAP` / `CANIF_TX_MAP` | 发送报文 → (短名, CanIf 宏, PduR 宏) |
+
+`"BCM"` 改为从 `CanIf.json` 的 `networks[0].me` 读；`sync_pdur.py` 里那份
+**独立的正则 DBC 解析**（`parse_dbc`）也已删除，改走 02.4 的共享库——顺带把
+"同一份 DBC 三套解析"收到一套。
+
+**等价性证据**：两个脚本重跑后，`git status` 对 8 个配置产物**零差异**；
+`config.py generate` 全链路仍 rc=0，哈希与基线完全一致。
+
+守卫 `tools/hardcode_check.py`（7 项）：
+
+- 通用脚本里再出现数字常量表 / 写死节点名 → 失败；
+- `Can.json` 里的每个宏必须在 `CanIf_Cfg.h` / `PduR_Cfg.h` 真实存在；
+- `rxPfToMb` 的每个邮箱号必须在 `Can_Cfg.c` 里找得到。
+
+**证伪过**：往 `sync_canif.py` 末尾加一行 `ID_BASE = 99`，检查器立刻 FAIL；
+还原后 PASS。不做这一步的话，"守卫"可能只是永远打印 PASS 的摆设。
+
 ### 尚未完成（下一步）
 
 1. **0x27 换成真算法**：现在 `27 01/02` 是桩（种子返回 0、key 任意），

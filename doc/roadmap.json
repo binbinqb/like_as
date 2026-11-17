@@ -105,9 +105,9 @@
  ],
  "current": {
   "module": 2,
-  "task": 2,
-  "text": "02.3 补齐 EcuC 共享 PDU 注册表（生成前引用解析，而非生成后检查）",
-  "next": "先读 AS 的 json.editor/schema.json 与 EcuC 用法，再定最小 PduRef 结构"
+  "task": 3,
+  "text": "02.5 续：Can 控制器与波特率结构化为 Can.json（02.6 Can Generator 的前置）",
+  "next": "先盘 Board.json 与 Can_Cfg.c 的控制器字段，再决定是否新增 Can.py"
  },
  "modules": [
   {
@@ -226,8 +226,8 @@
     {
      "text": "迁移 PF 邮箱、TX 映射及 ID_BASE",
      "check": "项目参数不再写死在通用脚本",
-     "state": "TODO",
-     "evidence": ""
+     "state": "PARTIAL",
+     "evidence": "Can.json 承接 PF_TO_MB/TX_MAP/CANIF_TX_MAP/ID_BASE + me；两脚本重跑产物零差异；hardcode_check 7/7 且证伪过；剩余：Can 控制器/波特率结构化"
     },
     {
      "text": "生成 Can/CanIf/PduR/Com 全配置",
