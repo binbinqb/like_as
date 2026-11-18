@@ -198,14 +198,21 @@
    "date": "2026-11-18",
    "title": "IoHwAb V1.0 落地：直连 IO + Host 19/19 + 上板 io 命令",
    "decision": "新增 infras/include/iohwab.h（四类 ID/四态/四个能力 ops）、tools/generator/IoHwAb.py（Board.json io 段 → 枚举与表，R1~R8/R10 校验）、app/app/src/iohwab.c（Core）、app/platform/cvm0146/src/IoHwAbAc.c（Dio/Pwm + Host 空桩）、Host 用例与 io 命令；main.c 接入 Init 与 10ms MainFunction。",
-   "impact": "Host 19/19、host_build 6/6；上板 io status 0→on 1→off 0；text +2768 B（此前因 --gc-sections 无人引用被整段丢弃，这个问题是 io 命令暴露的）；通信回归 11/11。发现并记录：本芯片 PinsDrv_ReadPin 读 PDIR，纯输出引脚恒 0，故目标侧回读用输出锁存影子（只证明写通路，不证明引脚电平）。"
+   "impact": "Host 19/19、host_build 6/6；上板 io status 0→on 1→off 0；text +2768 B（此前因 --gc-sections 无人引用被整段丢弃，这个问题是 io 命令暴露的）；通信回归 11/11。发现并记录：本芯片 PinsDrv_ReadPin 读 PDIR，纯输出引脚恒 0，故目标侧回读用输出锁存影子（只证明写通路，不证明引脚电平）。\n**V1.0.1 更正两处**：①RS2260 不需要 I2C（I2C 只是 Expander 前置）；②极性归属由“绑定+Adapter”改判为 **Core 唯一转换**。见 D-IOHWAB-V101。"
+  },
+  {
+   "id": "D-IOHWAB-V101",
+   "date": "2026-11-18",
+   "title": "IoHwAb V1.0.1 收口：六项契约修正（极性/新鲜度/生命周期/换算/安全反馈 + 依赖纠错）",
+   "decision": "①极性唯一归属 Core，Adapter 只收发电气电平、禁止二次取反；②输入能力增加样本序号 seq，Core 仅在新样本时推进消抖/滤波，超 staleTicks 判 STALE，DIN 配置增 staleTicks；③Init 改为首次才执行（运行期重复调用为空操作），新增 ReInit/IsInitialized；④AIN 换算用 int64_t 中间量并饱和到 INT32，有符号右移改显式朝零舍入；⑤SetAllSafe 返回 Std_ReturnType，新增 DoutGetFault，ops==NULL（本构建不适用）不置故障位、不计入失败；⑥更正依赖判断：RS2260 只需 Dio/Adc，I2C HAL 仅是 PCA9555/TCA9539 的前置。",
+   "impact": "Host 39/39（16 组，原 19 条）；host_build 6/6；App text 246632→247948（+1316 B）。生成器新增 R9（staleMs 为 10 的整数倍且 ≥10），DIN 表项由 5 字段增至 6 字段；接口不兼容变更已同步 main.c 与 io_cmd.c。发现并定下“不适用≠失败”语义：否则目标板上的 host 桩会让 io safe 永远报错、淹没真实故障。详见 doc/设计评审/IoHwAb-V1.0.1收口.md。"
   }
  ],
  "current": {
   "module": 15,
   "task": 0,
-  "text": "IoHwAb V1.0 已落地（直连 IO + Host 19/19 + 上板 io 命令），进入 V1.1 前置",
-  "next": "V1.1 第一步补 infras/include/I2c.h + I2cAc.c（SDK 有 i2c 驱动但未封装），再做 RS2260 SelectBus/ABC 扫描状态机与 PCA9555。V1.0 收尾项：LED 人眼确认（软件侧已 0→1→0）、直连 AIN 实装需先定 ADC 组表。每轮通信回归 tools/regress_comm.py 11 例。"
+  "text": "IoHwAb V1.0.1 收口完成（六项契约修正，Host 39/39），下一步 RS2260 SelectBus",
+  "next": "V1.1 第一步：RS2260 SelectBus/ABC 扫描状态机（只需 Dio/Adc，**不需要 I2C**）——先在 Host 用模拟后端验证共享 ABC 不冲突、ADC 转换期间 ABC 稳定、混合 GPIO/ADC 采样；再接实物。I2C HAL 只服务 PCA9555/TCA9539，单列任务。V1.0 收尾项：LED 人眼确认（软件侧已 0→1→0）、直连 AIN 实装需先定 ADC 组表。每轮通信回归 tools/regress_comm.py 11 例。"
  },
  "modules": [
   {
@@ -808,23 +815,29 @@
      "text": "建立逻辑 IO 通道表",
      "check": "直接与 MUX 通道统一访问",
      "state": "PARTIAL",
-     "evidence": "V1.0 直连部分已落地：Board.json io 四表 → generator/IoHwAb.py → IoHwAb_Cfg.{h,c}；Host 19/19、上板 io 命令 0→1→0、通信回归 11/11。**MUX 通道未做**（V1.1，需 I2C HAL / RS2260）。架构见 doc/设计评审/IoHwAb-V2.0架构.md。"
+     "evidence": "V1.0/V1.0.1 直连部分已落地：Board.json io 四表 → generator/IoHwAb.py → IoHwAb_Cfg.{h,c}；Host 39/39（16 组）、上板 io 命令 0→1→0、通信回归 11/11。**MUX 通道未做**（V1.1，RS2260 只需 Dio/Adc，不需要 I2C）。见 doc/设计评审/IoHwAb-V1.0.1收口.md。"
     },
     {
      "text": "实现扫描、消抖、滤波",
      "check": "时序及输入边界测试",
      "state": "PARTIAL",
-     "evidence": "DIN 消抖（10ms 拍计数）与 AIN 一阶滤波/定点换算/四态超时已实现，Host 用例 19/19 覆盖。**MUX 扫描状态机未做**（V1.1）。"
+     "evidence": "DIN 消抖与 AIN 一阶滤波/定点换算/四态超时已实现；V1.0.1 补入**样本新鲜度**（输入 ops 带 seq，无新样本不推进消抖/滤波，超时判 STALE）与 int64 换算+饱和，Host 39/39 覆盖。**MUX 扫描状态机未做**（V1.1）。"
     },
     {
-     "text": "补 I2C HAL（RS2260/Expander 前置）",
+     "text": "补 I2C HAL（**仅 Expander 前置**）",
      "check": "I2c_Init/Write/Read + 超时/NACK 语义；Host 可用模拟后端",
      "state": "TODO",
-     "evidence": "仓库当前只有 Dio/Adc/Pwm HAL，SDK 有 i2c 驱动但未封装。V2.0 §8 判定：此任务必须先于 RS2260/Expander，且与 IoHwAb 批次分开。"
+     "evidence": "仓库当前只有 Dio/Adc/Pwm HAL，SDK 有 i2c 驱动但未封装。**V1.0.1 更正**：I2C 只服务 PCA9555/TCA9539 一类扩展器，**不是 RS2260 的前置**（RS2260 由 A/B/C 引脚选通，COM 接 GPIO/ADC）。"
     },
     {
-     "text": "接入 RS2260/TCA9539",
-     "check": "建立时间、NACK/故障验证",
+     "text": "RS2260 SelectBus 扫描（GPIO/ADC COM）",
+     "check": "共享 ABC 不冲突、ADC 转换期间 ABC 稳定、混合 GPIO/ADC 采样",
+     "state": "TODO",
+     "evidence": "V1.0.1 已解除依赖阻塞：只需 Dio/Adc + 扫描状态机，Host 可先用模拟后端验证时序。待器件手册确认 ABC 建立时间与 INH 时序。"
+    },
+    {
+     "text": "接入 PCA9555/TCA9539 扩展器",
+     "check": "批量读、NACK/超时影响有效性、输出影子寄存器",
      "state": "BLOCKED",
      "evidence": "依赖 I2C HAL + 器件手册 + 实物板；目前无板无型号"
     }

@@ -30,6 +30,8 @@
 #include "sh_cfg.h"
 #include "sh.h"
 
+#include <string.h>
+
 #include "iohwab.h"
 #include "IoHwAb_Cfg.h"
 
@@ -62,13 +64,19 @@ static int sh_cmd_io(int argc, char *argv[])
 
 	if ((sub[0] == '\0') || (0 == strcmp(sub, "status"))) {
 		uint16 i;
+		boolean fault;
 
+		sh_print("  init    = %u\r\n", (unsigned)IoHwAb_IsInitialized());
 		for (i = 0u; i < IOHWAB_DOUT_COUNT; i++) {
+			fault = FALSE;
+			(void)IoHwAb_DoutGetFault((IoHwAb_DoutId)i, &fault);
 			if (IoHwAb_DoutReadBack((IoHwAb_DoutId)i, &v) == E_OK) {
-				sh_print("  dout[%u] = %u\r\n", (unsigned)i, (unsigned)v);
+				sh_print("  dout[%u] = %u%s\r\n", (unsigned)i, (unsigned)v,
+				         (fault != FALSE) ? "  (write failed)" : "");
 			} else {
-				sh_print("  dout[%u] = n/a（不支持回读或后端失败）\r\n",
-				         (unsigned)i);
+				sh_print("  dout[%u] = n/a%s（不支持回读或后端失败）\r\n",
+				         (unsigned)i,
+				         (fault != FALSE) ? " write failed" : "");
 			}
 		}
 		(void)IoHwAb_DinRead((IoHwAb_DinId)0, &v, &st);
@@ -78,7 +86,10 @@ static int sh_cmd_io(int argc, char *argv[])
 	}
 
 	if (0 == strcmp(sub, "safe")) {
-		IoHwAb_SetAllSafe();
+		if (IoHwAb_SetAllSafe() != E_OK) {
+			sh_puts("<-300, some outputs failed (see io status)\r\n");
+			return SH_ERR;
+		}
 		sh_puts(SH_RET_OK);
 		return SH_OK;
 	}

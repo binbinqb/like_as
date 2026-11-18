@@ -32,14 +32,16 @@
                 "source": "host",
                 "channel": 0,
                 "activeLevel": "LOW",
-                "debounceMs": 20
+                "debounceMs": 20,
+                "staleMs": 500
             },
             {
                 "name": "DOOR_FR",
                 "source": "host",
                 "channel": 1,
                 "activeLevel": "LOW",
-                "debounceMs": 30
+                "debounceMs": 30,
+                "staleMs": 500
             }
         ],
         "ain": [
@@ -59,6 +61,16 @@
                 "filterShift": 2,
                 "factor": 100,
                 "offset": -4000,
+                "staleMs": 500
+            },
+            {
+                "name": "AIN_OVF",
+                "_note": "Host 专用：raw×factor=6.5e12 超出 sint32，且 /1000 后仍超 INT32_MAX，验证 int64 中间量与饱和（板上是不可用桩）",
+                "source": "host",
+                "channel": 2,
+                "filterShift": 0,
+                "factor": 100000000,
+                "offset": 0,
                 "staleMs": 500
             }
         ],
@@ -89,6 +101,14 @@
                 "source": "host",
                 "channel": 0,
                 "activeLevel": "HIGH",
+                "safeLevel": false
+            },
+            {
+                "name": "HOST_LOW",
+                "_note": "Host 专用：低有效，验证极性在 Core 完成、Adapter 只见电气电平",
+                "source": "host",
+                "channel": 1,
+                "activeLevel": "LOW",
                 "safeLevel": false
             }
         ],

@@ -348,10 +348,14 @@ int main(void)
 	 * 而这一步已在上面 `EcuM_StartupTwo()` 之前完成。 */
 	BcmSig_Init();
 
-	/* 逻辑 IO（IoHwAb V1.0）：按 Board.json 的 io 段把输出置安全状态。
+	/* 逻辑 IO（IoHwAb V1.0.1）：按 Board.json 的 io 段把输出置安全状态。
 	 * 放在 BcmSig_Init 之后、Shell 之前 —— 上电时负载应保持安全，
-	 * 不能等第一条命令才确定电平。 */
-	IoHwAb_Init();
+	 * 不能等第一条命令才确定电平。
+	 * 返回值：有输出没能进安全状态时为 E_NOT_OK（逐路可查 DoutGetFault），
+	 * 初始化本身不受影响，此处只记录、不阻断启动。 */
+	if (IoHwAb_Init() != E_OK) {
+		Platform_Puts("IoHwAb: some outputs failed to reach safe state\n");
+	}
 
 	/* 业务骨架（A9）：必须在 BcmSig_Init 之后（它只清自己的状态，不碰信号）。
 	 * 默认**不接管**输出 —— 理由见 bcm_biz.h 的 BcmBiz_SetEnabled：

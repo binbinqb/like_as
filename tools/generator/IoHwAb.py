@@ -20,7 +20,7 @@
 ## 校验（每条失败都终止生成，不产半份配置）
 
 R1 名称唯一 / R2 直连 pin 存在 / R3 dir 匹配 / R4 电平合法 / R5 消抖拍数 /
-R6 ADC 组范围 / R7 PWM 参数 / R8 物理资源不重复绑定 / R10 安全值缺省
+R6 ADC 组范围 / R7 PWM 参数 / R8 物理资源不重复绑定 / R9 超时拍数 / R10 安全值缺省
 
 @author binbina
 """
@@ -36,6 +36,14 @@ LEVEL = {"HIGH": 1, "LOW": 0}
 
 def _die(msg):
 	raise Exception("[IoHwAb] " + msg)
+
+
+def _ticks(e, key, default, name):
+	"""把毫秒配置换算成 10 ms 拍数，并按 R9 校验。"""
+	ms = int(e.get(key, default))
+	if ms < 10 or ms % 10:
+		_die("R9 %s.%s=%d（必须是 10 的整数倍且 ≥10）" % (name, key, ms))
+	return ms // 10
 
 
 def _norm(cfg, pins, dio_channels, adc_groups, pwm_channels):
@@ -73,6 +81,7 @@ def _norm(cfg, pins, dio_channels, adc_groups, pwm_channels):
 		db = int(e.get("debounceMs", 20))
 		if db < 10 or db % 10:
 			_die("R5 %s.debounceMs=%d（必须是 10 的整数倍且 ≥10）" % (n, db))
+		stale = _ticks(e, "staleMs", 500, n)
 		ch = int(e.get("channel", 0))
 		if src == "direct":
 			pin = e.get("pin", "")
@@ -89,7 +98,7 @@ def _norm(cfg, pins, dio_channels, adc_groups, pwm_channels):
 			used_pin[pin] = n
 		out["din"].append({
 			"name": n, "src": src, "ch": ch, "lvl": LEVEL[lvl],
-			"db_ticks": db // 10,
+			"db_ticks": db // 10, "stale": stale,
 		})
 
 	# ---- AIN ----
@@ -111,9 +120,7 @@ def _norm(cfg, pins, dio_channels, adc_groups, pwm_channels):
 			_die("%s.filterShift 允许 0..8" % n)
 		fs = int(e.get("factor", 1000))
 		off = int(e.get("offset", 0))
-		stale = int(e.get("staleMs", 200)) // 10
-		if stale < 1:
-			_die("%s.staleMs 至少 10" % n)
+		stale = _ticks(e, "staleMs", 200, n)
 		out["ain"].append({
 			"name": n, "src": src, "grp": grp, "ch": ch, "shift": shift,
 			"factor": fs, "offset": off, "stale": stale,
@@ -223,12 +230,12 @@ def Gen_Tables(board_cfg, dir):
 	if t["din"]:
 		c.write("const IoHwAb_DinCfgType IoHwAb_DinCfgs[IOHWAB_DIN_COUNT] = {\n")
 		for e in t["din"]:
-			c.write("\t{ IOHWAB_SOURCE_%s, &%s, %du, %du, %du },  /**< %s */\n"
+			c.write("\t{ IOHWAB_SOURCE_%s, &%s, %du, %du, %du, %du },  /**< %s */\n"
 			        % (e["src"].upper(), _OPS[("din", e["src"])], e["ch"],
-			           e["lvl"], e["db_ticks"], e["name"]))
+			           e["lvl"], e["db_ticks"], e["stale"], e["name"]))
 		c.write("};\n")
 	else:
-		c.write("const IoHwAb_DinCfgType IoHwAb_DinCfgs[1] = { { IOHWAB_SOURCE_DIRECT, NULL, 0u, 0u, 0u } };\n")
+		c.write("const IoHwAb_DinCfgType IoHwAb_DinCfgs[1] = { { IOHWAB_SOURCE_DIRECT, NULL, 0u, 0u, 0u, 1u } };\n")
 
 	c.write("\n/* ============================ [ AIN ] ============================ */\n")
 	if t["ain"]:
