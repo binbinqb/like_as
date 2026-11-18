@@ -1,0 +1,62 @@
+{
+	// 编译 / 索引 / 烧写任务。工具链版本与解释器全部沿用 build.bat 的固定值，
+	// 这里不做任何"第二个构建入口"，避免与 SCons 依赖图分叉。
+	"version": "2.0.0",
+	"tasks": [
+		{
+			// Ctrl+Shift+B 默认任务：等价于命令行 build.bat
+			"label": "build App",
+			"type": "shell",
+			"command": "${workspaceFolder}/build.bat",
+			"args": ["--app=App"],
+			"options": { "cwd": "${workspaceFolder}" },
+			"group": { "kind": "build", "isDefault": true },
+			"problemMatcher": "$gcc",
+			"presentation": { "clear": true }
+		},
+		{
+			"label": "build Boot",
+			"type": "shell",
+			"command": "${workspaceFolder}/build.bat",
+			"args": ["--app=Boot"],
+			"options": { "cwd": "${workspaceFolder}" },
+			"problemMatcher": "$gcc",
+			"presentation": { "clear": true }
+		},
+		{
+			"label": "build AppB",
+			"type": "shell",
+			"command": "${workspaceFolder}/build.bat",
+			"args": ["--app=AppB"],
+			"options": { "cwd": "${workspaceFolder}" },
+			"problemMatcher": "$gcc",
+			"presentation": { "clear": true }
+		},
+		{
+			// 改了生成器 / DBC / 编译宏之后跑一次，刷新 clangd / cpptools 索引
+			"label": "gen compdb",
+			"type": "shell",
+			"command": "C:/Users/qingb/AppData/Local/Programs/Python/Python312/python.exe",
+			"args": ["tools/gen_compdb.py"],
+			"options": { "cwd": "${workspaceFolder}" },
+			"problemMatcher": []
+		},
+		{
+			// 烧写走已验证的 IAR CSpyBat 路径（tools/flash.py），与 Bcm_Frame 台架一致
+			"label": "flash App (CSpyBat)",
+			"type": "shell",
+			"command": "C:/Users/qingb/AppData/Local/Programs/Python/Python312/python.exe",
+			"args": ["tools/flash.py", "--run"],
+			"options": { "cwd": "${workspaceFolder}" },
+			"problemMatcher": []
+		},
+		{
+			"label": "flash Boot (CSpyBat)",
+			"type": "shell",
+			"command": "C:/Users/qingb/AppData/Local/Programs/Python/Python312/python.exe",
+			"args": ["tools/flash.py", "--elf", "build/nt/CM4GCC/Boot/Boot.exe", "--run"],
+			"options": { "cwd": "${workspaceFolder}" },
+			"problemMatcher": []
+		}
+	]
+}

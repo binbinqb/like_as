@@ -1,0 +1,59 @@
+{
+	// J-Link 调试（cortex-debug 扩展）。
+	//
+	// 前提（一次性，管理员权限）：
+	//   把 IAR 自带的器件包复制进 J-Link 安装目录——
+	//   xcopy /E /I "C:\iar\ewarm-9.60.3\arm\bin\Devices\CVA_BLUE_WHALE"
+	//         "C:\Program Files\SEGGER\JLink\Devices\CVA_BLUE_WHALE"
+	//   否则 GDB Server 找不到 CVM0146 的 FLM，报 "Error while loading flash algo"。
+	//
+	// 注意：build 产物虽然叫 .exe，实为 arm-none-eabi-ld 输出的 ELF（魔数 0x7F E L F），
+	// GDB 按 ELF 加载，与扩展名无关，不用改名。
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"name": "J-Link: Debug App",
+			"type": "cortex-debug",
+			"request": "launch",
+			"servertype": "jlink",
+			"device": "CVM0146",
+			"interface": "swd",
+			"executable": "${workspaceFolder}/build/nt/CM4GCC/App/App.exe",
+			"serverpath": "C:/Program Files/SEGGER/JLink/JLinkGDBServerCL.exe",
+			"gdbPath": "C:/soft/gcc/10.3.1/bin/arm-none-eabi-gdb.exe",
+			"svdFile": "H:/chip-doc/MCU/曦华科技-水木蓝鲸CVM014x/CVA_MCU_SDK_M01xx+++CDS/CVA_MCU_SDK_M01xx_2/utilities/SVD/CVM014x.svd",
+			"preLaunchTask": "build App",
+			"runToEntryPoint": "main",
+			"postLaunchCommands": []
+		},
+		{
+			"name": "J-Link: Debug Boot",
+			"type": "cortex-debug",
+			"request": "launch",
+			"servertype": "jlink",
+			"device": "CVM0146",
+			"interface": "swd",
+			"executable": "${workspaceFolder}/build/nt/CM4GCC/Boot/Boot.exe",
+			"serverpath": "C:/Program Files/SEGGER/JLink/JLinkGDBServerCL.exe",
+			"gdbPath": "C:/soft/gcc/10.3.1/bin/arm-none-eabi-gdb.exe",
+			"svdFile": "H:/chip-doc/MCU/曦华科技-水木蓝鲸CVM014x/CVA_MCU_SDK_M01xx+++CDS/CVA_MCU_SDK_M01xx_2/utilities/SVD/CVM014x.svd",
+			"preLaunchTask": "build Boot",
+			"runToEntryPoint": "main",
+			"postLaunchCommands": []
+		},
+		{
+			// 不烧写、只附着到正在跑的目标（例如想看 App 运行态变量）。
+			// 复位方式用 "restart" 按钮而不是断开重连。
+			"name": "J-Link: Attach (no download)",
+			"type": "cortex-debug",
+			"request": "attach",
+			"servertype": "jlink",
+			"device": "CVM0146",
+			"interface": "swd",
+			"executable": "${workspaceFolder}/build/nt/CM4GCC/App/App.exe",
+			"serverpath": "C:/Program Files/SEGGER/JLink/JLinkGDBServerCL.exe",
+			"gdbPath": "C:/soft/gcc/10.3.1/bin/arm-none-eabi-gdb.exe",
+			"svdFile": "H:/chip-doc/MCU/曦华科技-水木蓝鲸CVM014x/CVA_MCU_SDK_M01xx+++CDS/CVA_MCU_SDK_M01xx_2/utilities/SVD/CVM014x.svd"
+		}
+	]
+}

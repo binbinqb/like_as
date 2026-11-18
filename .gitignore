@@ -95,7 +95,12 @@ app/platform/cvm0146/src/config/dbc/*.dbc
 /refs/
 
 # ── 编辑器 / 系统 ─────────────────────────────────────────────────────────
-.vscode/
+# 用 /* 而不是 / ：否则父目录整体被忽略，子文件无法用 ! 反向包含
+.vscode/*
+# 编译任务与 J-Link 调试配置属于工程资产，随库走（同 .clangd 的既有惯例）；
+# 其余（settings.json 等本机偏好）仍忽略
+!.vscode/tasks.json
+!.vscode/launch.json
 .idea/
 *.swp
 *~
