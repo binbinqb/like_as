@@ -164,13 +164,20 @@
    "title": "删掉 0 引用的死路径 PDUR_COM_TO_CANIF_TX（路径 6）",
    "decision": "该路径的 Src 与生成段 `PDUR_CANTEST_TX_TEST` 指向同一个 Com PDU，全工程外部引用 0 处（`Com_Cfg.c` 用的是生成段那条）。手工段 9→8 的同时把 `Can.json` 的 `pdurIdBase` 9→8 —— 不同步改会让 `PduR_SrcPdu[]` 第 8 项留洞、`PDUR_NUM_ROUTING_PATHS` 与实际条目数不符。生成段随之 9..50→8..49。",
    "impact": "`check-pdu` PASS（50 条路径，无重复/悬空/索引错位）；`m3` 18/18（诊断 4 条路径含多帧收发）；镜像 text 243,904→243,864（−40 B，三张表各少一条）。`m10` 5 项失败经 HEAD 对照证实为既有 Com 发送缺陷，与本改动无关，见 `doc/设计评审/Com周期发送异常.md`。"
+  },
+  {
+   "id": "D-CAN-TXINT",
+   "date": "2026-11-18",
+   "title": "0x200 / 0x500 只发首帧：邮箱 TX 完成中断被关掉",
+   "decision": "`Can.json` 里 mb11(NM_TX) / mb13(COM_TX) 的 `intEnable=false` 改为 `true`。TX 完成中断是 `CanAc.c` 里 `s_txPending[]` 的唯一释放点，关闭后首帧发出即永久 `CAN_BUSY`；`Can_HwCfg.h` 里把该缺陷写成\"NM/Com 两条例外\"的注释一并改写。",
+   "impact": "0x200 间隔 100.0/100.1 ms（抖动 ≤1 ms），0x500 199.9~200.2 ms；M10 由 17/22 → **22/22**，M3 18/18 不变；`text` 尺寸不变（bool 翻转）。教训：驱动自测(0x123)与诊断(0x7E8)的邮箱一直是 true，所以只测\"能发一帧\"永远发现不了这个问题。"
   }
  ],
  "current": {
   "module": 2,
   "task": 5,
-  "text": "Com 周期发送：0x200 不上总线（M10 五项失败），定位 Can_Write/确认回收",
-  "next": "按 doc/设计评审/Com周期发送异常.md §4 的假设顺序验证：①`can matrix`/`can burst` 证明非 Com 路径能发；②读 CAN0 的 TSR/TEC/REC 看 mb13 的 TXRQ 是否挂住；③确认 Com 的 6 个 TX 邮箱有无回确认。已排除本次 PduR 改动（A/B 对照）与时基/NM/编号问题。"
+  "text": "PduR 路由表逐项核对：50 条路径的 PduHandleId 与 callback 语义",
+  "next": "写一个静态核对脚本（tools/pdu_route_check.py）：从 PduR_Cfg.c 解析三张表，对每条路径校验 ①Src.module 与 api 表类型一致 ②TX 路径 Dest.PduHandleId == CanIf 的 PDU 号（CanIf_Cfg.h 对账）③RX 路径 Dest.PduHandleId == Com 的 IPdu 下标（Com_Cfg.h 对账）④宏值 == 条目下标。跑通过后补错相/事件/重试用例（Com 模块剩余项）。"
  },
  "modules": [
   {
@@ -470,7 +477,7 @@
      "text": "验证周期、错相、事件、重试",
      "check": "总线时间戳符合配置",
      "state": "TODO",
-     "evidence": ""
+     "evidence": "周期已验：m10 22/22，0x200 100.0/100.1 ms（62 帧/6 s，抖动 100~101 ms），0x500 199.9~200.2 ms，计数每帧 +1。期间修掉 mb11/mb13 的 intEnable=false（D-CAN-TXINT）。**错相 / 事件型发送 / 重试三项尚无用例**，本项不结。"
     },
     {
      "text": "整理 RxMon/Com 职责",

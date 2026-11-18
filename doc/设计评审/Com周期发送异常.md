@@ -1,10 +1,12 @@
 # Com 周期报文不上总线（M10 五项失败）排查记录
 
-> **编写**：binbina ｜ **日期**：2026-11-18 ｜ **状态**：已定位到 Com 发送入口，根因待验证
+> **编写**：binbina ｜ **日期**：2026-11-18 ｜ **状态**：**根因已定位并修复，M10 22/22**
 >
-> **结论前置**：`Com_MainFunctionTx()` 每拍都在跑、周期定时器在递减，但 `PduR_ComTransmit()`
-> 对 0x200 持续返回失败（`bTxRetry=1`），总线上几乎无帧。**该现象在本次 PduR 改动之前的
-> HEAD 构建上同样复现**，属既有缺陷，与 PduR 路径删除无关。
+> **结论前置**：`Can.json` 里 mb11（0x500 NM_TX）与 mb13（0x200 COM_TX）的
+> `intEnable` 被设成 `false`。TX 完成中断是 `CanAc.c` 里 `s_txPending[]` 的**唯一**
+> 释放点，关掉之后每个邮箱只能发出**第一帧**，之后 `Can_Write()` 永远返回
+> `CAN_BUSY`，上层表现为"周期报文不发、`bTxRetry` 恒为 1"。改成 `true` 后
+> 0x200 = 100.0 ms、0x500 = 200.0 ms，M10 由 17/22 升到 **22/22**。
 
 ## 1 现象（2026-11-18 实测，AppB 槽）
 
@@ -59,3 +61,43 @@
 - 与 PduR 02.6 收口无关；该缺陷归 Com 模块任务"验证周期、错相、事件、重试"。
 - 台架条件：Kvaser ch0 接 CAN0（诊断正常证明物理链路与 ACK 均有效），
   CAN1 无第二节点。
+
+## 6 根因（2026-11-18 定位）
+
+### 6.1 决定性实验
+
+| 实验 | 结果 | 推论 |
+|---|---|---|
+| `can burst 5`（走 HTH0 / mb0） | 0x123 五帧全部发出 | `Can_Write` 本身正常 |
+| 紧接 burst 后监听 | 0x200 **只出 1 帧**，之后 12 s 无帧 | Com 的邮箱卡死后不再释放 |
+| `com` 的 tx cnt（10 s） | +109 → 主循环 **9.2 ms/拍** | 主循环与 Com 定时器正常 |
+| `10 02`（走 mb4 / HTH3） | 8 ms 正常应答，可反复多帧 | 诊断邮箱能反复复用 |
+
+### 6.2 代码链
+
+1. `CanAc.c` 的 `Can_Write()`：受理后置 `s_txPending[ctl][i] = true`；
+   若该位已为 true，直接 `return CAN_BUSY`（防覆盖上一帧数据与句柄）。
+2. 清除点**只有两处**：TX 完成中断（`CanAc.c:481` → 清位 + `CanIf_TxConfirmation()`）
+   与 bus-off 兜底。
+3. 中断是否打开由 `CanHw_MsgCfgType.intEnable` 决定（`CanAc_Init` 只对 true 的邮箱开）。
+4. `Can_Cfg.c` 的 mb11 / mb13 该字段是 **false** → 第一帧发出后标志永不清 →
+   之后每次 `Can_Write` 都 BUSY → `PduR_ComTransmit` 失败 → Com 的
+   `timer` 重装 + `bTxRetry=TRUE`，表现为周期报文"消失"、`retry=1`。
+
+### 6.3 为什么以前没被发现
+
+mb0（0x123）与 mb4（0x7E8）是 `true`，所以 **CAN 驱动自测与诊断这两条最常跑的路
+一直是好的**；出问题的恰好是"按周期发"的 NM 与 Com —— 而它们只有做 M9/M10 的
+周期断言时才会暴露，只测"能发一帧"是看不出来的。
+
+## 7 修复与验证
+
+| 项 | 内容 |
+|---|---|
+| 配置源 | `config/Can/Can.json`：NM_TX、COM_TX 的 `int` 改 `true`，note 写明"必须为 true"的理由 |
+| 生成物 | `tools/sync_can.py` 重生成 `Can_Cfg.c`（两行由 false → true），`text` 尺寸不变 |
+| 注释 | `Can_HwCfg.h` 的 `intEnable` 说明改写：删掉"NM/Com 两条例外"（那句话把缺陷写成了设计），补上症状与教训 |
+| 实测 | 0x200 **100.0 / 100.1 ms**（62 帧/6 s）；0x500 **199.9~200.2 ms**（32 帧/6 s） |
+| 验收 | **M10 22/22**（周期 100.1 ms、抖动 min 100/max 101、计数 deltas 全 1）；**M3 18/18** |
+| 未变 | CAN1 六条真实报文 `retry=1` 属台架无对端（无 ACK），与本缺陷无关 |
+

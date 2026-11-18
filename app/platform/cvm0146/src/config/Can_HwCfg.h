@@ -321,10 +321,15 @@ typedef struct {
 	CanHw_MbDirType dir;            /**< 发送 / 接收 */
 	uint8_t        dlc;             /**< 数据长度 0..8（经典 CAN） */
 	bool           intEnable;       /**< 是否使能邮箱中断。
-	                                     **TX 也要开**：发送完成中断是
-	                                     `CanIf_TxConfirmation()` 的触发源，
-	                                     CanTp 的分段发送依赖它（`CanAc.c:810`）。
-	                                     仅 NM/Com 的 TX 两条例外，见 `Can.json` */
+	                                     **TX 也必须为 true**：发送完成中断是
+	                                     `CanAc.c` 里 `s_txPending[]` 的**唯一**
+	                                     释放点，它同时驱动 `CanIf_TxConfirmation()`。
+	                                     置 false 的症状极隐蔽：该邮箱能发出
+	                                     **第一帧**，之后 `Can_Write()` 永远返回
+	                                     `CAN_BUSY`，上层只看得到"周期报文不发、
+	                                     bTxRetry 恒为 1"。2026-11-18 在 mb11/mb13
+	                                     （0x500 / 0x200）上踩过，见
+	                                     `doc/设计评审/Com周期发送异常.md`。 */
 	uint32_t       individualMask;  /**< RX 独立掩码；0xFFFFFFFF = ID 必须完全一致 */
 } CanHw_MsgCfgType;
 

@@ -130,8 +130,8 @@
           "ext": false,
           "dir": "TX",
           "hth": 4,
-          "int": false,
-          "note": "NM 发送：与 mb12 同一 ID，方向不同（FlexCAN 邮箱方向配置期定死）。",
+          "int": true,
+          "note": "NM 发送：与 mb12 同一 ID，方向不同（FlexCAN 邮箱方向配置期定死）。int 必须为 true：发送完成中断是 s_txPending 的唯一释放点，关掉会让首帧之后永久 CAN_BUSY。",
           "canIfMacro": "CANIF_TX_NM",
           "txConfirm": "CanIfCfg_NmTxConfirmation"
         },
@@ -150,8 +150,8 @@
           "ext": false,
           "dir": "TX",
           "hth": 5,
-          "int": false,
-          "note": "Com 测试报文：与 mb14 配对，避免注入测试与自发报文撞车。",
+          "int": true,
+          "note": "Com 测试报文：与 mb14 配对，避免注入测试与自发报文撞车。int 必须为 true（同 NM_TX）：否则 0x200 只出首帧，Com 的 bTxRetry 永远为 1。",
           "canIfMacro": "CANIF_TX_COM_TEST",
           "txConfirm": "CanIfCfg_ComTxConfirmation"
         },

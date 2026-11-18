@@ -129,11 +129,11 @@ static const CanHw_MsgCfgType CanHw_MsgCfgs0[] = {
 	{  7u, 1u,        0xA0u, false, CAN_HW_MB_RX, 8u, true ,       0x7F8u },   /**< mb7  STD_FAST     RX 0xA0 */
 	{  8u, 1u,       0x100u, false, CAN_HW_MB_RX, 8u, true ,       0x7F8u },   /**< mb8  STD_LIGHT    RX 0x100 */
 	{  9u, 1u,       0x110u, false, CAN_HW_MB_RX, 8u, true ,  0xFFFFFFFFu },   /**< mb9  STD_BODY     RX 0x110 */
-	/* NM 发送：与 mb12 同一 ID，方向不同（FlexCAN 邮箱方向配置期定死）。 */
-	{ 11u, 1u,       0x500u, false, CAN_HW_MB_TX, 8u, false,         0x0u },   /**< mb11 NM_TX        TX 0x500 */
+	/* NM 发送：与 mb12 同一 ID，方向不同（FlexCAN 邮箱方向配置期定死）。int 必须为 true：发送完成中断是 s_txPending 的唯一释放点，关掉会让首帧之后永久 CAN_BUSY。 */
+	{ 11u, 1u,       0x500u, false, CAN_HW_MB_TX, 8u, true ,         0x0u },   /**< mb11 NM_TX        TX 0x500 */
 	{ 12u, 1u,       0x500u, false, CAN_HW_MB_RX, 8u, true ,  0xFFFFFFFFu },   /**< mb12 NM_RX        RX 0x500 */
-	/* Com 测试报文：与 mb14 配对，避免注入测试与自发报文撞车。 */
-	{ 13u, 1u,       0x200u, false, CAN_HW_MB_TX, 8u, false,         0x0u },   /**< mb13 COM_TX       TX 0x200 */
+	/* Com 测试报文：与 mb14 配对，避免注入测试与自发报文撞车。int 必须为 true（同 NM_TX）：否则 0x200 只出首帧，Com 的 bTxRetry 永远为 1。 */
+	{ 13u, 1u,       0x200u, false, CAN_HW_MB_TX, 8u, true ,         0x0u },   /**< mb13 COM_TX       TX 0x200 */
 	{ 14u, 1u,       0x201u, false, CAN_HW_MB_RX, 8u, true ,  0xFFFFFFFFu },   /**< mb14 COM_RX       RX 0x201 */
 };
 /* @generated END: CAN0 mailboxes */
