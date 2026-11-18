@@ -234,13 +234,20 @@
    "title": "RTE V0.2：端口表配置生成 + U16/S32 值类型 + DIN/AIN/DOUT 绑定",
    "decision": "端口枚举与表体改由 Board.json 的 rte.ports 生成（tools/generator/BcmRte.py → Rte_Ports.h，表在 rte_cfg.c 展开）；端口模型扩为六种 kind（com_tx/com_rx/io_din/io_ain_raw/io_ain_phys/io_dout），值类型 switch/U16/S32；S32 复用 IoHwAb 的定点换算与饱和，RTE 不二次换算；运行期强制类型与方向校验；校验规则 E1~E6 + 合成配置自测 14 项。不走上游 ARXML 生成链（Rte.py/asar.py），避免为 8 个端口引入 ARXML 依赖。",
    "impact": "Host rte 用例 15→24 条（新增 DIN/AIN/U16/S32/方向类型不符/不适用），host_build 8/8；rte_cfg 14/14 并纳入静态回归（13 例）；App text 249308→249648（+340 B）；App/AppB 零警。业务未迁移：BcmBiz 仍用 Rte_Read_ParkBrake / Rte_Write_BrakeLamp，行为不变。生成物只出头：若生成 .c 会被编进平台库，而平台库没有 app 头路径（bcm_sig.h），会造成平台层反向依赖应用层。"
+  },
+  {
+   "id": "D-RTE-V03",
+   "date": "2026-11-18",
+   "title": "RTE V0.3：删手写封装、业务只认生成端口名，并证明换项目不改业务",
+   "decision": "删除 rte.h 里的 Rte_Read_ParkBrake / Rte_Write_BrakeLamp 两个手写宏（同一件事不留两条路），bcm_biz.c 直接用 Rte_Read(RTE_PORT_PARK_BRAKE, …) / Rte_Write(RTE_PORT_BRAKE_LAMP, …)。新增 tools/rte_portmap_check.py 五类断言：P1 业务去注释后不含下层标识符与头；P1b 端口实参不得写死数字；P2 引用端口必须存在于生成头；P3 变体配置下业务仍可编译；P4 变体确实改变绑定与索引（防 P3 空转）；P5 目标文件只引用 Rte_*/Platform_*。变体把 PARK_BRAKE 改为本地 DIN、BRAKE_LAMP 改为本地 DOUT 并整体移位索引。",
+   "impact": "Host rte 24/24、bcm 14/14、host_build 8/8；通信回归 14 例全过（新增 rte_portmap）；App/AppB 零警。三次缺陷注入全部被抓（业务调 BcmSig_*、端口写死数字、配置删端口）。尺寸 +8 B 来自新增的 2 个 RTE 端口（表项 4 B/项），迁移本身尺寸中性。**同时补齐 67c85b9 漏提交的四个核心文件**（rte.c/rte.h/rte_cfg.c/rte_cfg.h）——该提交因 git add 带坏路径且 stderr 被重定向而静默失败，导致远程 HEAD 的 test_rte.c 引用了不存在的 Rte_ReadU16 而编译不过。"
   }
  ],
  "current": {
   "module": 15,
   "task": 0,
-  "text": "RTE V0.2 完成（端口表配置生成 + U16/S32 + IO 绑定），下一步业务迁移或 10.5 调度",
-  "next": "①把 BcmBiz 从手写宏迁到生成的端口名（顺带验证换项目只改 Board.json）；②10.5 的 runnable 调度表（当前 main.c 按拍直调）；③若恢复硬件，回到 IoHwAb 的 RS2260 实物项。每轮通信回归 tools/regress_comm.py 13 例。"
+  "text": "RTE V0.3 完成（业务已迁到生成端口名，换项目可编译性有断言），下一步 IoHwAb V1.2 或 10.5 调度",
+  "next": "两条候选，都不占台架：①IoHwAb V1.2 的 Output Adapter（HSD/LSD/Relay 能力接口 + Host 故障注入，无实物只能做到 C 级）；②10.5 runnable 调度表（把 main.c 的按拍直调换成表驱动，为多组件做准备）。硬件到位后优先回 RS2260 实物项。每轮通信回归 tools/regress_comm.py 14 例。"
  },
  "modules": [
   {
@@ -696,7 +703,7 @@
      "text": "迁移 BcmBiz 示例",
      "check": "驻车信号逻辑不直接依赖 Com/MCU",
      "state": "PASS",
-     "evidence": "bcm_biz.c 只 include rte.h；Host 28/28（bcm 14 + rte 14）；上板 a9 18/18、m23 24/24"
+     "evidence": "V0.3 收口：删掉手写宏 `Rte_Read_ParkBrake`/`Rte_Write_BrakeLamp`，业务直接用生成端口名 `Rte_Read(RTE_PORT_PARK_BRAKE, …)`。业务决策表/去抖/健康状态未改。证明可换项目：`tools/rte_portmap_check.py` 12 项（业务去注释后无下层符号、目标文件只引用 Rte_*/Platform_*、变体配置下仍可编译），三次缺陷注入全部被抓。Host rte 24/24、bcm 14/14；上板 B 槽 io init=1、dout 0→1→0、bcm 状态可读"
     },
     {
      "text": "验证缓存与执行顺序",

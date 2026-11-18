@@ -48,6 +48,7 @@ CASES = [
 	("a4_gen",      "生成物幂等（7 项）",           [PY, "tools/a4_gen_check.py"], "static", 300),
 	("mux_cfg",     "MUX/ADC 配置规则（26 项）",        [PY, "tools/mux_cfg_check.py"], "static", 120),
 	("rte_cfg",     "RTE 端口规则（14 项）",            [PY, "tools/rte_cfg_check.py"], "static", 120),
+	("rte_portmap", "换项目：业务不含下层符号 + 变体可编译", [PY, "tools/rte_portmap_check.py"], "static", 180),
 	("can_tx_all",  "全 TX 邮箱覆盖（12 个）",      [PY, "tools/can_tx_all_check.py"], "hw", 120),
 	("m3",          "诊断链路（18 项）",            [PY, "tools/m3_check.py"], "hw", 180),
 	("m10",         "Com 信号层（22 项）",          [PY, "tools/m10_check.py"], "hw", 180),

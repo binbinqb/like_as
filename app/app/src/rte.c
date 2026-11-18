@@ -29,6 +29,7 @@
 #include "rte_cfg.h"
 
 #include "bcm_sig.h"
+#include "iohwab.h"
 
 /* ================================ [ 宏 ] ================================ */
 
@@ -126,48 +127,145 @@ static Rte_StatusType toStatus(Bcm_SigValidityType v)
 
 /* ================================ [ 接口 ] ================================ */
 
+/**
+ * @brief IoHwAb 四态 → RTE 返回状态
+ * @param[in] s IoHwAb 状态
+ * @return RTE 状态
+ * @note 与 `toStatus()`（BcmSig 四态）是同一套语义，只是来源不同。
+ */
+static Rte_StatusType toRteStatus(IoHwAb_StatusType s)
+{
+	Rte_StatusType ret;
+
+	switch (s)
+	{
+	case IOHWAB_STATUS_VALID:
+		ret = RTE_E_OK;
+		break;
+	case IOHWAB_STATUS_STALE:
+		ret = RTE_E_MAX_AGE_EXCEEDED;
+		break;
+	case IOHWAB_STATUS_ERROR:
+		ret = RTE_E_INVALID;
+		break;
+	case IOHWAB_STATUS_NEVER:
+	default:
+		ret = RTE_E_NEVER_RECEIVED;
+		break;
+	}
+
+	return ret;
+}
+
+/**
+ * @brief 校验端口：越界与方向
+ * @param[in] port 端口号
+ * @param[in] dir  期望方向
+ * @return TRUE 合法
+ */
+static boolean portOk(Rte_PortIdType port, uint8_t dir)
+{
+	if ((uint32_t)port >= (uint32_t)RTE_PORT_NUM)
+	{
+		return FALSE;
+	}
+	if (Rte_PortCfg[port].dir != dir)
+	{
+		/* 方向接反必须在第一次调用就暴露，不能"顺手改成读/写"。 */
+		return FALSE;
+	}
+	return TRUE;
+}
+
 Rte_StatusType Rte_Read(Rte_PortIdType port, Rte_SwitchType *data)
 {
 	Rte_StatusType ret = RTE_E_INVALID;
 	Bcm_SwStateType st = BCM_SW_STATE_UNKNOWN;
-	Bcm_SigValidityType v;
-	uint32_t idx = (uint32_t)port;
+	Bcm_SigValidityType v = BCM_SIG_NEVER_RECEIVED;
+	IoHwAb_StatusType ioSt = IOHWAB_STATUS_NEVER;
+	boolean ioVal = FALSE;
 
-	if ((NULL == data) || (idx >= (uint32_t)RTE_PORT_NUM))
+	if ((NULL == data) || (portOk(port, RTE_DIR_IN) == FALSE))
 	{
 		return RTE_E_INVALID;
 	}
 
-	if (RTE_DIR_IN != Rte_PortCfg[idx].dir)
+	switch (Rte_PortCfg[port].kind)
 	{
-		/* 读到输出端口：多半是把端口名接反了。返回错误而不是读影子，
-		 * 否则代码"能跑"，直到某天有人改了方向才发现逻辑一直是反的。 */
+	case RTE_KIND_COM_RX:
+		v = BcmSig_RxRead((Bcm_SigRxIdType)Rte_PortCfg[port].ref, &st);
+		ret = toStatus(v);
+		/* 非 OK 时也写 INVALID：防止调用者忘判返回值就读到上一轮旧值。 */
+		*data = (RTE_E_OK == ret) ? toRte(st) : RTE_SWITCH_INVALID;
+		break;
+
+	case RTE_KIND_DIN:
+		ioSt = IOHWAB_STATUS_NEVER;
+		if (IoHwAb_DinRead((IoHwAb_DinId)Rte_PortCfg[port].ref, &ioVal,
+		                   &ioSt) != E_OK)
+		{
+			*data = RTE_SWITCH_INVALID;
+			return RTE_E_INVALID;
+		}
+		ret = toRteStatus(ioSt);
+		*data = (RTE_E_OK == ret)
+		        ? ((ioVal != FALSE) ? RTE_SWITCH_ON : RTE_SWITCH_OFF)
+		        : RTE_SWITCH_INVALID;
+		break;
+
+	default:
+		/* 数值型端口不能按 switch 读 */
+		*data = RTE_SWITCH_INVALID;
 		return RTE_E_INVALID;
 	}
 
-	v = BcmSig_RxRead((Bcm_SigRxIdType)Rte_PortCfg[idx].signalId, &st);
-	ret = toStatus(v);
+	return ret;
+}
 
-	/* 非 OK 时也写 INVALID：防止调用者忘判返回值就读到上一轮旧值。
-	 * 这不等于允许不判返回值 —— 见 rte.h 的说明。 */
-	*data = (RTE_E_OK == ret) ? toRte(st) : RTE_SWITCH_INVALID;
+Rte_StatusType Rte_ReadU16(Rte_PortIdType port, uint16_t *data)
+{
+	IoHwAb_StatusType ioSt = IOHWAB_STATUS_NEVER;
+	Rte_StatusType ret;
 
+	if ((NULL == data) || (portOk(port, RTE_DIR_IN) == FALSE) ||
+	    (Rte_PortCfg[port].kind != RTE_KIND_AIN_RAW))
+	{
+		return RTE_E_INVALID;
+	}
+
+	if (IoHwAb_AinReadRaw((IoHwAb_AinId)Rte_PortCfg[port].ref, data,
+	                      &ioSt) != E_OK)
+	{
+		return RTE_E_INVALID;
+	}
+	ret = toRteStatus(ioSt);
+	return ret;
+}
+
+Rte_StatusType Rte_ReadS32(Rte_PortIdType port, sint32_t *data)
+{
+	IoHwAb_StatusType ioSt = IOHWAB_STATUS_NEVER;
+	Rte_StatusType ret;
+
+	if ((NULL == data) || (portOk(port, RTE_DIR_IN) == FALSE) ||
+	    (Rte_PortCfg[port].kind != RTE_KIND_AIN_PHYS))
+	{
+		return RTE_E_INVALID;
+	}
+
+	if (IoHwAb_AinReadPhys((IoHwAb_AinId)Rte_PortCfg[port].ref, data,
+	                       &ioSt) != E_OK)
+	{
+		return RTE_E_INVALID;
+	}
+	ret = toRteStatus(ioSt);
 	return ret;
 }
 
 Std_ReturnType Rte_Write(Rte_PortIdType port, Rte_SwitchType data)
 {
-	Std_ReturnType ret = E_NOT_OK;
-	uint32_t idx = (uint32_t)port;
-
-	if ((idx >= (uint32_t)RTE_PORT_NUM))
+	if (portOk(port, RTE_DIR_OUT) == FALSE)
 	{
-		return E_NOT_OK;
-	}
-
-	if (RTE_DIR_OUT != Rte_PortCfg[idx].dir)
-	{
-		/* 写输入端口：同样是接反。这里不"顺手改成读"，直接拒绝。 */
 		return E_NOT_OK;
 	}
 
@@ -176,7 +274,25 @@ Std_ReturnType Rte_Write(Rte_PortIdType port, Rte_SwitchType data)
 		return E_NOT_OK;
 	}
 
-	ret = BcmSig_TxSet((Bcm_SigIdType)Rte_PortCfg[idx].signalId, toBcm(data));
+	switch (Rte_PortCfg[port].kind)
+	{
+	case RTE_KIND_COM_TX:
+		return BcmSig_TxSet((Bcm_SigIdType)Rte_PortCfg[port].ref, toBcm(data));
 
-	return ret;
+	case RTE_KIND_DOUT:
+		/* ERROR / INVALID 不是"关"，是"不知道" —— 不去驱动输出。
+		 * 把故障当 OFF 会让灯在故障时安静地灭掉，仪表却显示正常。 */
+		if (RTE_SWITCH_ON == data)
+		{
+			return IoHwAb_DoutWrite((IoHwAb_DoutId)Rte_PortCfg[port].ref, TRUE);
+		}
+		if (RTE_SWITCH_OFF == data)
+		{
+			return IoHwAb_DoutWrite((IoHwAb_DoutId)Rte_PortCfg[port].ref, FALSE);
+		}
+		return E_NOT_OK;
+
+	default:
+		return E_NOT_OK;
+	}
 }

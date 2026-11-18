@@ -16,11 +16,12 @@
  *
  *          ```c
  *          Rte_SwitchType on;
- *          if (RTE_E_OK == Rte_Read_ParkBrake(&on)) { ... }
+ *          if (RTE_E_OK == Rte_Read(RTE_PORT_PARK_BRAKE, &on)) { ... }
  *          ```
  *
  *          值从指针里出，**有效性从返回值出**。业务不再接触 Com / CanIf /
- *          绑定的枚举，只认端口名和 `RTE_E_*`。
+ *          绑定的枚举，只认端口名和 `RTE_E_*`。端口名从 `Rte_Ports.h` 来
+ *          （`Board.json` 生成），见本文件末尾的说明。
  *
  *          @section RTE_MAP 四态映射（这是本层唯一的实质逻辑）
  *
@@ -72,18 +73,21 @@
  *          第一次调用时就暴露，而不是等到总线上出现一条自己发给自己的报文。
  *
  * @author  binbina
- * @version V0.1.0
+ * @version V0.2.0
  *
  * @par 修改记录
  * | 版本   | 日期       | 作者    | 变更说明 |
  * |--------|------------|---------|----------|
  * | V0.1.0 | 2026-11-17 | binbina | 首版：switch 端口、四态映射、单向校验 |
+ * | V0.2.0 | 2026-11-18 | binbina | 端口表改由 Board.json 生成；增加 U16/S32 读接口与 IO 绑定（DIN/AIN/DOUT） |
  */
 
 #ifndef RTE_H
 #define RTE_H
 
 #include "Std_Types.h"
+
+#include "Rte_Ports.h"   /* RTE_PORT_* 与 RTE_PORT_NUM（Board.json 生成） */
 
 #ifdef __cplusplus
 extern "C" {
@@ -118,17 +122,15 @@ typedef enum
 /* ============================== [ 端口编号 ] ============================== */
 
 /**
- * @brief 端口编号（业务侧唯一可见的"地址"）
+ * @brief 端口编号
  *
- * @note  命名是**业务语义**，不是报文名。`RTE_PORT_PARK_BRAKE` 落在哪条报文、
- *        第几位，只有 `rte_cfg.c` 与绑定表知道。
+ * @note 具体端口名与数量由 `Board.json` 的 `rte.ports` 生成到 `Rte_Ports.h`
+ *       （`RTE_PORT_*` 枚举 + `RTE_PORT_NUM`）。这里只给裸类型，避免
+ *       通用接口头反过来依赖项目生成物。
+ * @note 命名是**业务语义**，不是报文名。某个端口落在哪条报文、第几位，
+ *       只有 `rte_cfg.c` 与绑定表知道。
  */
-typedef enum
-{
-	RTE_PORT_PARK_BRAKE = 0, /**< 输入：驻车制动开关 */
-	RTE_PORT_BRAKE_LAMP,     /**< 输出：制动灯状态 */
-	RTE_PORT_NUM             /**< 端口总数（不是有效编号） */
-} Rte_PortIdType;
+typedef uint16 Rte_PortIdType;
 
 /* ================================ [ 接口 ] ================================ */
 
@@ -164,19 +166,49 @@ Rte_StatusType Rte_Read(Rte_PortIdType port, Rte_SwitchType *data);
  */
 Std_ReturnType Rte_Write(Rte_PortIdType port, Rte_SwitchType data);
 
-/* ============================== [ 类型化封装 ] ============================== */
+/**
+ * @brief 读一个 16 位原始量端口（当前只有 AIN 原始值）
+ *
+ * @param[in]  port 端口号
+ * @param[out] data 原始值；**仅在返回 `RTE_E_OK` 时有效**
+ * @return `RTE_E_OK` / `RTE_E_NEVER_RECEIVED` / `RTE_E_MAX_AGE_EXCEEDED` /
+ *         `RTE_E_INVALID`（含端口越界、方向或类型不符）
+ */
+Rte_StatusType Rte_ReadU16(Rte_PortIdType port, uint16_t *data);
 
 /**
- * @brief 类型化读端口（生成器将来从端口表生成，现在是手写）
- * @param[out] p `Rte_SwitchType *`
+ * @brief 读一个 32 位定点物理量端口（当前只有 AIN 物理量）
+ *
+ * @param[in]  port 端口号
+ * @param[out] data 物理量（×1000）；**仅在返回 `RTE_E_OK` 时有效**
+ * @return 同 `Rte_ReadU16()`
+ *
+ * @note 定点而非 float：换算与饱和在 `IoHwAb_AinReadPhys()` 里做，
+ *       RTE 只负责状态映射 —— 不在这里二次换算，否则会出现两套 factor。
  */
-#define Rte_Read_ParkBrake(p)   Rte_Read(RTE_PORT_PARK_BRAKE, (p))
+Rte_StatusType Rte_ReadS32(Rte_PortIdType port, sint32_t *data);
+
+/* ============================== [ 端口名从哪来 ] ============================== */
 
 /**
- * @brief 类型化写端口
- * @param[in] v `Rte_SwitchType`
+ * @note  V0.2 起**没有**手写的 `Rte_Read_<端口>()` 宏了。
+ *
+ *        端口名 `RTE_PORT_*` 由 `Board.json` 的 `rte.ports` 生成到
+ *        `Rte_Ports.h`，业务直接写：
+ *
+ *        ```c
+ *        Rte_SwitchType st;
+ *        if (RTE_E_OK == Rte_Read(RTE_PORT_PARK_BRAKE, &st)) { ... }
+ *        ```
+ *
+ *        这样"换项目"只需改 `Board.json`（端口绑到哪条信号、哪个 IO 通道），
+ *        业务代码一行不动 —— 前提是**端口名保持业务语义**（`PARK_BRAKE`、
+ *        `BRAKE_LAMP`），不要用报文名或引脚名当端口名。
+ *
+ * @warning 业务文件里**禁止**出现 `BCM_SIG_*` / `IOHWAB_*` / `Com_*` / `CanIf_*`。
+ *          一旦出现，就说明业务绕过 RTE 直接摸了下层，换项目必然要改业务。
+ *          这条由 `tools/rte_portmap_check.py` 做静态断言。
  */
-#define Rte_Write_BrakeLamp(v)  Rte_Write(RTE_PORT_BRAKE_LAMP, (v))
 
 #ifdef __cplusplus
 }

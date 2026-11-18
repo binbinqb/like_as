@@ -32,12 +32,16 @@
  * @note    @section BIZC_RTE 与 RTE 的关系（10.4）
  *
  *          本文件**只** include `rte.h`，不再 include `bcm_sig.h`。
- *          输入用 `Rte_Read_ParkBrake()`、输出用 `Rte_Write_BrakeLamp()`；
+ *          输入用 `Rte_Read(RTE_PORT_PARK_BRAKE, &st)`、
+ *          输出用 `Rte_Write(RTE_PORT_BRAKE_LAMP, v)`；
  *          `RTE_E_*` 四种状态与上表的"输入有效性"一一对应。
- *          好处是换信号类型、换绑定方式时，这个文件一行都不用改。
+ *
+ *          **端口名由 `Board.json` 的 `rte.ports` 生成**（`Rte_Ports.h`）。
+ *          换一个 BCM 项目时，端口绑到哪条报文、第几位、还是本地 DIN 通道，
+ *          都只改配置；本文件一行不动。前提是端口名保持**业务语义**。
  *
  * @author  binbina
- * @version V1.1.0
+ * @version V1.2.0
  */
 
 #include "bcm_biz.h"
@@ -94,7 +98,7 @@ void BcmBiz_MainFunction(void)
 
 	/* 这一行就是 RTE 的全部价值：值从指针出，有效性从返回值出。
 	 * 业务不知道这个值来自 Com、来自哪个报文、第几位。 */
-	v = Rte_Read_ParkBrake(&st);
+	v = Rte_Read(RTE_PORT_PARK_BRAKE, &st);
 
 	switch (v)
 	{
@@ -153,7 +157,8 @@ void BcmBiz_MainFunction(void)
 
 	if (FALSE == hold)
 	{
-		(void)Rte_Write_BrakeLamp((TRUE == lampOn) ? RTE_SWITCH_ON : RTE_SWITCH_OFF);
+		(void)Rte_Write(RTE_PORT_BRAKE_LAMP,
+		                (TRUE == lampOn) ? RTE_SWITCH_ON : RTE_SWITCH_OFF);
 	}
 }
 

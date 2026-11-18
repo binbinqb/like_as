@@ -93,38 +93,38 @@ int main(void)
 	BcmSig_Init();
 
 	/* ---------- 1. 从未收到 ---------- */
-	st = Rte_Read_ParkBrake(&v);
+	st = Rte_Read(RTE_PORT_PARK_BRAKE, &v);
 	check((RTE_E_NEVER_RECEIVED == st) && (RTE_SWITCH_INVALID == v),
 	      "未收到 → NEVER_RECEIVED，值不可用");
 
 	/* ---------- 2. 有效 ON ---------- */
 	inject_park_brake(1u);
 	BcmSig_MainFunction();
-	st = Rte_Read_ParkBrake(&v);
+	st = Rte_Read(RTE_PORT_PARK_BRAKE, &v);
 	check((RTE_E_OK == st) && (RTE_SWITCH_ON == v), "raw=1 → OK + ON");
 
 	/* ---------- 3. 有效但内容是故障 ---------- */
 	inject_park_brake(2u);
 	BcmSig_MainFunction();
-	st = Rte_Read_ParkBrake(&v);
+	st = Rte_Read(RTE_PORT_PARK_BRAKE, &v);
 	check((RTE_E_OK == st) && (RTE_SWITCH_ERROR == v),
 	      "raw=2 → OK + ERROR（有效的坏消息）");
 
 	/* ---------- 4. 对方声明无效 ---------- */
 	inject_park_brake(3u);
 	BcmSig_MainFunction();
-	st = Rte_Read_ParkBrake(&v);
+	st = Rte_Read(RTE_PORT_PARK_BRAKE, &v);
 	check(RTE_E_INVALID == st, "raw=3 → INVALID（没有消息）");
 
 	/* ---------- 5. 超时 ---------- */
 	inject_park_brake(1u);
 	Host_AdvanceMs(400u);
 	BcmSig_MainFunction();
-	st = Rte_Read_ParkBrake(&v);
+	st = Rte_Read(RTE_PORT_PARK_BRAKE, &v);
 	check(RTE_E_MAX_AGE_EXCEEDED == st, "超时 300 ms → MAX_AGE_EXCEEDED");
 
 	/* ---------- 6. 写输出端口 ---------- */
-	check(E_OK == Rte_Write_BrakeLamp(RTE_SWITCH_ON), "写制动灯端口 → E_OK");
+	check(E_OK == Rte_Write(RTE_PORT_BRAKE_LAMP, RTE_SWITCH_ON), "写制动灯端口 → E_OK");
 	check(BCM_SW_STATE_ON == BcmSig_TxGet(BCM_SIG_BRAKE),
 	      "写入后绑定层影子 = ON");
 
@@ -149,18 +149,18 @@ int main(void)
 	/* ---------- 10. 一拍内一致性：影子即快照 ---------- */
 	inject_park_brake(1u);
 	BcmSig_MainFunction();
-	(void)Rte_Read_ParkBrake(&v);          /* 本拍读到 ON */
+	(void)Rte_Read(RTE_PORT_PARK_BRAKE, &v);          /* 本拍读到 ON */
 	/* 模拟中断在拍中改掉底层缓冲，但**不跑** BcmSig_MainFunction：
 	 * 绑定层影子没刷新，所以本拍后续读必须还是 ON。 */
 	HostCom_SetRx((Com_SignalIdType)COM_SID_ParkingBrakeSwitch, 0u);
-	st = Rte_Read_ParkBrake(&v);
+	st = Rte_Read(RTE_PORT_PARK_BRAKE, &v);
 	check((RTE_E_OK == st) && (RTE_SWITCH_ON == v),
 	      "拍中改动底层缓冲 → 本拍读值不变（影子即快照）");
 
 	/* ---------- 11. 恢复后重新可用 ---------- */
 	inject_park_brake(1u);
 	BcmSig_MainFunction();
-	st = Rte_Read_ParkBrake(&v);
+	st = Rte_Read(RTE_PORT_PARK_BRAKE, &v);
 	check((RTE_E_OK == st) && (RTE_SWITCH_ON == v), "重新收到帧 → 恢复 OK + ON");
 
 	/* ---------- 12. IO 端口：DIN（Host 后端） ---------- */

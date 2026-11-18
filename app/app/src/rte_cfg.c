@@ -6,30 +6,29 @@
  *          `sizeof` 推出来的实际长度做越界判断，所以这张表少写一行不会
  *          静默读越界，而是让编号越界的端口统一返回错误。
  *
- * @note    新增端口的顺序：先在 `rte.h` 的 `Rte_PortIdType` 里加编号
- *          （**必须加在 `RTE_PORT_NUM` 之前**），再在这里加一行。两处
- *          顺序不一致会让端口读到别的信号 —— 这是本层唯一容易犯的错。
+ * @note    V0.2.0 起，端口名与表内容都来自 `Board.json` 的 `rte.ports`，
+ *          由 `tools/generator/BcmRte.py` 生成到 `Rte_Ports.h`。
+ *          **不要**在这里手工改表 —— 改了会在下次构建被覆盖。
  *
  * @author  binbina
- * @version V0.1.0
+ * @version V0.2.0
  *
  * @par 修改记录
  * | 版本   | 日期       | 作者    | 变更说明 |
  * |--------|------------|---------|----------|
  * | V0.1.0 | 2026-11-17 | binbina | 首版：驻车制动输入、制动灯输出 |
+ * | V0.2.0 | 2026-11-18 | binbina | 表改为展开生成的 RTE_PORT_CFG_LIST |
  */
 
 #include "rte.h"
 #include "rte_cfg.h"
+#include "Rte_Ports.h"   /* RTE_PORT_CFG_LIST：端口表初始化列表（Board.json 生成） */
 
-#include "bcm_sig.h"   /* Bcm_SigRxIdType / Bcm_SigIdType：端口指向的信号 */
+#include "bcm_sig.h"     /* Bcm_SigRxIdType / Bcm_SigIdType */
+#include "IoHwAb_Cfg.h"  /* IOHWAB_* 通道号 */
 
 const Rte_PortCfgType Rte_PortCfg[RTE_PORT_NUM] =
-{
-	/* 方向        绑定层信号号 */
-	{ RTE_DIR_IN,  (uint8_t)BCM_SIG_RX_PARK_BRAKE }, /**< RTE_PORT_PARK_BRAKE */
-	{ RTE_DIR_OUT, (uint8_t)BCM_SIG_BRAKE }          /**< RTE_PORT_BRAKE_LAMP */
-};
+	RTE_PORT_CFG_LIST;
 
 /* 编译期长度检查：表必须恰好 RTE_PORT_NUM 行。
  * 少写一行不会报错（C 会把缺的补 0），但会让"写了一个不存在的端口"
