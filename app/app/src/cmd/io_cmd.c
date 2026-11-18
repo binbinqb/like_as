@@ -81,6 +81,20 @@ static int sh_cmd_io(int argc, char *argv[])
 		}
 		(void)IoHwAb_DinRead((IoHwAb_DinId)0, &v, &st);
 		sh_print("  din[0]  = %u (status=%u)\r\n", (unsigned)v, (unsigned)st);
+
+		/* AIN 打印原始值 + 状态：直接看 status 比看数值更能判断"是不是新数据" */
+		for (i = 0u; i < IOHWAB_AIN_COUNT; i++) {
+			uint16 rawv = 0u;
+
+			st = IOHWAB_STATUS_NEVER;
+			if (IoHwAb_AinReadRaw((IoHwAb_AinId)i, &rawv, &st) == E_OK) {
+				sh_print("  ain[%u]  = %u (status=%u)\r\n",
+				         (unsigned)i, (unsigned)rawv, (unsigned)st);
+			} else {
+				sh_print("  ain[%u]  = n/a (status=%u)\r\n",
+				         (unsigned)i, (unsigned)st);
+			}
+		}
 		sh_puts(SH_RET_OK);
 		return SH_OK;
 	}

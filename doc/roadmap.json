@@ -213,13 +213,20 @@
    "title": "MuxManager 第一阶段：共享 ABC 状态机 + 配置生成（无实物，Host 验证）",
    "decision": "在 IoHwAb 与 HAL 之间加 MuxManager：selectBuses/devices 描述总线与器件，io.source=mux 引用 (device, Y)；通道编码 (dev<<8)|y；Mux 只发布电气量 + seq，极性/消抖/滤波仍归 IoHwAb Core。ADC 未完成不切 ABC，超时丢样本后继续；GPIO/启动失败不发布。生成器新增 R11~R14 与 Mux_Cfg.{h,c}。",
    "impact": "Host 26/26（11 组时序断言）、host_build 7/7 套件、配置规则自测 24/24（新增静态回归用例 mux_cfg）、通信回归 12/12；App/AppB 零警且 text 不变（无设备时 Mux 被 gc-sections 丢弃，符合预期）。未做：ADC COM 的 HAL 绑定（与直连 AIN 同批）、真实 settle/INH 参数、实物验证。首版状态机有一个真缺陷：Init 用“取下一个 ABC”导致 ABC0 整轮被跳过，Host 用例抓到并修复。"
+  },
+  {
+   "id": "D-ADC-V11",
+   "date": "2026-11-18",
+   "title": "直连 ADC 采样落地：AdcSampler + channel 编码修正 + 组所有权 R15（上板实测）",
+   "decision": "新增 AdcSampler（组轮转：启动→下一拍查完成→发布；超时丢弃；只有新样本才 seq++），Target 走 Adc HAL，Host 用可注入替身；直连 AIN 的 channel 统一编码为 (group<<8)|slot（修掉“MainFunction 只传 channel、不传 group”的潜伏缺陷）；MUX 的 ADC COM 由 MuxManager 直接驱动 Adc HAL，生成器新增 R15 禁止同一 ADC 组被两个驱动者占用。",
+   "impact": "上板实测：io 的 ain[2]=1923、ain[3]=2255（status=VALID），与 shell 一次性读组 adc 0 的 1923/2257 互证（差 2 为滤波滞后）；Host adc_sampler 16/16、host_build 8/8 套件；mux_cfg 26/26（新增 R15 与编码断言）；通信回归 12/12；App text 247948→249308（+1360 B）。未验证：MUX 的 ADC COM 分支（无 RS2260）。详见 doc/设计评审/ADC采样与绑定.md。"
   }
  ],
  "current": {
   "module": 15,
   "task": 0,
-  "text": "MuxManager 第一阶段完成（Host 26/26，无实物），下一步 ADC 绑定",
-  "next": "把直连 AIN 与 MUX ADC COM 一起做完：定 ADC 组表 + 用“取上次转换结果”的接口（不能用会重启转换的 Adc_ReadGroup），Host 侧给 Adc 后端加转换耗时模拟；然后拿 RS2260 手册填 settleMs/adcTimeoutMs/INH 极性，实物到位先用单根 Y 验证 ABC→Y 映射。每轮通信回归 tools/regress_comm.py 12 例。"
+  "text": "直连 ADC 已上板实测（ain[2]/ain[3] VALID），IoHwAb 无硬件部分到此为止",
+  "next": "IoHwAb 剩余的实物项（RS2260 的 settle/INH/ADC COM、PCA9555 的 I2C HAL）都缺硬件，暂停。下一步二选一：①RTE 配置生成（Boolean/整型端口 + 物理量换算，让 RTE 适配不同 BCM 项目）；②Boot 安全与故障恢复（中/断电、0x27 换正式方案、A/B 回滚故障注入）。两件事都独占台架，不要同时开。每轮通信回归 tools/regress_comm.py 12 例。"
  },
  "modules": [
   {
@@ -840,7 +847,7 @@
      "text": "RS2260 SelectBus 扫描（GPIO/ADC COM）",
      "check": "共享 ABC 不冲突、ADC 转换期间 ABC 稳定、混合 GPIO/ADC 采样",
      "state": "PARTIAL",
-     "evidence": "核心已实现并 Host 验证：mux.c（状态机）+ iohwab_mux.c（通道拆包）+ MuxAc.c（Dio HwOps）；Host 26/26（共享 ABC、转换期间 0 次切 ABC、超时不卡死、失败不发布）；配置生成 R11~R14 + 24 项自测。**缺**：ADC COM 的 HAL 绑定（与直连 AIN 同批，当前显式 E_NOT_OK）、真实 settle/INH 时序（需器件手册）、实物验证。见 doc/设计评审/RS2260-MuxManager.md。"
+     "evidence": "核心已实现并 Host 验证：mux.c（状态机）+ iohwab_mux.c（通道拆包）+ MuxAc.c（Dio HwOps）；Host 26/26（共享 ABC、转换期间 0 次切 ABC、超时不卡死、失败不发布）；配置生成 R11~R14 + 24 项自测。**ADC COM 已接 Adc HAL**（Start→Adc_StartGroupConversion，Ready→Adc_GetGroupStatus，Read→Adc_ReadGroup+取槽位），但无实物、该分支从未执行。**缺**：真实 settle/采样时间/INH 时序（需器件手册）、实物验证。见 doc/设计评审/RS2260-MuxManager.md。"
     },
     {
      "text": "接入 PCA9555/TCA9539 扩展器",

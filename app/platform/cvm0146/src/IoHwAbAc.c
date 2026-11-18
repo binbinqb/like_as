@@ -39,6 +39,7 @@
 
 #include "iohwab.h"
 
+#include "adc_sampler.h"
 #include "Dio.h"
 #include "Pwm.h"
 
@@ -114,23 +115,22 @@ static Std_ReturnType iohwabac_DoutRead(uint16 channel, boolean *level)
 /**
  * @brief 读 ADC 原始值
  *
- * @note  V1.0 的 Board.json **没有直连 AIN 通道**（`io.ain` 全是 host），
- *        所以这里先返回 `E_NOT_OK`（"未实现"必须显式失败，不能给假值）。
- *        接入真实模拟量时按下面约定实现：
- *        - `channel = (group << 8) | index`，由生成器编码；
- *        - 只有该组**转换完成**时才 `(*seq)++`；未完成时返回上一次的 seq，
- *          Core 会据此判"没有新样本"而不是拿旧值反复滤波；
- *        - 取值用"读上次结果"的接口，**不要**用会重新触发转换的
- *          `Adc_ReadGroup()`，否则与 RS2260 的 ABC 时序冲突
- *          （见 IoHwAb-V2.0 架构 §7）。
+ * @param[in]  channel `(group << 8) | slot`（生成器按此编码）
+ * @param[out] raw     原始值
+ * @param[out] seq     样本序号（AdcSampler 每发布一次 +1）
+ * @return E_OK / E_NOT_OK
+ * @note  数据来自 `AdcSampler` 的已发布样本 —— 本函数**不启动转换**、
+ *        也不忙等。转换节奏由 `AdcSampler_MainFunction()` 调度，
+ *        这样同一组的多个通道共用一次转换，也不会与 MuxManager 抢组
+ *        （组所有权由生成器 R15 保证）。
  */
 static Std_ReturnType iohwabac_AinReadRaw(uint16 channel, uint16 *raw,
                                           uint16 *seq)
 {
-	(void)channel;
-	(void)raw;
-	(void)seq;
-	return E_NOT_OK;
+	uint8 group = (uint8)(channel >> 8);
+	uint8 slot = (uint8)(channel & 0xFFu);
+
+	return AdcSampler_GetRaw(group, slot, raw, seq);
 }
 
 /* ============================ [ PWM ] ============================ */

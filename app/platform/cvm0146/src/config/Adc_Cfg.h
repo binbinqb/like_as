@@ -30,6 +30,16 @@
 #define ADC_CFG_GROUP_ADC1      (1u)   /**< ADC1：POT2(ch2)，单通道 */
 
 /**
+ * @brief 每组通道数的编译期常量
+ * @note  文件作用域的静态表（如 `AdcSamplerAc.c` 的 `AdcSampler_GroupCfgs`）
+ *        不能用 `Adc_Cfg_GroupChannels[]` 初始化 —— 那是 const 数组，不是
+ *        常量表达式。所以这里给一份宏，`Adc_Cfg.c` 的定义也用它，
+ *        保证"改一处两处都变"。
+ */
+#define ADC_CFG_GROUP0_CHANNELS (2u)
+#define ADC_CFG_GROUP1_CHANNELS (1u)
+
+/**
  * @brief 单组最多通道数
  * @note  用来给"读一组"的临时缓冲区定长。当前最多 2 路，
  *        留到 8 是为了 MUX 场景（一个 RS2260 的 8 个 Y 通道若各自占一个 ADC 通道）。

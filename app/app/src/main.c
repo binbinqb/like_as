@@ -103,6 +103,7 @@
  * 报文名、字节偏移 —— 那些都在 `bcm_sig_cfg.c` 的表里。 */
 #include "bcm_sig.h"
 #include "iohwab.h"
+#include "adc_sampler.h"
 #include "rx_mon.h"       /* A2：CAN 接收到达监视（清零必须在总线上线前） */
 #include "stack_mon.h"    /* A6：栈水位（main 第一条语句就要填图案） */
 #include "perf_mon.h"     /* A6：DWT 周期计数（SysTick 迟到量 / 单拍耗时） */
@@ -357,6 +358,11 @@ int main(void)
 		Platform_Puts("IoHwAb: some outputs failed to reach safe state\n");
 	}
 
+	/* 直连 ADC 采样调度：Adc 已在 EcuM 的 DriverInitListZero 里初始化，
+	 * 这里只清采样状态。转换节奏交给 10 ms 的 MainFunction，
+	 * IoHwAb 只消费已发布样本（不启动转换、不忙等）。 */
+	AdcSampler_Init();
+
 	/* 业务骨架（A9）：必须在 BcmSig_Init 之后（它只清自己的状态，不碰信号）。
 	 * 默认**不接管**输出 —— 理由见 bcm_biz.h 的 BcmBiz_SetEnabled：
 	 * `bcm all on|off` 这类验收命令与业务会抢同一个发送 shadow。 */
@@ -480,7 +486,10 @@ int main(void)
 			ComApp_Tick();
 
 			/* 逻辑 IO 采样：DIN 消抖、AIN 滤波（10 ms 节拍）。
-			 * 读接口只取这里的缓存，不在业务里访问 HAL。 */
+			 * 读接口只取这里的缓存，不在业务里访问 HAL。
+			 * 顺序：先让 ADC 调度器推进（可能发布新样本），
+			 * 再让 IoHwAb 消费 —— 反过来会晚一拍。 */
+			AdcSampler_MainFunction();
 			IoHwAb_MainFunction();
 
 			/* 状态机单独推进：负责 RUN / POST_RUN / SLEEP 的迁移，

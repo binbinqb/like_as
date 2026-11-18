@@ -112,6 +112,6 @@ const Adc_ConfigType Adc_Config = {
  *          改组配置时两处一起改，否则上层读到的长度与实际转换的通道数不符。
  */
 const uint8_t Adc_Cfg_GroupChannels[ADC_CFG_NUM_GROUPS] = {
-	(uint8_t)ARRAY_SIZE(Adc_Ch_Adc0),
-	(uint8_t)ARRAY_SIZE(Adc_Ch_Adc1),
+	(uint8_t)ADC_CFG_GROUP0_CHANNELS,
+	(uint8_t)ADC_CFG_GROUP1_CHANNELS,
 };

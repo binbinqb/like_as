@@ -66,6 +66,28 @@
                 "staleMs": 500
             },
             {
+                "name": "POT1_ADC",
+                "_note": "板载电位计 1（ADC0_SE12，slot 0）；mV = raw*3300/4095",
+                "source": "direct",
+                "adcGroup": 0,
+                "channel": 0,
+                "filterShift": 2,
+                "factor": 806,
+                "offset": 0,
+                "staleMs": 200
+            },
+            {
+                "name": "VBAT_ADC",
+                "_note": "板载 I_AN_VBAT（ADC0_SE13，slot 1，分压 0.23）；mV = raw*3300/4095/0.23",
+                "source": "direct",
+                "adcGroup": 0,
+                "channel": 1,
+                "filterShift": 2,
+                "factor": 3503,
+                "offset": 0,
+                "staleMs": 200
+            },
+            {
                 "name": "AIN_OVF",
                 "_note": "Host 专用：raw×factor=6.5e12 超出 sint32，且 /1000 后仍超 INT32_MAX，验证 int64 中间量与饱和（板上是不可用桩）",
                 "source": "host",

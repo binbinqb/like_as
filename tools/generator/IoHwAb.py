@@ -25,7 +25,8 @@
 
 R1 名称唯一 / R2 直连 pin 存在 / R3 dir 匹配 / R4 电平合法 / R5 消抖拍数 /
 R6 ADC 组范围 / R7 PWM 参数 / R8 物理资源不重复绑定 / R9 超时拍数 / R10 安全值缺省 /
-R11 SelectBus 定义 / R12 设备定义 / R13 mux 通道引用 / R14 设备至少有一个通道
+R11 SelectBus 定义 / R12 设备定义 / R13 mux 通道引用 / R14 设备至少有一个通道 /
+R15 ADC 组所有权唯一
 
 @author binbina
 """
@@ -135,6 +136,7 @@ def _norm(cfg, pins, dio_channels, adc_groups, pwm_channels):
 	used_adc = {}
 	used_pwm = {}
 	used_mux = {}
+	used_adc_groups = set()   # 直连 AIN 占用的组（R15 用）
 
 	buses, devices, dev_idx = _mux(cfg, dio_channels, adc_groups)
 
@@ -228,6 +230,9 @@ def _norm(cfg, pins, dio_channels, adc_groups, pwm_channels):
 				_die("R8 %s 与 %s 绑定同一 ADC 组/通道 %s"
 				     % (n, used_adc[key], key))
 			used_adc[key] = n
+			used_adc_groups.add(grp)
+			# 统一编码：channel = (group << 8) | slot，ops 只收 channel
+			ch = (grp << 8) | ch
 		shift = int(e.get("filterShift", 0))
 		if shift < 0 or shift > 8:
 			_die("%s.filterShift 允许 0..8" % n)
@@ -299,6 +304,15 @@ def _norm(cfg, pins, dio_channels, adc_groups, pwm_channels):
 		for dev in devices:
 			if dev["bus"] == buses.index(bus):
 				bus["mask"] |= dev["mask"]
+
+	# R15：一个 ADC 组只能有一个驱动者（AdcSampler 或 MuxManager）
+	for dev in devices:
+		if dev["com"] != COM["ADC"]:
+			continue
+		g = (dev["com_ch"] >> 8) & 0xFF
+		if g in used_adc_groups:
+			_die("R15 设备 %s 的 ADC 组 %d 已被直连 AIN 占用；"
+			     "同一组只能有一个驱动者" % (dev["name"], g))
 
 	return out, buses, devices
 

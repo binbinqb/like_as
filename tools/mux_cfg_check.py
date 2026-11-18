@@ -71,6 +71,9 @@ def base_cfg():
 				{"name": "VBAT", "source": "mux", "device": "MUX2",
 				 "channel": 3, "filterShift": 3, "factor": 33,
 				 "offset": 0, "staleMs": 200},
+				{"name": "POT2_ADC", "source": "direct", "adcGroup": 1,
+				 "channel": 0, "filterShift": 2, "factor": 806,
+				 "staleMs": 200},
 			],
 		},
 	}
@@ -113,6 +116,8 @@ def main():
 	check("AIN source 记为 mux，ops 走 MuxAin",
 	      (t["ain"][0]["src"] == "mux")
 	      and (G._OPS[("ain", "mux")] == "IoHwAb_MuxAinOps"))
+	check("直连 AIN 编码 = (组<<8)|槽位（组 1 → 0x0100）",
+	      t["ain"][1]["ch"] == 0x0100, hex(t["ain"][1]["ch"]))
 
 	# 生成物内容抽查：MASK 与编码必须落到 C 里
 	with tempfile.TemporaryDirectory() as d:
@@ -146,6 +151,11 @@ def main():
 		{"channel": 8}), "R13")
 	expect_die("R13 同一设备通道被两处引用", lambda c: c["io"]["din"][1].update(
 		{"channel": 0}), "R13")
+
+	# ---- 4b) R15：ADC 组所有权唯一 ----
+	expect_die("R15 直连 AIN 与 MUX 抢同一 ADC 组",
+	           lambda c: c["io"]["ain"][1].update({"adcGroup": 0}),
+	           "R15")
 
 	# ---- 5) R14：设备无通道只提示，不失败 ----
 	cfg = base_cfg()

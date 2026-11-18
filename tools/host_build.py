@@ -78,6 +78,11 @@ TESTS = [
 	  "app/platform/host/test/iohwab_host_ops.c",
 	  "app/platform/cvm0146/src/config/Board/GEN/IoHwAb_Cfg.c"],
 	 ["app/platform/cvm0146/src/config/Board/GEN"], []),
+	# ADC 采样调度：完成才发布/超时丢弃，Host 替身模拟转换延迟
+	("adc_sampler", "app/platform/host/test/test_adc_sampler.c",
+	 ["app/app/src/adc_sampler.c",
+	  "app/platform/host/test/adc_sampler_host_ops.c"],
+	 [], []),
 	# MuxManager：状态机与 IoHwAb 胶水一起编，Host 替身模拟 ABC/COM/ADC 时序
 	("mux", "app/platform/host/test/test_mux.c",
 	 ["app/app/src/mux.c",
@@ -88,7 +93,7 @@ TESTS = [
 
 # 这些用例**不**套用 APP_SRCS + HOST_SRCS：它们验证的是与宿主平台无关的
 # 纯判定逻辑，源码集合由 TESTS 的第 3 项显式给出。
-STANDALONE_TESTS = {"boot_meta", "boot_dev", "boot_prod", "iohwab", "mux"}
+STANDALONE_TESTS = {"boot_meta", "boot_dev", "boot_prod", "iohwab", "mux", "adc_sampler"}
 
 INCLUDES = [
 	"app/include",
