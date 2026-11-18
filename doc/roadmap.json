@@ -171,6 +171,13 @@
    "title": "0x200 / 0x500 只发首帧：邮箱 TX 完成中断被关掉",
    "decision": "`Can.json` 里 mb11(NM_TX) / mb13(COM_TX) 的 `intEnable=false` 改为 `true`。TX 完成中断是 `CanAc.c` 里 `s_txPending[]` 的唯一释放点，关闭后首帧发出即永久 `CAN_BUSY`；`Can_HwCfg.h` 里把该缺陷写成\"NM/Com 两条例外\"的注释一并改写。",
    "impact": "0x200 间隔 100.0/100.1 ms（抖动 ≤1 ms），0x500 199.9~200.2 ms；M10 由 17/22 → **22/22**，M3 18/18 不变；`text` 尺寸不变（bool 翻转）。教训：驱动自测(0x123)与诊断(0x7E8)的邮箱一直是 true，所以只测\"能发一帧\"永远发现不了这个问题。"
+  },
+  {
+   "id": "D-COM-TXMODE",
+   "date": "2026-11-18",
+   "title": "Com 只支持周期发送：错相（TimeOffset）与事件型不引入，记差异",
+   "decision": "`Com_IPduTxConfigType` 只有 `FirstTime`/`CycleTime`/`TxPduId`：`FirstTime` 仅在组启动时装一次 timer（Com.c:419），之后每次成功发送统一重装 `CycleTime`（Com.c:865）——没有每周期相位；`Com_SendSignal()` 只写缓冲不触发发送（Com.c:174-198），没有事件模式。补这两项要同时改结构、主函数分支与 `generator/Com.py`，而当前矩阵全是周期报文、且无同周期报文对，判定不引入，按 LSduR 的先例记差异。",
+   "impact": "周期 m10 22/22、重试 com_retry_check 5/5，两项有固定验收入口；错相/事件标为不适用。另记两个台架陷阱：`can ctrl start` 后 CanIf 队列会先吐停用前的旧帧（判恢复要用增量分布，不能看首帧 cnt）；速率必须按帧时间戳算，墙钟窗口会把积压帧算进去。详见 doc/设计评审/Com发送模式与缺口.md。"
   }
  ],
  "current": {
@@ -476,8 +483,8 @@
     {
      "text": "验证周期、错相、事件、重试",
      "check": "总线时间戳符合配置",
-     "state": "TODO",
-     "evidence": "周期已验：m10 22/22，0x200 100.0/100.1 ms（62 帧/6 s，抖动 100~101 ms），0x500 199.9~200.2 ms，计数每帧 +1。期间修掉 mb11/mb13 的 intEnable=false（D-CAN-TXINT）。**错相 / 事件型发送 / 重试三项尚无用例**，本项不结。"
+     "state": "PASS",
+     "evidence": "周期：m10 22/22（0x200 100.0/100.1 ms，抖动 ≤1 ms；0x500 199.9~200.2 ms）。重试：tools/com_retry_check.py 5/5（ctrl stop 期间 0 帧、start 后 ≤0.5 s 恢复、10.5 帧/s、计数器 min=1/max=21）。错相与事件型**本版不支持**（TxConfig 无 TimeOffset / TxMode），且当前矩阵无同周期报文对、全部为周期报文，按 D-COM-TXMODE 记差异不引入。详见 doc/设计评审/Com发送模式与缺口.md。附带修掉 D-CAN-TXINT。"
     },
     {
      "text": "整理 RxMon/Com 职责",
