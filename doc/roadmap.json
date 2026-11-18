@@ -188,10 +188,10 @@
   }
  ],
  "current": {
-  "module": 2,
-  "task": 5,
-  "text": "PduR 路由表逐项核对：50 条路径的 PduHandleId 与 callback 语义",
-  "next": "写一个静态核对脚本（tools/pdu_route_check.py）：从 PduR_Cfg.c 解析三张表，对每条路径校验 ①Src.module 与 api 表类型一致 ②TX 路径 Dest.PduHandleId == CanIf 的 PDU 号（CanIf_Cfg.h 对账）③RX 路径 Dest.PduHandleId == Com 的 IPdu 下标（Com_Cfg.h 对账）④宏值 == 条目下标。跑通过后补错相/事件/重试用例（Com 模块剩余项）。"
+  "module": 15,
+  "task": 0,
+  "text": "IoHwAb V1.0：逻辑通道表 + 消抖/滤波 + Host 后端 + 安全状态",
+  "next": "设计已出（doc/设计评审/IoHwAb-V1.0设计.md）。待确认两决策（AIN 定点换算、V1.0 不含输出仲裁）后开工：①Board.json 扩 io 四表 ②generator/IoHwAb.py 生成配置 ③iohwab.c + target/host 两个 HwOps ④host_build 加 iohwab_test 跑 7 条用例 ⑤上板 LED 闭环。通信基线保持每轮回归（tools/regress_comm.py 11 例）。"
  },
  "modules": [
   {
@@ -780,7 +780,7 @@
    "id": 15,
    "group": "应用与硬件",
    "name": "IoHwAb / DIN / AIN",
-   "status": "todo",
+   "status": "review",
    "phase": 5,
    "deps": [
     "Port / Dio",
