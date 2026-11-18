@@ -185,13 +185,20 @@
    "title": "通信栈回归基线：一条命令 11 例，含 12 个 TX 邮箱的重复发送",
    "decision": "新增 `tools/regress_comm.py`（6 静态 + 5 上板）、`tools/can_tx_all_check.py`（12 个 TX 邮箱逐个设下限帧数）、`tools/_can_keeper.py`（用例占住另一路做 ACK）。三条编排原则：退出码不可信须双重判定；每个上板用例前复位；每个上板用例占住两路。`can_table_check` 增加语义断言：所有 TX 邮箱 `intEnable` 必须为 true——不只看 JSON 与 C 一致，因为可以\"一致地错\"。",
    "impact": "基线与复跑均 11/11（约 90 s/遍），日志落 `build/regress/run_<time>/`。发现并登记一个遗留缺陷：bus-off 后 PDU 模式可能停在 `TX_OFFLINE`（CanSM BOR 与手动 `can ctrl stop/start` 交叉后不可达），当前用每例复位绕开，建议单列任务。详见 doc/设计评审/通信栈回归基线.md。"
+  },
+  {
+   "id": "D-IOHWAB-V2",
+   "date": "2026-11-18",
+   "title": "IoHwAb 采用五层轻量架构，但 V1.0 只做直连 IO + Host 可测",
+   "decision": "采用 Core / Capability Adapter / Device Driver / Resource Manager / Generator 分层，但做两处修正：①极性唯一归属在\"生成绑定 + Adapter\"，Core 只见逻辑值（同逻辑在 HSD 高有效与继电器低有效上实现不同）；②能力 ops 按能力拆表且每个能力带可选 `Read`，`Read==NULL` 时回读返回 E_NOT_OK 而不是伪造正常值。V1.0 只做直连 DIN/AIN/DOUT/PWM + 生成器 R1~R10 + Host 用例；RS2260/PCA9555 依赖 I2C HAL（仓库当前没有）单列前置任务，HSD/LSD 无实物只做接口与 Host 模拟。",
+   "impact": "架构文档 doc/设计评审/IoHwAb-V2.0架构.md；旧 V1.0 设计标注为实施切片。明确验收证据分级 A 静态/B Host/C 上板（仅 LED+STB）/D 实物（V1.0 不声称达到），避免\"设计完成=功能完成\"。"
   }
  ],
  "current": {
   "module": 15,
   "task": 0,
-  "text": "IoHwAb V1.0：逻辑通道表 + 消抖/滤波 + Host 后端 + 安全状态",
-  "next": "设计已出（doc/设计评审/IoHwAb-V1.0设计.md）。待确认两决策（AIN 定点换算、V1.0 不含输出仲裁）后开工：①Board.json 扩 io 四表 ②generator/IoHwAb.py 生成配置 ③iohwab.c + target/host 两个 HwOps ④host_build 加 iohwab_test 跑 7 条用例 ⑤上板 LED 闭环。通信基线保持每轮回归（tools/regress_comm.py 11 例）。"
+  "text": "IoHwAb V2.0 架构基线已定，进入 V1.0 实施（Host 优先）",
+  "next": "按 V2.0 §8 分期：V1.0 只做能力接口（按能力拆表，每能力带可选 Read）+ Core（消抖/滤波/四态）+ 直连 DIN/AIN/DOUT/PWM + 生成器（R1~R10）+ Host 7 组用例 + 上板 LED/STB；I2C HAL 单列任务、先于 RS2260；无实物不声称 D 级（示波器/故障注入）验证。通信基线每轮跑 tools/regress_comm.py 11 例。"
  },
  "modules": [
   {
@@ -794,7 +801,7 @@
      "text": "建立逻辑 IO 通道表",
      "check": "直接与 MUX 通道统一访问",
      "state": "TODO",
-     "evidence": ""
+     "evidence": "架构基线已定：doc/设计评审/IoHwAb-V2.0架构.md（Core/Adapter/Driver/ResourceManager/Generator 五层；极性归 Adapter；四态有效性；生成器 R1~R10 校验）。V1.0 先做直连 IO + Host 测试。"
     },
     {
      "text": "实现扫描、消抖、滤波",
@@ -803,10 +810,16 @@
      "evidence": ""
     },
     {
+     "text": "补 I2C HAL（RS2260/Expander 前置）",
+     "check": "I2c_Init/Write/Read + 超时/NACK 语义；Host 可用模拟后端",
+     "state": "TODO",
+     "evidence": "仓库当前只有 Dio/Adc/Pwm HAL，SDK 有 i2c 驱动但未封装。V2.0 §8 判定：此任务必须先于 RS2260/Expander，且与 IoHwAb 批次分开。"
+    },
+    {
      "text": "接入 RS2260/TCA9539",
      "check": "建立时间、NACK/故障验证",
      "state": "BLOCKED",
-     "evidence": "RS2260 / TCA9539 通道表未定，需原理图与器件手册"
+     "evidence": "依赖 I2C HAL + 器件手册 + 实物板；目前无板无型号"
     }
    ]
   },
