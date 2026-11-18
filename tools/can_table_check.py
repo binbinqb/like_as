@@ -113,6 +113,27 @@ def main():
 		check(a == b, "HTH%-2u 一致（CAN%u mb%u 0x%X）" % (a[0], a[1], a[2], a[3]),
 		      "C=%r" % (b,))
 
+	# ------------------------------------------------------------------
+	# 语义断言：TX 邮箱的 intEnable 必须是 true
+	#
+	# `CanAc.c` 的 `s_txPending[]` 只在 **TX 完成中断** 里释放（另一处是 bus-off
+	# 兜底）。TX 邮箱设成 int=false 的症状极隐蔽：**首帧能发出去**，之后
+	# `Can_Write()` 永远返回 CAN_BUSY，上层只看到"周期报文不发、bTxRetry=1"。
+	# 2026-11-18 在 mb11(NM_TX)/mb13(COM_TX) 上踩过一次（D-CAN-TXINT）。
+	#
+	# 这条断言与"JSON vs C 一致"是两件事：两边都写 false 也能全绿，
+	# 但那样是**一致地错**。
+	# ------------------------------------------------------------------
+	print("\n== TX 邮箱的发送完成中断（语义断言）==")
+	bad = []
+	for c in cfg["channels"]:
+		for e in c["mailboxes"]:
+			if e["dir"] == "TX" and not bool(e.get("int", True)):
+				bad.append("CAN%u mb%u %s" % (c["index"], e["mb"], e.get("name", "")))
+	check(not bad,
+	      "所有 TX 邮箱 intEnable=true（s_txPending 只在 TX 完成中断里释放）",
+	      "关闭中断的 TX 邮箱：%s" % ", ".join(bad))
+
 	print("\n== CanIf TX 表：Can.json vs CanIf_Cfg.c ==")
 	jt = []
 	for c in cfg["channels"]:

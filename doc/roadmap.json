@@ -178,6 +178,13 @@
    "title": "Com 只支持周期发送：错相（TimeOffset）与事件型不引入，记差异",
    "decision": "`Com_IPduTxConfigType` 只有 `FirstTime`/`CycleTime`/`TxPduId`：`FirstTime` 仅在组启动时装一次 timer（Com.c:419），之后每次成功发送统一重装 `CycleTime`（Com.c:865）——没有每周期相位；`Com_SendSignal()` 只写缓冲不触发发送（Com.c:174-198），没有事件模式。补这两项要同时改结构、主函数分支与 `generator/Com.py`，而当前矩阵全是周期报文、且无同周期报文对，判定不引入，按 LSduR 的先例记差异。",
    "impact": "周期 m10 22/22、重试 com_retry_check 5/5，两项有固定验收入口；错相/事件标为不适用。另记两个台架陷阱：`can ctrl start` 后 CanIf 队列会先吐停用前的旧帧（判恢复要用增量分布，不能看首帧 cnt）；速率必须按帧时间戳算，墙钟窗口会把积压帧算进去。详见 doc/设计评审/Com发送模式与缺口.md。"
+  },
+  {
+   "id": "D-COMM-REGRESS",
+   "date": "2026-11-18",
+   "title": "通信栈回归基线：一条命令 11 例，含 12 个 TX 邮箱的重复发送",
+   "decision": "新增 `tools/regress_comm.py`（6 静态 + 5 上板）、`tools/can_tx_all_check.py`（12 个 TX 邮箱逐个设下限帧数）、`tools/_can_keeper.py`（用例占住另一路做 ACK）。三条编排原则：退出码不可信须双重判定；每个上板用例前复位；每个上板用例占住两路。`can_table_check` 增加语义断言：所有 TX 邮箱 `intEnable` 必须为 true——不只看 JSON 与 C 一致，因为可以\"一致地错\"。",
+   "impact": "基线与复跑均 11/11（约 90 s/遍），日志落 `build/regress/run_<time>/`。发现并登记一个遗留缺陷：bus-off 后 PDU 模式可能停在 `TX_OFFLINE`（CanSM BOR 与手动 `can ctrl stop/start` 交叉后不可达），当前用每例复位绕开，建议单列任务。详见 doc/设计评审/通信栈回归基线.md。"
   }
  ],
  "current": {
@@ -563,7 +570,7 @@
      "text": "BusOff 恢复策略",
      "check": "故障注入及重复恢复测试",
      "state": "TODO",
-     "evidence": ""
+     "evidence": "2026-11-18 回归套件撞到：bus-off 后 PDU 模式可能停在 `TX_OFFLINE`（只收不发），即使 ACK 恢复、`ctrlMode=STARTED` 也不自愈；`CanSM_SilentComBOR` 与手动 `can ctrl stop/start` 交叉后状态不可达。已用\"每例复位\"绕开（regress_comm），本项不结。复现：关闭 Kvaser 10 s 让 CAN0 bus-off，再跑 `can ctrl stop`/`start`，`can` 仍报 pduMode=1。"
     },
     {
      "text": "NM 释放与通信关闭",

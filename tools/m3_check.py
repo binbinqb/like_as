@@ -54,6 +54,7 @@ except ImportError:
 JLINK = r"C:\Program Files\SEGGER\JLink\JLink.exe"
 
 from isotp_lite import Isotp, PAD
+from _can_keeper import Keeper
 
 REQ_ID = 0x7E0     # 测试仪 → ECU
 RES_ID = 0x7E8     # ECU → 测试仪
@@ -89,6 +90,8 @@ def main():
 	ser = serial.Serial(a.port, 115200, timeout=0.2)
 	ser.reset_input_buffer()
 	bus = can.Bus(interface="kvaser", channel=a.channel, bitrate=a.bitrate)
+	# 另一路必须有人 ACK：否则对端 Com 报文 bus-off 会刷屏并拖慢整机
+	kp = Keeper(1 - a.channel, a.bitrate)
 
 	# ISO-TP 物理寻址：txid=0x7E0（我们发），rxid=0x7E8（板子回）
 	tp = Isotp(bus, REQ_ID, RES_ID)
@@ -181,6 +184,7 @@ def main():
 		time.sleep(0.05)
 	note("S3: 静默 6.5 s 后回默认会话", "session 3 -> 1 (S3 timeout)" in log)
 
+	kp.close()
 	bus.shutdown()
 	ser.close()
 

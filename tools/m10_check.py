@@ -80,6 +80,7 @@ except ImportError:
 	raise SystemExit("需要 python-can / pyserial：pip install python-can pyserial")
 
 from isotp_lite import Isotp
+from _can_keeper import Keeper
 
 PORT = "COM2"
 BAUD = 115200
@@ -116,6 +117,7 @@ def main():
 
 	ser = serial.Serial(a.port, BAUD, timeout=0.2)
 	bus = can.Bus(interface="kvaser", channel=a.channel, bitrate=a.bitrate)
+	kp = Keeper(1 - a.channel, a.bitrate)
 
 	def drain(sec=0.3):
 		"""丢掉驱动缓冲里的历史帧。
@@ -313,6 +315,7 @@ def main():
 	note("回归: 诊断 10 03 仍正常", (r is not None) and (r[:2] == b"\x50\x03"),
 		 r.hex(" ") if r else "(无响应)")
 
+	kp.close()
 	bus.shutdown()
 	ser.close()
 

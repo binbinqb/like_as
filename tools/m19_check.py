@@ -59,6 +59,8 @@ def xlate(cmd):
 import can
 import serial
 
+from _can_keeper import Keeper
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 HDR = os.path.join(ROOT, "app", "platform", "cvm0146", "src", "config", "CanIf_Cfg.h")
 
@@ -99,6 +101,8 @@ class Dut(object):
         self.ser = serial.Serial(port, baud, timeout=0.2)
         self.ser.reset_input_buffer()
         self.bus = can.Bus(interface="kvaser", channel=channel, bitrate=bitrate)
+        # 另一路必须有人 ACK，否则对端 Com 报文会 bus-off 刷屏并拖慢整机
+        self.kp = Keeper(1 - channel, bitrate)
         self.tx = 0
 
     def cmd(self, text, wait=0.45):
@@ -144,6 +148,7 @@ class Dut(object):
 
     def close(self):
         try:
+            self.kp.close()
             self.bus.shutdown()
         finally:
             self.ser.close()

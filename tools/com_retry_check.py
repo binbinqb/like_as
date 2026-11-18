@@ -43,6 +43,8 @@ import time
 import can
 import serial
 
+from _can_keeper import Keeper
+
 MSG_ID = 0x200
 
 
@@ -67,8 +69,19 @@ def main():
 
 	ser = serial.Serial(a.port, a.baud, timeout=0.2)
 	bus = can.Bus(interface="kvaser", channel=a.channel, bitrate=a.bitrate)
+	kp = Keeper(1 - a.channel, a.bitrate)
 
 	print("== Com 重试用例（0x%03X） ==" % MSG_ID)
+
+	# 前置：把 PDU 模式拉回 ONLINE。bus-off 之后 CanSM 会把通道置成
+	# `TX_OFFLINE`（只收不发），此时任何发送都失败 —— 那是另一个缺陷的表现，
+	# 不是本用例要验的"发送失败→重试"。不先归一化，会把两种失效混在一起。
+	ser.write(b"can pdu online\r")
+	time.sleep(0.3)
+	(ser.read(8192))
+	ser.write(b"can ctrl start\r")
+	time.sleep(0.3)
+	(ser.read(8192))
 
 	base = drain(bus, 1.5)
 	n_base = len(base)
@@ -103,6 +116,7 @@ def main():
 	print("  计数器增量：min=%s max=%s" % (min(deltas) if deltas else None,
 	                                     max(deltas) if deltas else None))
 
+	kp.close()
 	bus.shutdown()
 	ser.close()
 
