@@ -425,14 +425,14 @@
     {
      "text": "核对源目标 ID 和 callback",
      "check": "收发及确认映射逐项验证",
-     "state": "TODO",
-     "evidence": ""
+     "state": "PASS",
+     "evidence": "tools/pdu_route_check.py 8/8 PASS：50 条路径逐项校验 module↔&PduR_*Api（C3）、诊断/NM 六条固定语义（C4）、CAN1 TX 6 条 Src=Com 句柄 / Dest=CanIf PDU 号（C5）、RX 34 条 Dest=Com IPdu 下标（C6）、manualPaths 2 条（C7）、RoutingPaths 下标==宏值（C8）。缺陷注入 2/2 被抓（TX Dest 换邮箱 → C5；Src 模块改错 → C3+C5），证明断言能证伪。"
     },
     {
      "text": "整合 JSON 路由",
      "check": "所有路径引用存在",
-     "state": "TODO",
-     "evidence": ""
+     "state": "PASS",
+     "evidence": "`check-pdu`（50 条，无重复/悬空/ID 冲突）+ `pdu_route_check` C1/C2/C8（三表条目数==总数宏==宏个数、宏值覆盖 0..49 无空洞、每个 RoutingPaths[i] 引用的宏值==i）。路径来源：`Can.json` 邮箱表（TX 端点）+ `PduR.json` manualPaths（2 条）+ DBC（40 条）+ 手写诊断/NM 6 条。"
     },
     {
      "text": "验证跨通道及诊断并发",
