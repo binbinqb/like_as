@@ -8,6 +8,7 @@ import os
 import json
 
 from .helper import GenHeader
+from .IoHwAb import Gen_Tables
 
 __all__ = ["Gen"]
 
@@ -106,4 +107,8 @@ def Gen(cfg):
 	with open(cfg, encoding="utf-8") as f:
 		cfg = json.load(f)
 	Gen_Board(cfg, dir)
-	return ["%s/Board_Cfg.c" % (dir)]
+	# 逻辑 IO 通道表与板级身份同源（Board.json），但生成逻辑独立在 IoHwAb.py：
+	# V1.1 加 devices/selectBuses 时只改那个文件，不碰本文件。
+	files = ["%s/Board_Cfg.c" % (dir)]
+	files += Gen_Tables(cfg, dir)
+	return files

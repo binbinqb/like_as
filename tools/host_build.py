@@ -71,11 +71,18 @@ TESTS = [
 	 ["-DBOOT_MODE_PRODUCTION=0"]),
 	("boot_prod", "app/platform/host/test/test_boot_choice.c", BOOT_SRCS, BOOT_INCS,
 	 ["-DBOOT_MODE_PRODUCTION=1"]),
+	# IoHwAb V1.0：Core 与目标板编同一份源码，后端换成内存模拟。
+	# 依赖 Board 生成物（IoHwAb_Cfg.c），先跑一次 build 或 tools/config.py gen。
+	("iohwab", "app/platform/host/test/test_iohwab.c",
+	 ["app/app/src/iohwab.c",
+	  "app/platform/host/test/iohwab_host_ops.c",
+	  "app/platform/cvm0146/src/config/Board/GEN/IoHwAb_Cfg.c"],
+	 ["app/platform/cvm0146/src/config/Board/GEN"], []),
 ]
 
 # 这些用例**不**套用 APP_SRCS + HOST_SRCS：它们验证的是与宿主平台无关的
 # 纯判定逻辑，源码集合由 TESTS 的第 3 项显式给出。
-STANDALONE_TESTS = {"boot_meta", "boot_dev", "boot_prod"}
+STANDALONE_TESTS = {"boot_meta", "boot_dev", "boot_prod", "iohwab"}
 
 INCLUDES = [
 	"app/include",

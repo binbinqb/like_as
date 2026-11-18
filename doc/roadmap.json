@@ -192,13 +192,20 @@
    "title": "IoHwAb 采用五层轻量架构，但 V1.0 只做直连 IO + Host 可测",
    "decision": "采用 Core / Capability Adapter / Device Driver / Resource Manager / Generator 分层，但做两处修正：①极性唯一归属在\"生成绑定 + Adapter\"，Core 只见逻辑值（同逻辑在 HSD 高有效与继电器低有效上实现不同）；②能力 ops 按能力拆表且每个能力带可选 `Read`，`Read==NULL` 时回读返回 E_NOT_OK 而不是伪造正常值。V1.0 只做直连 DIN/AIN/DOUT/PWM + 生成器 R1~R10 + Host 用例；RS2260/PCA9555 依赖 I2C HAL（仓库当前没有）单列前置任务，HSD/LSD 无实物只做接口与 Host 模拟。",
    "impact": "架构文档 doc/设计评审/IoHwAb-V2.0架构.md；旧 V1.0 设计标注为实施切片。明确验收证据分级 A 静态/B Host/C 上板（仅 LED+STB）/D 实物（V1.0 不声称达到），避免\"设计完成=功能完成\"。"
+  },
+  {
+   "id": "D-IOHWAB-V1",
+   "date": "2026-11-18",
+   "title": "IoHwAb V1.0 落地：直连 IO + Host 19/19 + 上板 io 命令",
+   "decision": "新增 infras/include/iohwab.h（四类 ID/四态/四个能力 ops）、tools/generator/IoHwAb.py（Board.json io 段 → 枚举与表，R1~R8/R10 校验）、app/app/src/iohwab.c（Core）、app/platform/cvm0146/src/IoHwAbAc.c（Dio/Pwm + Host 空桩）、Host 用例与 io 命令；main.c 接入 Init 与 10ms MainFunction。",
+   "impact": "Host 19/19、host_build 6/6；上板 io status 0→on 1→off 0；text +2768 B（此前因 --gc-sections 无人引用被整段丢弃，这个问题是 io 命令暴露的）；通信回归 11/11。发现并记录：本芯片 PinsDrv_ReadPin 读 PDIR，纯输出引脚恒 0，故目标侧回读用输出锁存影子（只证明写通路，不证明引脚电平）。"
   }
  ],
  "current": {
   "module": 15,
   "task": 0,
-  "text": "IoHwAb V2.0 架构基线已定，进入 V1.0 实施（Host 优先）",
-  "next": "按 V2.0 §8 分期：V1.0 只做能力接口（按能力拆表，每能力带可选 Read）+ Core（消抖/滤波/四态）+ 直连 DIN/AIN/DOUT/PWM + 生成器（R1~R10）+ Host 7 组用例 + 上板 LED/STB；I2C HAL 单列任务、先于 RS2260；无实物不声称 D 级（示波器/故障注入）验证。通信基线每轮跑 tools/regress_comm.py 11 例。"
+  "text": "IoHwAb V1.0 已落地（直连 IO + Host 19/19 + 上板 io 命令），进入 V1.1 前置",
+  "next": "V1.1 第一步补 infras/include/I2c.h + I2cAc.c（SDK 有 i2c 驱动但未封装），再做 RS2260 SelectBus/ABC 扫描状态机与 PCA9555。V1.0 收尾项：LED 人眼确认（软件侧已 0→1→0）、直连 AIN 实装需先定 ADC 组表。每轮通信回归 tools/regress_comm.py 11 例。"
  },
  "modules": [
   {
@@ -800,14 +807,14 @@
     {
      "text": "建立逻辑 IO 通道表",
      "check": "直接与 MUX 通道统一访问",
-     "state": "TODO",
-     "evidence": "架构基线已定：doc/设计评审/IoHwAb-V2.0架构.md（Core/Adapter/Driver/ResourceManager/Generator 五层；极性归 Adapter；四态有效性；生成器 R1~R10 校验）。V1.0 先做直连 IO + Host 测试。"
+     "state": "PARTIAL",
+     "evidence": "V1.0 直连部分已落地：Board.json io 四表 → generator/IoHwAb.py → IoHwAb_Cfg.{h,c}；Host 19/19、上板 io 命令 0→1→0、通信回归 11/11。**MUX 通道未做**（V1.1，需 I2C HAL / RS2260）。架构见 doc/设计评审/IoHwAb-V2.0架构.md。"
     },
     {
      "text": "实现扫描、消抖、滤波",
      "check": "时序及输入边界测试",
-     "state": "TODO",
-     "evidence": ""
+     "state": "PARTIAL",
+     "evidence": "DIN 消抖（10ms 拍计数）与 AIN 一阶滤波/定点换算/四态超时已实现，Host 用例 19/19 覆盖。**MUX 扫描状态机未做**（V1.1）。"
     },
     {
      "text": "补 I2C HAL（RS2260/Expander 前置）",

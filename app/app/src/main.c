@@ -102,6 +102,7 @@
  * 它看得见 `Bcm_SwStateType` 与 `BCM_SIG_xxx`，看不见 `COM_SID_xxx`、
  * 报文名、字节偏移 —— 那些都在 `bcm_sig_cfg.c` 的表里。 */
 #include "bcm_sig.h"
+#include "iohwab.h"
 #include "rx_mon.h"       /* A2：CAN 接收到达监视（清零必须在总线上线前） */
 #include "stack_mon.h"    /* A6：栈水位（main 第一条语句就要填图案） */
 #include "perf_mon.h"     /* A6：DWT 周期计数（SysTick 迟到量 / 单拍耗时） */
@@ -347,6 +348,11 @@ int main(void)
 	 * 而这一步已在上面 `EcuM_StartupTwo()` 之前完成。 */
 	BcmSig_Init();
 
+	/* 逻辑 IO（IoHwAb V1.0）：按 Board.json 的 io 段把输出置安全状态。
+	 * 放在 BcmSig_Init 之后、Shell 之前 —— 上电时负载应保持安全，
+	 * 不能等第一条命令才确定电平。 */
+	IoHwAb_Init();
+
 	/* 业务骨架（A9）：必须在 BcmSig_Init 之后（它只清自己的状态，不碰信号）。
 	 * 默认**不接管**输出 —— 理由见 bcm_biz.h 的 BcmBiz_SetEnabled：
 	 * `bcm all on|off` 这类验收命令与业务会抢同一个发送 shadow。 */
@@ -468,6 +474,10 @@ int main(void)
 			BcmSig_MainFunction();
 			BcmBiz_MainFunction();
 			ComApp_Tick();
+
+			/* 逻辑 IO 采样：DIN 消抖、AIN 滤波（10 ms 节拍）。
+			 * 读接口只取这里的缓存，不在业务里访问 HAL。 */
+			IoHwAb_MainFunction();
 
 			/* 状态机单独推进：负责 RUN / POST_RUN / SLEEP 的迁移，
 			 * 与 BSW 主函数是两件事（AUTOSAR 里也是两个入口），

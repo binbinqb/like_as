@@ -212,3 +212,40 @@ NEXT_CHANNEL : ABC++，回到 SET_SELECT
 | `IoHwAb_DinRead(id, boolean *valid)` | `IoHwAb_DinRead(id, boolean*, IoHwAb_StatusType*)` |
 
 以本文档为准；旧文档保留作为设计过程记录。
+
+## 12 V1.0 实施状态（2026-11-18）
+
+### 12.1 已落地
+
+| 文件 | 作用 |
+|---|---|
+| `infras/include/iohwab.h` | 公共契约：四类 ID、四态、四个能力 ops、API、配置表类型 |
+| `tools/generator/IoHwAb.py` | 从 Board.json `io` 段生成通道枚举/计数/表；校验 R1~R8、R10 |
+| `app/app/src/iohwab.c` | Core：消抖、滤波、定点换算、极性、安全状态（Target/Host 同一份） |
+| `app/platform/cvm0146/src/IoHwAbAc.c` | 目标能力：Dio / Pwm；Host 通道为空桩（NULL 指针） |
+| `app/platform/host/test/test_iohwab.c` + `iohwab_host_ops.c` | Host 用例与内存后端 |
+| `app/app/src/cmd/io_cmd.c` | `io status/safe/led r|g|b on|off`，上板自检入口 |
+| `app/app/src/main.c` | `IoHwAb_Init()`（安全状态）+ 10 ms `IoHwAb_MainFunction()` |
+
+### 12.2 验证结果
+
+| 级别 | 结果 |
+|---|---|
+| A 静态 | `app/app/src/iohwab.c` 不含任何引脚号与 SDK 头；生成器校验失败即终止 |
+| B Host | **19/19 断言**，`host_build` 6/6 套件通过 |
+| C 上板 | `io status`：Init 后 dout=0；`io led r on` → 1；`off` → 0；`text` +2,768 B（代码未被 gc 丢弃）；通信回归 11/11 |
+| D 实物 | **未做**：LED 是否真的亮需人眼确认；无 HSD/LSD/示波器 |
+
+### 12.3 实施中发现的两个真实约束
+
+1. **`PinsDrv_ReadPin()` 读的是 PDIR（输入数据）**，纯输出引脚的输入通路未使能时恒为 0。
+   因此目标侧回读用**输出锁存影子**，只能证明"写通路已执行"，不能证明引脚电平。
+   Host 后端的回读是真实内存值，Host 用例不受影响。
+2. **Host 通道在板上必须返回 `E_NOT_OK`**：`io status` 里 `din[0] status=3(ERROR)`
+   是**正确行为**，不是故障 —— 它证明"不支持的能力没有伪造正常值"。
+
+### 12.4 V1.1 的第一件事
+
+补 `infras/include/I2c.h` + `I2cAc.c`（SDK 有 i2c 驱动但未封装）。没有它，
+RS2260 与 PCA9555/TCA9539 一行都写不了。
+

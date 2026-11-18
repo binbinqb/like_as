@@ -25,6 +25,82 @@
         "channels": 4
     },
     "io": {
+        "_comment": "逻辑 IO 通道（IoHwAb V1.0）。source=direct 绑 dioChannels/ADC/PWM；source=host 仅 Host 测试用，在目标板上为不可用桩。详见 doc/设计评审/IoHwAb-V2.0架构.md",
+        "din": [
+            {
+                "name": "DOOR_FL",
+                "source": "host",
+                "channel": 0,
+                "activeLevel": "LOW",
+                "debounceMs": 20
+            },
+            {
+                "name": "DOOR_FR",
+                "source": "host",
+                "channel": 1,
+                "activeLevel": "LOW",
+                "debounceMs": 30
+            }
+        ],
+        "ain": [
+            {
+                "name": "VBAT",
+                "source": "host",
+                "channel": 0,
+                "filterShift": 3,
+                "factor": 33,
+                "offset": 0,
+                "staleMs": 200
+            },
+            {
+                "name": "TEMP",
+                "source": "host",
+                "channel": 1,
+                "filterShift": 2,
+                "factor": 100,
+                "offset": -4000,
+                "staleMs": 500
+            }
+        ],
+        "dout": [
+            {
+                "name": "LED_R",
+                "source": "direct",
+                "pin": "LED_R",
+                "activeLevel": "LOW",
+                "safeLevel": false
+            },
+            {
+                "name": "LED_G",
+                "source": "direct",
+                "pin": "LED_G",
+                "activeLevel": "LOW",
+                "safeLevel": false
+            },
+            {
+                "name": "LED_B",
+                "source": "direct",
+                "pin": "LED_B",
+                "activeLevel": "LOW",
+                "safeLevel": false
+            },
+            {
+                "name": "HOST0",
+                "source": "host",
+                "channel": 0,
+                "activeLevel": "HIGH",
+                "safeLevel": false
+            }
+        ],
+        "pwm": [
+            {
+                "name": "DIM_HOST",
+                "source": "host",
+                "channel": 0,
+                "freqHz": 100,
+                "safeDuty": 0
+            }
+        ],
         "hsd": [],
         "lsd": [],
         "hbridge": [],

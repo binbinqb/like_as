@@ -61,6 +61,8 @@ APP_CPPPATH = ["$Cvm0146", "$INFRAS", "$Shell", "$Shell_Cfg", "$Board_Cfg", "$Sh
                # 本应用源码目录：cmd/ 子目录里的命令文件要 include
                # 上层目录的 xxx_Cfg.h（如 EcuM_Cfg.h），靠它兜住
                os.path.join(CWD, "src"),
+               # IoHwAb 的生成配置与 Board_Cfg.h 同目录（Board/GEN）：
+               # $Board_Cfg 已覆盖，这里不再重复加路径
                # app/include：平台层**芯片无关**契约（platform.h）。
                # 业务代码只 include 它，不再 include platform_cvm0146.h ——
                # 否则同一份业务源码在 Host 上编不过（26.1）。
