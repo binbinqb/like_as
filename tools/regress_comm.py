@@ -46,6 +46,7 @@ CASES = [
 	("hardcode",    "硬编码守卫（12 项）",          [PY, "tools/hardcode_check.py"], "static", 120),
 	("gen_gate",    "生成门禁自测（15 场景）",      [PY, "tools/gen_gate_check.py"], "static", 300),
 	("a4_gen",      "生成物幂等（7 项）",           [PY, "tools/a4_gen_check.py"], "static", 300),
+	("mux_cfg",     "MUX 配置规则（24 项）",        [PY, "tools/mux_cfg_check.py"], "static", 120),
 	("can_tx_all",  "全 TX 邮箱覆盖（12 个）",      [PY, "tools/can_tx_all_check.py"], "hw", 120),
 	("m3",          "诊断链路（18 项）",            [PY, "tools/m3_check.py"], "hw", 180),
 	("m10",         "Com 信号层（22 项）",          [PY, "tools/m10_check.py"], "hw", 180),

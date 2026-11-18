@@ -24,8 +24,10 @@
         "frequencyHz": 100,
         "channels": 4
     },
+    "selectBuses": [],
+    "devices": [],
     "io": {
-        "_comment": "逻辑 IO 通道（IoHwAb V1.0）。source=direct 绑 dioChannels/ADC/PWM；source=host 仅 Host 测试用，在目标板上为不可用桩。详见 doc/设计评审/IoHwAb-V2.0架构.md",
+        "_comment": "逻辑 IO 通道（IoHwAb V1.0.1）。source=direct 绑 dioChannels/ADC/PWM；host 仅 Host 测试用；mux 经 selectBuses/devices 选通（当前无实物，故两表为空）",
         "din": [
             {
                 "name": "DOOR_FL",

@@ -1,26 +1,31 @@
 # -*- coding: utf-8 -*-
-"""从 `Board.json` 的 `io` 段生成 `IoHwAb_Cfg.{h,c}`。
+"""从 `Board.json` 生成 `IoHwAb_Cfg.{h,c}` 与 `Mux_Cfg.{h,c}`。
 
 ## 为什么放在 Board.py 里调、代码单独一个文件
 
 `io` 段描述的是"这块板有哪些逻辑 IO、接到哪里"，与 `pins` / `dioChannels`
 同源 —— 分成两个 JSON 反而要解决"谁先谁后"。但生成逻辑（校验、命名、表结构）
-必须独立：V1.1 加 devices/selectBuses 时只改本文件，不碰 Board.py。
+必须独立：加器件类型时只改本文件，不碰 Board.py。
 
-## V1.0 支持的 source
+## 支持的 source
 
 | source | 含义 | Target 行为 |
 |---|---|---|
 | `direct` | MCU 直连（Dio/Adc/Pwm） | 调 HAL |
 | `host` | Host 模拟通道 | 用 `IoHwAb_Host*Ops`；在 Target 上是返回 E_NOT_OK 的桩 |
+| `mux` | 经 SelectBus 选通的 MUX（RS2260 等） | 用 `IoHwAb_Mux*Ops`，查 MuxManager 已发布样本 |
 
 **同一份配置同时服务 Target 与 Host**：ID 空间一致，测试里用的枚举在板上也成立，
 只是 Host 通道在板上恒为不可用（不伪造值）。
 
+`mux` 通道的 `channel` 编码为 `(设备索引 << 8) | Y`，与 `IOHWAB_MUX_CH()` 一致；
+设备索引按 `devices[]` 的顺序。这样生成表是一张扁平数组，运行期不做字符串查找。
+
 ## 校验（每条失败都终止生成，不产半份配置）
 
 R1 名称唯一 / R2 直连 pin 存在 / R3 dir 匹配 / R4 电平合法 / R5 消抖拍数 /
-R6 ADC 组范围 / R7 PWM 参数 / R8 物理资源不重复绑定 / R9 超时拍数 / R10 安全值缺省
+R6 ADC 组范围 / R7 PWM 参数 / R8 物理资源不重复绑定 / R9 超时拍数 / R10 安全值缺省 /
+R11 SelectBus 定义 / R12 设备定义 / R13 mux 通道引用 / R14 设备至少有一个通道
 
 @author binbina
 """
@@ -29,30 +34,109 @@ import os
 
 from .helper import GenHeader, toMacro
 
-__all__ = ["Gen_Io"]
+__all__ = ["Gen_Tables"]
 
 LEVEL = {"HIGH": 1, "LOW": 0}
+COM = {"GPIO": 0, "ADC": 1}
 
 
 def _die(msg):
 	raise Exception("[IoHwAb] " + msg)
 
 
-def _ticks(e, key, default, name):
+def _ticks(e, key, default, name, allow_zero=False):
 	"""把毫秒配置换算成 10 ms 拍数，并按 R9 校验。"""
 	ms = int(e.get(key, default))
+	if allow_zero and ms == 0:
+		return 0
 	if ms < 10 or ms % 10:
-		_die("R9 %s.%s=%d（必须是 10 的整数倍且 ≥10）" % (name, key, ms))
+		_die("R9 %s.%s=%d（必须是 10 的整数倍%s）"
+		     % (name, key, ms, "，或 0" if allow_zero else "且 ≥10"))
 	return ms // 10
 
 
+def _mux(cfg, dio_channels, adc_groups):
+	"""解析 selectBuses / devices，返回 (buses, devices, dev_idx)。"""
+	buses = []
+	bus_idx = {}
+	for b in cfg.get("selectBuses", []):
+		name = b.get("name", "")
+		if not name:
+			_die("R11 selectBus 缺 name")
+		if name in bus_idx:
+			_die("R11 selectBus 重名：%s" % name)
+		pins = b.get("pins", [])
+		if len(pins) != 3:
+			_die("R11 %s.pins 必须是 [A, B, C]" % name)
+		for p in pins:
+			if p not in dio_channels:
+				_die("R11 %s.pins 里的 %s 不在 dioChannels[]" % (name, p))
+		bus_idx[name] = len(buses)
+		buses.append({
+			"name": name,
+			"pins": [dio_channels.index(p) for p in pins],
+			"settle": _ticks(b, "settleMs", 0, name, allow_zero=True),
+			"adc_tmo": _ticks(b, "adcTimeoutMs", 30, name),
+			"mask": 0,
+		})
+
+	devices = []
+	dev_idx = {}
+	for d in cfg.get("devices", []):
+		name = d.get("name", "")
+		if not name:
+			_die("R12 设备缺 name")
+		if name in dev_idx:
+			_die("R12 设备重名：%s" % name)
+		bus_name = d.get("selectBus", "")
+		if bus_name not in bus_idx:
+			_die("R12 %s.selectBus=%s 未定义（先建 selectBuses）" % (name, bus_name))
+		ct = d.get("comType", "")
+		if ct not in COM:
+			_die("R12 %s.comType=%s（只允许 GPIO/ADC）" % (name, ct))
+		if ct == "GPIO":
+			pin = d.get("comPin", "")
+			if pin not in dio_channels:
+				_die("R12 %s.comPin=%s 不在 dioChannels[]" % (name, pin))
+			com_ch = dio_channels.index(pin)
+		else:
+			grp = int(d.get("adcGroup", 0))
+			ch = int(d.get("channel", 0))
+			if (grp < 0) or (grp >= adc_groups) or (ch < 0):
+				_die("R12 %s.adcGroup/channel 越界（组 0..%d）"
+				     % (name, adc_groups - 1))
+			com_ch = (grp << 8) | ch
+		inh_ch = 0xFF
+		inh_lvl = 0
+		inh = d.get("inh")
+		if inh:
+			pin = inh.get("pin", "")
+			if pin not in dio_channels:
+				_die("R12 %s.inh.pin=%s 不在 dioChannels[]" % (name, pin))
+			lvl = inh.get("activeLevel", "HIGH")
+			if lvl not in LEVEL:
+				_die("R12 %s.inh.activeLevel=%s" % (name, lvl))
+			inh_ch = dio_channels.index(pin)
+			inh_lvl = LEVEL[lvl]
+		dev_idx[name] = len(devices)
+		devices.append({
+			"name": name, "bus": bus_idx[bus_name], "com": COM[ct],
+			"com_ch": com_ch, "inh_ch": inh_ch, "inh_lvl": inh_lvl,
+			"mask": 0,
+		})
+	return buses, devices, dev_idx
+
+
 def _norm(cfg, pins, dio_channels, adc_groups, pwm_channels):
-	"""校验并展开四张表，返回 dict。"""
+	"""校验并展开四张表，返回 (tables, buses, devices)。"""
 	io = cfg.get("io", {})
 	seen = {}
 	used_pin = {}
 	used_adc = {}
 	used_pwm = {}
+	used_mux = {}
+
+	buses, devices, dev_idx = _mux(cfg, dio_channels, adc_groups)
 
 	def name_of(e, kind):
 		n = e.get("name", "")
@@ -65,9 +149,33 @@ def _norm(cfg, pins, dio_channels, adc_groups, pwm_channels):
 
 	def src_of(e, kind):
 		s = e.get("source", "direct")
-		if s not in ("direct", "host"):
-			_die("%s.source 非法：%s（只允许 direct/host）" % (kind, s))
+		if s not in ("direct", "host", "mux"):
+			_die("%s.source 非法：%s（只允许 direct/host/mux）" % (kind, s))
+		if s == "mux" and kind not in ("din", "ain"):
+			_die("%s 不支持 source=mux（只有输入能力经 MUX）" % kind)
 		return s
+
+	def mux_of(e, kind, n):
+		"""解析 source=mux 的通道：返回编码后的 channel。"""
+		dname = e.get("device", "")
+		if dname not in dev_idx:
+			_die("R13 %s.device=%s 未定义" % (n, dname))
+		y = int(e.get("channel", 0))
+		if (y < 0) or (y >= 8):
+			_die("R13 %s.channel=%d 越界（Y 只允许 0..7）" % (n, y))
+		dev = devices[dev_idx[dname]]
+		want = COM["GPIO"] if kind == "din" else COM["ADC"]
+		if dev["com"] != want:
+			_die("R13 %s 与设备 %s 的 COM 类型不符（%s 需要 %s）"
+			     % (n, dname, kind,
+			        "GPIO" if kind == "din" else "ADC"))
+		key = (dname, y)
+		if key in used_mux:
+			_die("R13 %s 与 %s 绑定同一设备通道 %s.Y%d"
+			     % (n, used_mux[key], dname, y))
+		used_mux[key] = n
+		dev["mask"] |= (1 << y)
+		return (dev_idx[dname] << 8) | y
 
 	out = {"din": [], "ain": [], "dout": [], "pwm": []}
 
@@ -83,7 +191,9 @@ def _norm(cfg, pins, dio_channels, adc_groups, pwm_channels):
 			_die("R5 %s.debounceMs=%d（必须是 10 的整数倍且 ≥10）" % (n, db))
 		stale = _ticks(e, "staleMs", 500, n)
 		ch = int(e.get("channel", 0))
-		if src == "direct":
+		if src == "mux":
+			ch = mux_of(e, "din", n)
+		elif src == "direct":
 			pin = e.get("pin", "")
 			if pin not in pins:
 				_die("R2 %s.pin=%s 不在 pins[]" % (n, pin))
@@ -107,7 +217,10 @@ def _norm(cfg, pins, dio_channels, adc_groups, pwm_channels):
 		src = src_of(e, "ain")
 		grp = int(e.get("adcGroup", 0))
 		ch = int(e.get("channel", 0))
-		if src == "direct":
+		if src == "mux":
+			ch = mux_of(e, "ain", n)
+			grp = 0
+		elif src == "direct":
 			if grp < 0 or grp >= adc_groups:
 				_die("R6 %s.adcGroup=%d 越界（0..%d）" % (n, grp, adc_groups - 1))
 			key = (grp, ch)
@@ -177,19 +290,84 @@ def _norm(cfg, pins, dio_channels, adc_groups, pwm_channels):
 			"name": n, "src": src, "ch": ch, "duty": duty,
 		})
 
-	return out, cfg.get("adc", {}).get("groups", 0)
+	# R14：设备没被任何通道引用 → 会白扫描，提示但不失败
+	for dev in devices:
+		if dev["mask"] == 0:
+			print("  [IoHwAb] R14 设备 %s 未被任何通道引用，扫描掩码为 0"
+			      % dev["name"])
+	for bus in buses:
+		for dev in devices:
+			if dev["bus"] == buses.index(bus):
+				bus["mask"] |= dev["mask"]
+
+	return out, buses, devices
 
 
 _OPS = {
 	("din", "direct"): "IoHwAb_GpioDinOps",
 	("din", "host"): "IoHwAb_HostDinOps",
+	("din", "mux"): "IoHwAb_MuxDinOps",
 	("ain", "direct"): "IoHwAb_AdcOps",
 	("ain", "host"): "IoHwAb_HostAinOps",
+	("ain", "mux"): "IoHwAb_MuxAinOps",
 	("dout", "direct"): "IoHwAb_GpioDoutOps",
 	("dout", "host"): "IoHwAb_HostDoutOps",
 	("pwm", "direct"): "IoHwAb_PwmOps",
 	("pwm", "host"): "IoHwAb_HostPwmOps",
 }
+
+
+def _gen_mux(buses, devices, dir):
+	"""生成 Mux_Cfg.{h,c}；没有设备时也产一份"零设备"定义。"""
+	h = open(os.path.join(dir, "Mux_Cfg.h"), "w", newline="\n")
+	GenHeader(h)
+	h.write("#ifndef MUX_CFG_H\n#define MUX_CFG_H\n\n")
+	h.write("/* 由 tools/generator/IoHwAb.py 从 Board.json 的 selectBuses/devices 生成，勿手改 */\n\n")
+	h.write("enum {\n")
+	if not buses:
+		h.write("\tMUX_BUS_NONE = 0,\n")
+	for i, b in enumerate(buses):
+		h.write("\tMUX_BUS_%-20s = %d,\n" % (toMacro(b["name"]), i))
+	h.write("};\n\n")
+	h.write("enum {\n")
+	if not devices:
+		h.write("\tMUX_DEV_NONE = 0,\n")
+	for i, d in enumerate(devices):
+		h.write("\tMUX_DEV_%-20s = %d,\n" % (toMacro(d["name"]), i))
+	h.write("};\n\n")
+	h.write("#define MUX_BUS_COUNT      (%du)\n" % len(buses))
+	h.write("#define MUX_DEVICE_COUNT   (%du)\n\n" % len(devices))
+	h.write("#endif /* MUX_CFG_H */\n")
+	h.close()
+
+	c = open(os.path.join(dir, "Mux_Cfg.c"), "w", newline="\n")
+	GenHeader(c)
+	c.write('#include "mux.h"\n\n')
+	if buses:
+		c.write("const Mux_BusCfgType Mux_BusCfgs[%d] = {\n" % len(buses))
+		for b in buses:
+			c.write("\t{ %du, %du, %du, %du, %du, 0x%02Xu },  /**< %s */\n"
+			        % (b["pins"][0], b["pins"][1], b["pins"][2],
+			           b["settle"], b["adc_tmo"], b["mask"], b["name"]))
+		c.write("};\n")
+	else:
+		c.write("const Mux_BusCfgType Mux_BusCfgs[1] = { { 0u, 0u, 0u, 0u, 1u, 0u } };\n")
+
+	if devices:
+		c.write("\nconst Mux_DeviceCfgType Mux_DeviceCfgs[%d] = {\n" % len(devices))
+		for d in devices:
+			c.write("\t{ %du, %du, 0x%04Xu, %du, %du, 0x%02Xu },  /**< %s */\n"
+			        % (d["bus"], d["com"], d["com_ch"], d["inh_ch"],
+			           d["inh_lvl"], d["mask"], d["name"]))
+		c.write("};\n")
+	else:
+		c.write("const Mux_DeviceCfgType Mux_DeviceCfgs[1] = "
+		        "{ { 0u, 0u, 0u, MUX_NO_CHANNEL, 0u, 0u } };\n")
+
+	c.write("\nconst uint8 Mux_BusCount = %du;\n" % len(buses))
+	c.write("const uint8 Mux_DeviceCount = %du;\n" % len(devices))
+	c.close()
+	return [os.path.join(dir, "Mux_Cfg.c")]
 
 
 def Gen_Tables(board_cfg, dir):
@@ -199,7 +377,8 @@ def Gen_Tables(board_cfg, dir):
 	adc_groups = board_cfg.get("adc", {}).get("groups", 0)
 	pwm_channels = board_cfg.get("pwm", {}).get("channels", 0)
 
-	t, _ = _norm(board_cfg, pins, dio_channels, adc_groups, pwm_channels)
+	t, buses, devices = _norm(board_cfg, pins, dio_channels,
+	                          adc_groups, pwm_channels)
 
 	h = open(os.path.join(dir, "IoHwAb_Cfg.h"), "w", newline="\n")
 	GenHeader(h)
@@ -272,4 +451,4 @@ def Gen_Tables(board_cfg, dir):
 		c.write("const IoHwAb_PwmCfgType IoHwAb_PwmCfgs[1] = { { IOHWAB_SOURCE_DIRECT, NULL, 0u, 0u } };\n")
 
 	c.close()
-	return [os.path.join(dir, "IoHwAb_Cfg.c")]
+	return [os.path.join(dir, "IoHwAb_Cfg.c")] + _gen_mux(buses, devices, dir)

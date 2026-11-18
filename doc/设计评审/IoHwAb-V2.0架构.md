@@ -180,27 +180,28 @@ V1.0 的 `source` 允许两个值：`"direct"`（MCU 引脚）与 `"host"`（模
 产物：`IoHwAb_Cfg.h`（ID 枚举 + 计数）、`IoHwAb_Cfg.c`（静态 const 表），
 不含时间戳，连跑两次字节一致（进 02.8 门禁）。
 
-## 7 Resource Manager（V1.1 设计，V1.0 不实现）
+## 7 Resource Manager（V1.1 第一阶段已实现，见 `RS2260-MuxManager.md`）
 
-V2.0 §7 的模型成立，落到本工程只需把"等待 ADC"映射到现有三个函数：
+V2.0 §7 的模型成立，落到本工程是把"等待 ADC"映射到现有 HAL：
 
 ```
-SET_SELECT   : 写 ABC GPIO（一次，唯一写入者）
-WAIT_SETTLE  : 10 ms 计数器递减
-START_SAMPLE : AdcAc_StartGroupConversion(group)
-WAIT_SAMPLE  : AdcAc_IsGroupCompleted(group) 轮询（每拍一次，不阻塞）
-STORE_RESULT : AdcAc_ReadGroupRaw(group, buf) + 打时间戳
-NEXT_CHANNEL : ABC++，回到 SET_SELECT
+SET_SELECT   : 写 ABC GPIO（所有需要该 ABC 的总线并行写，唯一写入者）
+WAIT_SETTLE  : settleTicks 递减（0 = 不等）
+START_SAMPLE : GPIO 直接读并发布；ADC 启转换
+WAIT_SAMPLE  : 轮询转换完成（每拍一次，不阻塞），完成才取值发布
+STORE_RESULT : 发布 + seq++（不带时间戳 —— 新鲜度由 IoHwAb 按 seq 判）
+NEXT_CHANNEL : 下一个有效 ABC；回绕时轮数 +1
 ```
 
-硬约束（与 V2.0 §7.5 一致，补两条本工程约束）：
+硬约束：
 
-1. 采样未完成**不得**切 ABC；
-2. 一组 ABC 只有一个写入者；
-3. 采样失败发布 `IOHWAB_STATUS_ERROR`，不发布旧值；
-4. 每个样本带 `Platform_NowMs()` 时间戳（超过 `staleMs` 判 STALE）；
-5. **`Adc_ReadGroup` 的现有实现会重新启动一次转换**，MUX 路径必须用
-   `ReadGroupRaw`，避免"读一次又采一次"打乱 ABC 时序（实施时核对 `AdcAc.c`）。
+1. 采样未完成**不得**切 ABC；超时则丢弃本拍样本，**继续**扫描（一片坏器件不卡死整条链）；
+2. 一组 ABC 只有一个写入者（`MuxManager`）；
+3. 采样失败**不发布**（`seq` 不变），由 IoHwAb 按 `staleTicks` 转 `STALE`，
+   而不是在这里造一个 ERROR 值；
+4. 每个样本带 `seq`（V1.0.1 起的输入契约），不需要额外时间戳；
+5. ADC 取值必须用"取上次转换结果"的接口，不能用会重新启动转换的
+   `Adc_ReadGroup()` —— 目标侧 ADC 绑定与直连 AIN 同批实装（当前显式 `E_NOT_OK`）。
 
 ## 8 实施分期（明确"能验证什么"）
 

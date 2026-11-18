@@ -78,11 +78,17 @@ TESTS = [
 	  "app/platform/host/test/iohwab_host_ops.c",
 	  "app/platform/cvm0146/src/config/Board/GEN/IoHwAb_Cfg.c"],
 	 ["app/platform/cvm0146/src/config/Board/GEN"], []),
+	# MuxManager：状态机与 IoHwAb 胶水一起编，Host 替身模拟 ABC/COM/ADC 时序
+	("mux", "app/platform/host/test/test_mux.c",
+	 ["app/app/src/mux.c",
+	  "app/app/src/iohwab_mux.c",
+	  "app/platform/host/test/mux_host_ops.c"],
+	 [], []),
 ]
 
 # 这些用例**不**套用 APP_SRCS + HOST_SRCS：它们验证的是与宿主平台无关的
 # 纯判定逻辑，源码集合由 TESTS 的第 3 项显式给出。
-STANDALONE_TESTS = {"boot_meta", "boot_dev", "boot_prod", "iohwab"}
+STANDALONE_TESTS = {"boot_meta", "boot_dev", "boot_prod", "iohwab", "mux"}
 
 INCLUDES = [
 	"app/include",

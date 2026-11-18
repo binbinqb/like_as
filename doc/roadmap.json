@@ -206,13 +206,20 @@
    "title": "IoHwAb V1.0.1 收口：六项契约修正（极性/新鲜度/生命周期/换算/安全反馈 + 依赖纠错）",
    "decision": "①极性唯一归属 Core，Adapter 只收发电气电平、禁止二次取反；②输入能力增加样本序号 seq，Core 仅在新样本时推进消抖/滤波，超 staleTicks 判 STALE，DIN 配置增 staleTicks；③Init 改为首次才执行（运行期重复调用为空操作），新增 ReInit/IsInitialized；④AIN 换算用 int64_t 中间量并饱和到 INT32，有符号右移改显式朝零舍入；⑤SetAllSafe 返回 Std_ReturnType，新增 DoutGetFault，ops==NULL（本构建不适用）不置故障位、不计入失败；⑥更正依赖判断：RS2260 只需 Dio/Adc，I2C HAL 仅是 PCA9555/TCA9539 的前置。",
    "impact": "Host 39/39（16 组，原 19 条）；host_build 6/6；App text 246632→247948（+1316 B）。生成器新增 R9（staleMs 为 10 的整数倍且 ≥10），DIN 表项由 5 字段增至 6 字段；接口不兼容变更已同步 main.c 与 io_cmd.c。发现并定下“不适用≠失败”语义：否则目标板上的 host 桩会让 io safe 永远报错、淹没真实故障。详见 doc/设计评审/IoHwAb-V1.0.1收口.md。"
+  },
+  {
+   "id": "D-MUX-V11",
+   "date": "2026-11-18",
+   "title": "MuxManager 第一阶段：共享 ABC 状态机 + 配置生成（无实物，Host 验证）",
+   "decision": "在 IoHwAb 与 HAL 之间加 MuxManager：selectBuses/devices 描述总线与器件，io.source=mux 引用 (device, Y)；通道编码 (dev<<8)|y；Mux 只发布电气量 + seq，极性/消抖/滤波仍归 IoHwAb Core。ADC 未完成不切 ABC，超时丢样本后继续；GPIO/启动失败不发布。生成器新增 R11~R14 与 Mux_Cfg.{h,c}。",
+   "impact": "Host 26/26（11 组时序断言）、host_build 7/7 套件、配置规则自测 24/24（新增静态回归用例 mux_cfg）、通信回归 12/12；App/AppB 零警且 text 不变（无设备时 Mux 被 gc-sections 丢弃，符合预期）。未做：ADC COM 的 HAL 绑定（与直连 AIN 同批）、真实 settle/INH 参数、实物验证。首版状态机有一个真缺陷：Init 用“取下一个 ABC”导致 ABC0 整轮被跳过，Host 用例抓到并修复。"
   }
  ],
  "current": {
   "module": 15,
   "task": 0,
-  "text": "IoHwAb V1.0.1 收口完成（六项契约修正，Host 39/39），下一步 RS2260 SelectBus",
-  "next": "V1.1 第一步：RS2260 SelectBus/ABC 扫描状态机（只需 Dio/Adc，**不需要 I2C**）——先在 Host 用模拟后端验证共享 ABC 不冲突、ADC 转换期间 ABC 稳定、混合 GPIO/ADC 采样；再接实物。I2C HAL 只服务 PCA9555/TCA9539，单列任务。V1.0 收尾项：LED 人眼确认（软件侧已 0→1→0）、直连 AIN 实装需先定 ADC 组表。每轮通信回归 tools/regress_comm.py 11 例。"
+  "text": "MuxManager 第一阶段完成（Host 26/26，无实物），下一步 ADC 绑定",
+  "next": "把直连 AIN 与 MUX ADC COM 一起做完：定 ADC 组表 + 用“取上次转换结果”的接口（不能用会重启转换的 Adc_ReadGroup），Host 侧给 Adc 后端加转换耗时模拟；然后拿 RS2260 手册填 settleMs/adcTimeoutMs/INH 极性，实物到位先用单根 Y 验证 ABC→Y 映射。每轮通信回归 tools/regress_comm.py 12 例。"
  },
  "modules": [
   {
@@ -832,8 +839,8 @@
     {
      "text": "RS2260 SelectBus 扫描（GPIO/ADC COM）",
      "check": "共享 ABC 不冲突、ADC 转换期间 ABC 稳定、混合 GPIO/ADC 采样",
-     "state": "TODO",
-     "evidence": "V1.0.1 已解除依赖阻塞：只需 Dio/Adc + 扫描状态机，Host 可先用模拟后端验证时序。待器件手册确认 ABC 建立时间与 INH 时序。"
+     "state": "PARTIAL",
+     "evidence": "核心已实现并 Host 验证：mux.c（状态机）+ iohwab_mux.c（通道拆包）+ MuxAc.c（Dio HwOps）；Host 26/26（共享 ABC、转换期间 0 次切 ABC、超时不卡死、失败不发布）；配置生成 R11~R14 + 24 项自测。**缺**：ADC COM 的 HAL 绑定（与直连 AIN 同批，当前显式 E_NOT_OK）、真实 settle/INH 时序（需器件手册）、实物验证。见 doc/设计评审/RS2260-MuxManager.md。"
     },
     {
      "text": "接入 PCA9555/TCA9539 扩展器",

@@ -139,12 +139,23 @@ typedef struct {
 /* 生成表引用的 ops 实例：Target 与 Host 各实现一份，链接期二选一 */
 extern const IoHwAb_DinOpsType IoHwAb_GpioDinOps;   /**< MCU 直连数字输入 */
 extern const IoHwAb_DinOpsType IoHwAb_HostDinOps;   /**< Host 模拟输入 */
+extern const IoHwAb_DinOpsType IoHwAb_MuxDinOps;    /**< MUX 扫描样本（MuxManager） */
 extern const IoHwAb_AinOpsType IoHwAb_AdcOps;       /**< MCU ADC */
 extern const IoHwAb_AinOpsType IoHwAb_HostAinOps;   /**< Host 模拟 ADC */
+extern const IoHwAb_AinOpsType IoHwAb_MuxAinOps;    /**< MUX 扫描样本（MuxManager） */
 extern const IoHwAb_DoutOpsType IoHwAb_GpioDoutOps; /**< MCU 直连输出 */
 extern const IoHwAb_DoutOpsType IoHwAb_HostDoutOps; /**< Host 模拟输出 */
 extern const IoHwAb_PwmOpsType IoHwAb_PwmOps;       /**< MCU PWM */
 extern const IoHwAb_PwmOpsType IoHwAb_HostPwmOps;   /**< Host 模拟 PWM */
+
+/**
+ * @brief MUX 逻辑通道编码：`(dev << 8) | y`
+ * @param[in] dev Mux 设备索引（0..MUX_DEV_MAX-1）
+ * @param[in] y   该设备的 Y 通道（0..7）
+ * @note  生成器按同一编码写 `IoHwAb_*Cfg[].channel`；
+ *        `IoHwAb_MuxDinOps` / `IoHwAb_MuxAinOps` 负责拆包后查 Mux 样本。
+ */
+#define IOHWAB_MUX_CH(dev, y)   ((uint16)(((uint16)(dev) << 8) | (uint16)(y)))
 
 /** @brief PWM 满占空比（万分之一） */
 #define IOHWAB_PWM_FULL                 (10000u)
