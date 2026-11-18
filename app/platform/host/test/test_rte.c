@@ -31,6 +31,7 @@
 #include <stdio.h>
 
 #include "rte.h"
+#include "iohwab.h"
 #include "bcm_sig.h"
 #include "rx_mon.h"
 #include "com_stub.h"
@@ -78,6 +79,11 @@ int main(void)
 {
 	Rte_SwitchType v = RTE_SWITCH_INVALID;
 	Rte_StatusType st;
+	sint32_t mv = 0;
+	uint16_t raw = 0u;
+
+	extern void HostIo_SetDin(uint16 ch, boolean level);
+	extern void HostIo_SetAin(uint16 ch, uint16 value);
 
 	(void)printf("== like_as host test: RTE ==\n");
 
@@ -156,6 +162,53 @@ int main(void)
 	BcmSig_MainFunction();
 	st = Rte_Read_ParkBrake(&v);
 	check((RTE_E_OK == st) && (RTE_SWITCH_ON == v), "重新收到帧 → 恢复 OK + ON");
+
+	/* ---------- 12. IO 端口：DIN（Host 后端） ---------- */
+	(void)IoHwAb_Init();
+	HostIo_SetDin(0u, TRUE);       /* 引脚高；activeLevel=LOW → 逻辑 0 */
+	st = Rte_Read(RTE_PORT_DOOR_FL, &v);
+	check((RTE_E_NEVER_RECEIVED == st) && (RTE_SWITCH_INVALID == v),
+	      "DIN 未采样 → NEVER_RECEIVED");
+	IoHwAb_MainFunction();
+	IoHwAb_MainFunction();          /* debounceMs=20 → 2 拍 */
+	st = Rte_Read(RTE_PORT_DOOR_FL, &v);
+	check((RTE_E_OK == st) && (RTE_SWITCH_OFF == v),
+	      "DIN 采样完成 → OK + OFF（引脚高、低有效 → 逻辑 0）");
+
+	HostIo_SetDin(0u, FALSE);
+	IoHwAb_MainFunction();
+	IoHwAb_MainFunction();
+	st = Rte_Read(RTE_PORT_DOOR_FL, &v);
+	check((RTE_E_OK == st) && (RTE_SWITCH_ON == v),
+	      "DIN 引脚拉低 → OK + ON（极性由 IoHwAb 处理，RTE 不取反）");
+
+	/* ---------- 13. IO 端口：AIN 物理量 / 原始值 ---------- */
+	HostIo_SetAin(1u, 30000u);      /* TEMP：factor=100 offset=-4000 shift=2 */
+	{
+		int i;
+		for (i = 0; i < 30; i++) {
+			IoHwAb_MainFunction();
+		}
+	}
+	st = Rte_ReadS32(RTE_PORT_TEMP_MC, &mv);
+	check((RTE_E_OK == st) && (mv >= -1002) && (mv <= -998),
+	      "AIN 物理量端口 → OK，约 -1000（定点，RTE 不二次换算）");
+	st = Rte_ReadU16(RTE_PORT_TEMP_RAW, &raw);
+	/* 30 拍后一阶滤波残差约 7 个计数（shift=2） */
+	check((RTE_E_OK == st) && (raw >= 29985u) && (raw <= 30000u),
+	      "AIN 原始值端口 → OK，约 30000（含滤波残差）");
+
+	/* ---------- 14. 类型/方向不符必须被拒 ---------- */
+	check(RTE_E_INVALID == Rte_ReadS32(RTE_PORT_PARK_BRAKE, &mv),
+	      "对 switch 端口读 S32 被拒");
+	check(RTE_E_INVALID == Rte_ReadU16(RTE_PORT_TEMP_MC, &raw),
+	      "对物理量端口读 U16 被拒");
+	check(RTE_E_INVALID == Rte_ReadS32(RTE_PORT_BRAKE_LAMP, &mv),
+	      "对输出端口读 S32 被拒");
+
+	/* ---------- 15. DOUT：Host 上直连 LED 不可用 → 明确失败 ---------- */
+	check(E_NOT_OK == Rte_Write(RTE_PORT_LED_R, RTE_SWITCH_ON),
+	      "直连 LED 在 Host 返回 E_NOT_OK（不适用，不伪造成功）");
 
 	(void)printf("-- %d passed, %d failed\n", s_pass, s_fail);
 

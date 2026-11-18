@@ -220,13 +220,27 @@
    "title": "直连 ADC 采样落地：AdcSampler + channel 编码修正 + 组所有权 R15（上板实测）",
    "decision": "新增 AdcSampler（组轮转：启动→下一拍查完成→发布；超时丢弃；只有新样本才 seq++），Target 走 Adc HAL，Host 用可注入替身；直连 AIN 的 channel 统一编码为 (group<<8)|slot（修掉“MainFunction 只传 channel、不传 group”的潜伏缺陷）；MUX 的 ADC COM 由 MuxManager 直接驱动 Adc HAL，生成器新增 R15 禁止同一 ADC 组被两个驱动者占用。",
    "impact": "上板实测：io 的 ain[2]=1923、ain[3]=2255（status=VALID），与 shell 一次性读组 adc 0 的 1923/2257 互证（差 2 为滤波滞后）；Host adc_sampler 16/16、host_build 8/8 套件；mux_cfg 26/26（新增 R15 与编码断言）；通信回归 12/12；App text 247948→249308（+1360 B）。未验证：MUX 的 ADC COM 分支（无 RS2260）。详见 doc/设计评审/ADC采样与绑定.md。"
+  },
+  {
+   "id": "D-BACKLOG-1118",
+   "date": "2026-11-18",
+   "title": "两类事项预留：无实物项（IoHwAb）与 Boot 安全/故障恢复",
+   "decision": "①IoHwAb 的实物相关项暂停：RS2260 的 settle/采样时间/ADC COM 验证、ADC 校准与参考电压实测；②Boot 安全与故障恢复（0x27 正式方案、擦写中断电、A/B 回滚故障注入）暂缓，需独占台架且风险最高。两者均记入看板 BLOCKED 任务，不占当前迭代。",
+   "impact": "当前迭代转向 RTE 配置生成（纯静态 + Host，不占台架）。恢复条件：IoHwAb 项需 RS2260 实物与手册；Boot 项需一段独占台架的时间窗口，且应先定 0x27 的 OEM 方案（现为固定种子 11 22 33 44，仅流程占位）。"
+  },
+  {
+   "id": "D-RTE-V02",
+   "date": "2026-11-18",
+   "title": "RTE V0.2：端口表配置生成 + U16/S32 值类型 + DIN/AIN/DOUT 绑定",
+   "decision": "端口枚举与表体改由 Board.json 的 rte.ports 生成（tools/generator/BcmRte.py → Rte_Ports.h，表在 rte_cfg.c 展开）；端口模型扩为六种 kind（com_tx/com_rx/io_din/io_ain_raw/io_ain_phys/io_dout），值类型 switch/U16/S32；S32 复用 IoHwAb 的定点换算与饱和，RTE 不二次换算；运行期强制类型与方向校验；校验规则 E1~E6 + 合成配置自测 14 项。不走上游 ARXML 生成链（Rte.py/asar.py），避免为 8 个端口引入 ARXML 依赖。",
+   "impact": "Host rte 用例 15→24 条（新增 DIN/AIN/U16/S32/方向类型不符/不适用），host_build 8/8；rte_cfg 14/14 并纳入静态回归（13 例）；App text 249308→249648（+340 B）；App/AppB 零警。业务未迁移：BcmBiz 仍用 Rte_Read_ParkBrake / Rte_Write_BrakeLamp，行为不变。生成物只出头：若生成 .c 会被编进平台库，而平台库没有 app 头路径（bcm_sig.h），会造成平台层反向依赖应用层。"
   }
  ],
  "current": {
   "module": 15,
   "task": 0,
-  "text": "直连 ADC 已上板实测（ain[2]/ain[3] VALID），IoHwAb 无硬件部分到此为止",
-  "next": "IoHwAb 剩余的实物项（RS2260 的 settle/INH/ADC COM、PCA9555 的 I2C HAL）都缺硬件，暂停。下一步二选一：①RTE 配置生成（Boolean/整型端口 + 物理量换算，让 RTE 适配不同 BCM 项目）；②Boot 安全与故障恢复（中/断电、0x27 换正式方案、A/B 回滚故障注入）。两件事都独占台架，不要同时开。每轮通信回归 tools/regress_comm.py 12 例。"
+  "text": "RTE V0.2 完成（端口表配置生成 + U16/S32 + IO 绑定），下一步业务迁移或 10.5 调度",
+  "next": "①把 BcmBiz 从手写宏迁到生成的端口名（顺带验证换项目只改 Board.json）；②10.5 的 runnable 调度表（当前 main.c 按拍直调）；③若恢复硬件，回到 IoHwAb 的 RS2260 实物项。每轮通信回归 tools/regress_comm.py 13 例。"
  },
  "modules": [
   {
@@ -669,8 +683,8 @@
     {
      "text": "明确端口、类型、来源与有效性",
      "check": "覆盖布尔、枚举、数值和超时",
-     "state": "PARTIAL",
-     "evidence": "switch（枚举）端口已定义并覆盖超时/无效；boolean 与数值端口（需 factor/offset）未做"
+     "state": "PASS",
+     "evidence": "三类值：switch（Com/DIN/DOUT）、U16（AIN 原始）、S32（AIN 物理量，factor/offset 在 IoHwAb 完成，RTE 不二次换算）；来源六种 kind；有效性四态一一映射（BCM_SIG_* / IOHWAB_* → RTE_E_*）。Host 24/24"
     },
     {
      "text": "明确为**新建最小 RTE 运行时**（生成器已有 Rte.py，运行时 Rte.h 是空壳）",
@@ -854,6 +868,18 @@
      "check": "批量读、NACK/超时影响有效性、输出影子寄存器",
      "state": "BLOCKED",
      "evidence": "依赖 I2C HAL + 器件手册 + 实物板；目前无板无型号"
+    },
+    {
+     "text": "RS2260 实物验证（settle / 采样时间 / ADC COM）",
+     "check": "单根 Y 接已知电平：ABC→Y 映射、建立时间、MUX 的 ADC 读数",
+     "state": "BLOCKED",
+     "evidence": "**预留**（用户 2026-11-18 决定：无实物暂不做）。待办：①settleMs 由器件手册决定；②Adc_Cfg 的 samplingTime=20 是给低阻电位器的，接 Ron≈105Ω 后必须重扫收敛点；③MuxAc 的 ADC COM 分支至今未执行过。见 doc/设计评审/RS2260-MuxManager.md §7"
+    },
+    {
+     "text": "ADC 校准与参考电压实测",
+     "check": "与万用表比对，修正 factor / refVoltageMv",
+     "state": "BLOCKED",
+     "evidence": "**预留**（用户 2026-11-18 决定：无实物暂不做）。当前 factor 按 VDDA=3300mV 推算，未与实测比对。见 doc/设计评审/ADC采样与绑定.md §5"
     }
    ]
   },
@@ -1123,15 +1149,15 @@
      "evidence": "**上板实测通过**（2026-11-17，CVM0146-EVK；开发版 Boot build 14:58:20 / App 15:11:13）。`bootfault testing 3` → 复位，串口依次出现：`slot A : 0x020000 TESTING rc=28 ... crc=DDDA994E` → `[boot] slot A exceeded boot attempts, rollback to slot B` → `[boot] no valid image in slot A or B, waiting for flash` → `entering UDS flash mode`。计数 3→4 超限触发 INVALID 并回滚；B 槽 EMPTY 故按设计停在 UDS（不是死机）。**该行在修复前不可能出现**（旧代码 DemoteToTesting 清零，计数恒为 1）。另测 H1：`bootfault meta-crc` → `[boot] slot A check failed, boot anyway as TESTING` → app `[app] slot A meta mismatch, self-register crc=DDDA994E` 自愈。Host 侧 boot_meta 20 / boot_dev 9 / boot_prod 9 覆盖同一批判据。未做：H3(meta-blank)、H3'(量产拒绝)、H4/H5、选槽耗时。"
     },
     {
-     "text": "擦写中断电测试",
+     "text": "擦写中断电测试（**暂缓，见 D-BACKLOG-1118**）",
      "check": "掉电点注入后不越界且可恢复",
-     "state": "SKIP",
+     "state": "BLOCKED",
      "evidence": "缺少程控电源；A5/A8 同一结论"
     },
     {
-     "text": "安全及防降级策略",
+     "text": "安全及防降级策略（**暂缓，见 D-BACKLOG-1118**）",
      "check": "按 OEM 方案评审并测试",
-     "state": "TODO",
+     "state": "BLOCKED",
      "evidence": ""
     },
     {

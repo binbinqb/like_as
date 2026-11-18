@@ -9,6 +9,7 @@ import json
 
 from .helper import GenHeader
 from .IoHwAb import Gen_Tables
+from .BcmRte import Gen_Rte
 
 __all__ = ["Gen"]
 
@@ -111,4 +112,6 @@ def Gen(cfg):
 	# V1.1 加 devices/selectBuses 时只改那个文件，不碰本文件。
 	files = ["%s/Board_Cfg.c" % (dir)]
 	files += Gen_Tables(cfg, dir)
+	# RTE 只产头（端口枚举 + 初始化列表），由 app 层的 bcm_rte.c 展开
+	files += Gen_Rte(cfg, dir)
 	return files

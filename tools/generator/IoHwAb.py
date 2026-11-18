@@ -384,6 +384,18 @@ def _gen_mux(buses, devices, dir):
 	return [os.path.join(dir, "Mux_Cfg.c")]
 
 
+def Tables(board_cfg):
+	"""供其它生成器复用：返回 (io 四表, 总线表, 设备表)。
+
+	Rte 生成器要按名字校验端口引用，必须拿到与 IoHwAb 完全相同的解析结果，
+	否则两处规则会漂移。
+	"""
+	pins = {p["name"]: p for p in board_cfg.get("pins", [])}
+	return _norm(board_cfg, pins, board_cfg.get("dioChannels", []),
+	             board_cfg.get("adc", {}).get("groups", 0),
+	             board_cfg.get("pwm", {}).get("channels", 0))
+
+
 def Gen_Tables(board_cfg, dir):
 	"""真正的生成入口：`board_cfg` 是已解析的 Board.json 字典。"""
 	pins = {p["name"]: p for p in board_cfg.get("pins", [])}

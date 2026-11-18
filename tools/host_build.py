@@ -47,6 +47,10 @@ APP_SRCS = [
 	"app/app/src/rx_mon.c",
 	"app/app/src/rte.c",
 	"app/app/src/rte_cfg.c",
+	# RTE 的 DIN/AIN/DOUT 端口直接走 IoHwAb，Host 侧用内存后端
+	"app/app/src/iohwab.c",
+	"app/platform/host/test/iohwab_host_ops.c",
+	"app/platform/cvm0146/src/config/Board/GEN/IoHwAb_Cfg.c",
 ]
 
 HOST_SRCS = sorted(glob.glob(os.path.join(ROOT, "app/platform/host/src/*.c")))
@@ -102,6 +106,8 @@ INCLUDES = [
 	"infras/include",
 	"app/platform/cvm0146/src/config",
 	"app/platform/cvm0146/src/config/CanIf",
+	# 生成的端口表 / 通道枚举（Rte_Ports.h、IoHwAb_Cfg.h）
+	"app/platform/cvm0146/src/config/Board/GEN",
 ]
 
 CFLAGS_COMMON = ["-std=c99", "-Wall", "-Wextra"]
