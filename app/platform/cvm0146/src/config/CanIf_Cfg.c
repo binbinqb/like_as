@@ -548,238 +548,238 @@ static const CanIf_RxPduType CanIf_RxPdus_CAN1[] = {
 		CanIfCfg_RxPduR_CAN1_EEC1_ELECTRONIC_ENGINE_CONTROLLER_1,	/* rxInd */
 		CANIF_RX_CAN1_EEC1_ELECTRONIC_ENGINE_CONTROLLER_1,
 		0x0CF00400u,			/* canid：PF=0xF0 */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		11u,			/* hoh：mb11（PF=0xF0 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_EOI,	/* rxInd */
 		CANIF_RX_CAN1_EOI,
 		0x0CFD9200u,			/* canid：PF=0xFD */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		12u,			/* hoh：mb12（PF=0xFD 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_TCO1,	/* rxInd */
 		CANIF_RX_CAN1_TCO1,
 		0x0CFE6CEEu,			/* canid：PF=0xFE */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		13u,			/* hoh：mb13（PF=0xFE 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_ESCL1,	/* rxInd */
 		CANIF_RX_CAN1_ESCL1,
 		0x10FFB04Du,			/* canid：PF=0xFF */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_ESCLM_PEPS,	/* rxInd */
 		CANIF_RX_CAN1_ESCLM_PEPS,
 		0x10FFB24Du,			/* canid：PF=0xFF */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_PEPS_ESCLM,	/* rxInd */
 		CANIF_RX_CAN1_PEPS_ESCLM,
 		0x10FFB634u,			/* canid：PF=0xFF */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_CRASH_NOTIFICATION,	/* rxInd */
 		CANIF_RX_CAN1_CRASH_NOTIFICATION,
 		0x14F02B54u,			/* canid：PF=0xF0 */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		11u,			/* hoh：mb11（PF=0xF0 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_ACL,	/* rxInd */
 		CANIF_RX_CAN1_ACL,
 		0x18EEFF00u,			/* canid：PF=0xEE */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		10u,			/* hoh：mb10（PF=0xEE 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_ERC3,	/* rxInd */
 		CANIF_RX_CAN1_ERC3,
 		0x18F00000u,			/* canid：PF=0xF0 */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		11u,			/* hoh：mb11（PF=0xF0 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_ERC1,	/* rxInd */
 		CANIF_RX_CAN1_ERC1,
 		0x18F0000Fu,			/* canid：PF=0xF0 */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		11u,			/* hoh：mb11（PF=0xF0 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_EBC1_ELECTRONIC_BRAKE_CONTROLLER_1,	/* rxInd */
 		CANIF_RX_CAN1_EBC1_ELECTRONIC_BRAKE_CONTROLLER_1,
 		0x18F0010Bu,			/* canid：PF=0xF0 */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		11u,			/* hoh：mb11（PF=0xF0 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_ETC2,	/* rxInd */
 		CANIF_RX_CAN1_ETC2,
 		0x18F00503u,			/* canid：PF=0xF0 */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		11u,			/* hoh：mb11（PF=0xF0 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_DLCC1_DIRECT_LAMP_CONTROL_COMMAND_1,	/* rxInd */
 		CANIF_RX_CAN1_DLCC1_DIRECT_LAMP_CONTROL_COMMAND_1,
 		0x18FD0700u,			/* canid：PF=0xFD */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		12u,			/* hoh：mb12（PF=0xFD 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_EBC5_ELECTRONIC_BRAKE_CONTROLLER_5,	/* rxInd */
 		CANIF_RX_CAN1_EBC5_ELECTRONIC_BRAKE_CONTROLLER_5,
 		0x18FDC40Bu,			/* canid：PF=0xFD */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		12u,			/* hoh：mb12（PF=0xFD 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_VDC1_VEHICLE_DYNAMIC_STABILITY_CONTROL_1,	/* rxInd */
 		CANIF_RX_CAN1_VDC1_VEHICLE_DYNAMIC_STABILITY_CONTROL_1,
 		0x18FE4F0Bu,			/* canid：PF=0xFE */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		13u,			/* hoh：mb13（PF=0xFE 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_DM1_TPMS,	/* rxInd */
 		CANIF_RX_CAN1_DM1_TPMS,
 		0x18FECA33u,			/* canid：PF=0xFE */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		13u,			/* hoh：mb13（PF=0xFE 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_CCVS1_CRUISE_CONTROL_VEHICLE_SPEED_1,	/* rxInd */
 		CANIF_RX_CAN1_CCVS1_CRUISE_CONTROL_VEHICLE_SPEED_1,
 		0x18FEF100u,			/* canid：PF=0xFE */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		13u,			/* hoh：mb13（PF=0xFE 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_CCVS,	/* rxInd */
 		CANIF_RX_CAN1_CCVS,
 		0x18FEF121u,			/* canid：PF=0xFE */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		13u,			/* hoh：mb13（PF=0xFE 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_TIRE_CONDITION,	/* rxInd */
 		CANIF_RX_CAN1_TIRE_CONDITION,
 		0x18FEF433u,			/* canid：PF=0xFE */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		13u,			/* hoh：mb13（PF=0xFE 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_AMB_AMBIENT_CONDITIONS,	/* rxInd */
 		CANIF_RX_CAN1_AMB_AMBIENT_CONDITIONS,
 		0x18FEF500u,			/* canid：PF=0xFE */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		13u,			/* hoh：mb13（PF=0xFE 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_PEPS1,	/* rxInd */
 		CANIF_RX_CAN1_PEPS1,
 		0x18FF0534u,			/* canid：PF=0xFF */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_IC_MSG,	/* rxInd */
 		CANIF_RX_CAN1_IC_MSG,
 		0x18FF0917u,			/* canid：PF=0xFF */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_DW_STATE,	/* rxInd */
 		CANIF_RX_CAN1_DW_STATE,
 		0x18FF0CECu,			/* canid：PF=0xFF */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_VCU_4,	/* rxInd */
 		CANIF_RX_CAN1_VCU_4,
 		0x18FF12EFu,			/* canid：PF=0xFF */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_ID1,	/* rxInd */
 		CANIF_RX_CAN1_ID1,
 		0x18FF4C56u,			/* canid：PF=0xFF */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_ID2,	/* rxInd */
 		CANIF_RX_CAN1_ID2,
 		0x18FF4D56u,			/* canid：PF=0xFF */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_ID3,	/* rxInd */
 		CANIF_RX_CAN1_ID3,
 		0x18FF4E56u,			/* canid：PF=0xFF */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_PEPS2,	/* rxInd */
 		CANIF_RX_CAN1_PEPS2,
 		0x18FF7534u,			/* canid：PF=0xFF */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_ESCL_NM,	/* rxInd */
 		CANIF_RX_CAN1_ESCL_NM,
 		0x18FF904Du,			/* canid：PF=0xFF */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_EEC3,	/* rxInd */
 		CANIF_RX_CAN1_EEC3,
 		0x18FFBA19u,			/* canid：PF=0xFF */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_ECC2,	/* rxInd */
 		CANIF_RX_CAN1_ECC2,
 		0x18FFBC19u,			/* canid：PF=0xFF */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		14u,			/* hoh：mb14（PF=0xFF 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_TP_DT,	/* rxInd */
 		CANIF_RX_CAN1_TP_DT,
 		0x1CEBFF21u,			/* canid：PF=0xEB */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		8u,			/* hoh：mb8（PF=0xEB 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_TP_CM,	/* rxInd */
 		CANIF_RX_CAN1_TP_CM,
 		0x1CECFF21u,			/* canid：PF=0xEC */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		9u,			/* hoh：mb9（PF=0xEC 段） */
 	},
 	{
 		CanIfCfg_RxPduR_CAN1_ETC5,	/* rxInd */
 		CANIF_RX_CAN1_ETC5,
 		0x1CFEC321u,			/* canid：PF=0xFE */
-		0x1FFFFFFFu,	/* mask：精确匹配，忽略源地址 */
+		0x1FFFFFFFu,	/* mask：精确匹配（29 位全比较，含源地址） */
 		13u,			/* hoh：mb13（PF=0xFE 段） */
 	},
 };

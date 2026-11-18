@@ -178,7 +178,10 @@ def collect():
         out.append("\t\t%s," % canif_macro)
         out.append("\t\t0x%08Xu,\t\t\t/* canid：PF=0x%02X */" % (canid, pf))
         if mask == 0x1FFFFFFF:
-            out.append("\t\t0x1FFFFFFFu,\t/* mask：精确匹配，忽略源地址 */")
+            # 0x1FFFFFFF 是 29 位全 1：**连源地址一起比较**，不是"忽略源地址"。
+            # 旧注释写反了（真实效果没错，因为报文 ID 里源地址是固定的），
+            # 但会误导下一个改掩码的人。
+            out.append("\t\t0x1FFFFFFFu,\t/* mask：精确匹配（29 位全比较，含源地址） */")
         else:
             out.append("\t\t0x%08Xu,\t/* mask */" % mask)
         out.append("\t\t%su,\t\t\t/* hoh：mb%s（PF=0x%02X 段） */" % (hoh_s, hoh_s, pf))

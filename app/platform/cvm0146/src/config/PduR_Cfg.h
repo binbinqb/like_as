@@ -218,7 +218,13 @@
 /** @brief 0x201 信号测试帧（M10） */
 #define PDUR_CANTEST_RX_TEST               (50u)
 
-/** @brief 生成段路径数（供 PDUR_NUM_ROUTING_PATHS 相加） */
+/**
+ * @brief 生成段路径数（供 PDUR_NUM_ROUTING_PATHS 相加）
+ * @note  = DBC 40 条 + `PduR.json` 的 `manualPaths` 2 条。
+ *        这个加法必须写在产物里：数字本身不解释来源，下次矩阵升版
+ *        按 DBC 条数算总数就会少算 2 条（`check-pdu` 只会报索引错位，
+ *        不会告诉你少的是手工路径）。
+ */
 #define PDUR_CAN1_PATHS         (42u)
 /* @generated END: CAN1 real matrix */
 

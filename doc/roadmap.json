@@ -150,13 +150,20 @@
    "title": "FeeAc_Init 把 CACHE_CTRL 整写 0，整机慢 3.2 倍",
    "decision": "只清 `FLS_EN`（bit1），保留 `EN`/`PFB_EN`/`MCNT`/`HCNT`/`R0_MODE`。原写法整寄存器写 0，理由是注释里\"本板复位后该寄存器全 0\"——该论断是错的，`SystemInit()` 设的是 `0x1C7`。",
    "impact": "整机执行速度恢复 3.2 倍：245 KB 镜像 CRC 267 → 81 ms；NvM 读取 34 → 25 ms。存储路径已验：`nvm writeall` OK、四块 `st=0`、BOOTCNT/VIN 不变。"
+  },
+  {
+   "id": "D-PDUR-SHAPE",
+   "date": "2026-11-18",
+   "title": "PduR 不做\"生成器全量产出项目形态\"，收口到参数入 JSON + 单一命名源",
+   "decision": "`generator/PduR.py` 与项目要的形态有 4 处结构性差异，其中\"三张按宏值索引的扁平数组\"是 `PduR.c` 的索引契约、不是可参数化项；手写 9 条路径上的 path0=0 / 确认往上游 / CanNm PduHandleId=0 三个 @warning 是 M3/M9/M10 判据来源。全量生成等于在通用生成器里养第二个项目专用模板，判定不做。收口改为两件事：①命名规则只留 `generator/helper.toMacro` 一份（删 `sync_pdur` 的副本）；②已知误导项就地修（`PDUR_CAN1_PATHS` 写出 42=40+2、mask 注释改为\"29 位全比较含源地址\"）。",
+   "impact": "注入链保持现状但风险已被三道门禁兜住（`gen_gate` 输入指纹含 `sync_pdur.py`、`hardcode_check` 12/12、`check-pdu` 索引一致）；幂等连跑哈希不变；`text 243,904 / data 1,712` 逐字节不变。剩余死路径删除（编号全局前移）单列批次，需上板回归 m3/m10。详见 `doc/设计评审/02.6-配置生成盘点.md` §7。"
   }
  ],
  "current": {
   "module": 2,
   "task": 5,
-  "text": "PduR 42 条路径收口：让生成器直接产出项目形态，去掉二次注入",
-  "next": "先盘点 sync_pdur.py 在生成之外还做了什么（编号/命名/宏名/校验），把能搬的搬进 PduR.json + generator/PduR.py，搬不动的写清理由。"
+  "text": "PduR 路由表验收：源/目标 ID 与 callback 逐项核对，清掉死路径",
+  "next": "先删死路径 PDUR_COM_TO_CANIF_TX（`pdurIdBase` 9→8 同步改，否则数组留洞），重刷 App 跑 m3/m10；再按模块 2 的 PduR 任务逐项核对 51 条路径的 PduHandleId 语义。"
  },
  "modules": [
   {

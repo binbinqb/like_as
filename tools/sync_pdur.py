@@ -43,7 +43,6 @@
 import io
 import json
 import os
-import re
 import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -63,6 +62,11 @@ END_MARK = "/* @generated END: CAN1 real matrix */"
 
 # 项目参数从 Can.json 读（02.5）：编号起点、TX 宏映射。
 sys.path.insert(0, os.path.join(ROOT, "tools"))
+# 命名规则只有一份：`generator/helper.py` 的 toMacro（Com.py / PduR.py 共用同一实现）。
+# 原来这里复制了一份 to_macro，注释写"与 generator/Com.py 的 toMacro 一致"——
+# 靠注释维持一致是最脆弱的约定：上游改了切词规则，这里不会报错，只会生成
+# COM_CAN1_xxx 对不上的宏，然后在链接期报 undeclared。
+from generator.helper import toMacro
 with io.open(os.path.join(CFG_DIR, "Can", "Can.json"), encoding="utf-8") as _f:
     _CAN = json.load(_f)
 
@@ -108,13 +112,6 @@ MANUAL_RX = [(e["path"], e["com"], e.get("note", ""))
              for e in _PDUR_NET.get("manualPaths", {}).get("rx", [])]
 
 
-def to_macro(s):
-	"""`BCM_DoorCtrl` → `BCM_DOOR_CTRL`（与 generator/Com.py 的 toMacro 一致）"""
-	s = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s)
-	s = re.sub(r"[^0-9A-Za-z_]", "_", s)
-	return s.upper()
-
-
 def build():
 	if not os.path.isfile(DBC):
 		raise SystemExit(
@@ -138,7 +135,7 @@ def build():
 			raise SystemExit(
 				"发送报文 %s 没有对应的 CanIf TX PDU，请补 CANIF_TX_MAP"
 				% m["name"])
-		mac = to_macro(m["name"])
+		mac = toMacro(m["name"])
 		paths.append({
 			"id": pid, "dir": "TX",
 			"name": "PDUR_CAN1_%s_TX" % mac,
@@ -149,7 +146,7 @@ def build():
 		pid += 1
 
 	for m in rx:
-		mac = to_macro(m["name"])
+		mac = toMacro(m["name"])
 		paths.append({
 			"id": pid, "dir": "RX",
 			"name": "PDUR_CAN1_%s_RX" % mac,
@@ -161,17 +158,19 @@ def build():
 
 	for name, com, canif, note in MANUAL_TX:
 		paths.append({"id": pid, "dir": "TX", "name": name, "com": com,
-		              "canif": canif, "note": note})
+		              "canif": canif, "note": note, "manual": True})
 		pid += 1
 	for name, com, note in MANUAL_RX:
 		paths.append({"id": pid, "dir": "RX", "name": name, "com": com,
-		              "canif": None, "note": note})
+		              "canif": None, "note": note, "manual": True})
 		pid += 1
 
 	return paths
 
 
 def render_header(paths):
+	n_dbc = sum(1 for p in paths if not p.get("manual"))
+	n_man = len(paths) - n_dbc
 	out = [BEGIN_MARK]
 	out.append("/*\n * CAN1 报文路由（由 tools/sync_pdur.py 从 dbc/can1.dbc 生成，勿手改）\n"
 	           " *\n"
@@ -182,7 +181,13 @@ def render_header(paths):
 		out.append("/** @brief %s */" % p["note"])
 		out.append("#define %-34s (%du)" % (p["name"], p["id"]))
 	out.append("")
-	out.append("/** @brief 生成段路径数（供 PDUR_NUM_ROUTING_PATHS 相加） */")
+	out.append("/**")
+	out.append(" * @brief 生成段路径数（供 PDUR_NUM_ROUTING_PATHS 相加）")
+	out.append(" * @note  = DBC %d 条 + `PduR.json` 的 `manualPaths` %d 条。" % (n_dbc, n_man))
+	out.append(" *        这个加法必须写在产物里：数字本身不解释来源，下次矩阵升版")
+	out.append(" *        按 DBC 条数算总数就会少算 %d 条（`check-pdu` 只会报索引错位，" % n_man)
+	out.append(" *        不会告诉你少的是手工路径）。")
+	out.append(" */")
 	out.append("#define PDUR_CAN1_PATHS         (%du)" % len(paths))
 	out.append(END_MARK)
 	return "\n".join(out)
