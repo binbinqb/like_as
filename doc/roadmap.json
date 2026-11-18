@@ -157,13 +157,20 @@
    "title": "PduR 不做\"生成器全量产出项目形态\"，收口到参数入 JSON + 单一命名源",
    "decision": "`generator/PduR.py` 与项目要的形态有 4 处结构性差异，其中\"三张按宏值索引的扁平数组\"是 `PduR.c` 的索引契约、不是可参数化项；手写 9 条路径上的 path0=0 / 确认往上游 / CanNm PduHandleId=0 三个 @warning 是 M3/M9/M10 判据来源。全量生成等于在通用生成器里养第二个项目专用模板，判定不做。收口改为两件事：①命名规则只留 `generator/helper.toMacro` 一份（删 `sync_pdur` 的副本）；②已知误导项就地修（`PDUR_CAN1_PATHS` 写出 42=40+2、mask 注释改为\"29 位全比较含源地址\"）。",
    "impact": "注入链保持现状但风险已被三道门禁兜住（`gen_gate` 输入指纹含 `sync_pdur.py`、`hardcode_check` 12/12、`check-pdu` 索引一致）；幂等连跑哈希不变；`text 243,904 / data 1,712` 逐字节不变。剩余死路径删除（编号全局前移）单列批次，需上板回归 m3/m10。详见 `doc/设计评审/02.6-配置生成盘点.md` §7。"
+  },
+  {
+   "id": "D-PDUR-DEADPATH",
+   "date": "2026-11-18",
+   "title": "删掉 0 引用的死路径 PDUR_COM_TO_CANIF_TX（路径 6）",
+   "decision": "该路径的 Src 与生成段 `PDUR_CANTEST_TX_TEST` 指向同一个 Com PDU，全工程外部引用 0 处（`Com_Cfg.c` 用的是生成段那条）。手工段 9→8 的同时把 `Can.json` 的 `pdurIdBase` 9→8 —— 不同步改会让 `PduR_SrcPdu[]` 第 8 项留洞、`PDUR_NUM_ROUTING_PATHS` 与实际条目数不符。生成段随之 9..50→8..49。",
+   "impact": "`check-pdu` PASS（50 条路径，无重复/悬空/索引错位）；`m3` 18/18（诊断 4 条路径含多帧收发）；镜像 text 243,904→243,864（−40 B，三张表各少一条）。`m10` 5 项失败经 HEAD 对照证实为既有 Com 发送缺陷，与本改动无关，见 `doc/设计评审/Com周期发送异常.md`。"
   }
  ],
  "current": {
   "module": 2,
   "task": 5,
-  "text": "PduR 路由表验收：源/目标 ID 与 callback 逐项核对，清掉死路径",
-  "next": "先删死路径 PDUR_COM_TO_CANIF_TX（`pdurIdBase` 9→8 同步改，否则数组留洞），重刷 App 跑 m3/m10；再按模块 2 的 PduR 任务逐项核对 51 条路径的 PduHandleId 语义。"
+  "text": "Com 周期发送：0x200 不上总线（M10 五项失败），定位 Can_Write/确认回收",
+  "next": "按 doc/设计评审/Com周期发送异常.md §4 的假设顺序验证：①`can matrix`/`can burst` 证明非 Com 路径能发；②读 CAN0 的 TSR/TEC/REC 看 mb13 的 TXRQ 是否挂住；③确认 Com 的 6 个 TX 邮箱有无回确认。已排除本次 PduR 改动（A/B 对照）与时基/NM/编号问题。"
  },
  "modules": [
   {

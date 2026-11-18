@@ -167,96 +167,94 @@ static const PduR_PduType PduR_SrcPdu[PDUR_NUM_ROUTING_PATHS] = {
 	/* 5：NM 发送确认，Src = CanNm 通道 0。
 	 *    PduHandleId 必须是 0 —— CanNm 拿它当通道下标用，见 PduR_Cfg.h 的 @warning */
 	{ PDUR_MODULE_CANNM, 0u, &PduR_CanNmApi },
-	/* 6：信号下行，Src = Com 的测试报文（只用 Dest，Src 不参与发送） */
-	{ PDUR_MODULE_COM, (PduIdType)COM_CANTEST_TX_TEST, &PduR_ComApi },
-	/* 7：信号上行，Src = CanIf（只用 Dest） */
+	/* 6：信号上行，Src = CanIf（只用 Dest） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 8：信号发送确认，Src = Com 的测试报文（Com 拿它当 IPdu 下标） */
+	/* 7：信号发送确认，Src = Com 的测试报文（Com 拿它当 IPdu 下标） */
 	{ PDUR_MODULE_COM, (PduIdType)COM_CANTEST_TX_TEST, &PduR_ComApi },
 /* @generated BEGIN: CAN1 real matrix */
-	/* 9：0x18FE4021 BCM_LCSF（发送） */
+	/* 8：0x18FE4021 BCM_LCSF（发送） */
 	{ PDUR_MODULE_COM,   (PduIdType)COM_CAN1_BCM_LCSF_TX, &PduR_ComApi  },
-	/* 10：0x18FF0C21 BCM_Ctrl（发送） */
+	/* 9：0x18FF0C21 BCM_Ctrl（发送） */
 	{ PDUR_MODULE_COM,   (PduIdType)COM_CAN1_BCM_CTRL_TX, &PduR_ComApi  },
-	/* 11：0x0CFDCC21 BCM_OEL（发送） */
+	/* 10：0x0CFDCC21 BCM_OEL（发送） */
 	{ PDUR_MODULE_COM,   (PduIdType)COM_CAN1_BCM_OEL_TX, &PduR_ComApi  },
-	/* 12：0x18FDCD21 BCM_OWW（发送） */
+	/* 11：0x18FDCD21 BCM_OWW（发送） */
 	{ PDUR_MODULE_COM,   (PduIdType)COM_CAN1_BCM_OWW_TX, &PduR_ComApi  },
-	/* 13：0x18FE4E21 BCM_DoorCtrl（发送） */
+	/* 12：0x18FE4E21 BCM_DoorCtrl（发送） */
 	{ PDUR_MODULE_COM,   (PduIdType)COM_CAN1_BCM_DOOR_CTRL_TX, &PduR_ComApi  },
-	/* 14：0x18FECA21 BCM_DM1（发送） */
+	/* 13：0x18FECA21 BCM_DM1（发送） */
 	{ PDUR_MODULE_COM,   (PduIdType)COM_CAN1_BCM_DM1_TX, &PduR_ComApi  },
-	/* 15：0x14F02B54 Crash_Notification（接收，来自 NODE_54） */
+	/* 14：0x14F02B54 Crash_Notification（接收，来自 NODE_54） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 16：0x18FEF500 AMB_Ambient_Conditions（接收，来自 NODE_00） */
+	/* 15：0x18FEF500 AMB_Ambient_Conditions（接收，来自 NODE_00） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 17：0x18FF0534 PEPS1（接收，来自 NODE_34） */
+	/* 16：0x18FF0534 PEPS1（接收，来自 NODE_34） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 18：0x18FF7534 PEPS2（接收，来自 NODE_34） */
+	/* 17：0x18FF7534 PEPS2（接收，来自 NODE_34） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 19：0x10FFB634 PEPS_ESCLM（接收，来自 NODE_34） */
+	/* 18：0x10FFB634 PEPS_ESCLM（接收，来自 NODE_34） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 20：0x18EEFF00 ACL（接收，来自 NODE_00） */
+	/* 19：0x18EEFF00 ACL（接收，来自 NODE_00） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 21：0x0CFD9200 EOI（接收，来自 NODE_00） */
+	/* 20：0x0CFD9200 EOI（接收，来自 NODE_00） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 22：0x18F00503 ETC2（接收，来自 NODE_03） */
+	/* 21：0x18F00503 ETC2（接收，来自 NODE_03） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 23：0x10FFB04D ESCL1（接收，来自 NODE_4D） */
+	/* 22：0x10FFB04D ESCL1（接收，来自 NODE_4D） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 24：0x10FFB24D ESCLM_PEPS（接收，来自 NODE_4D） */
+	/* 23：0x10FFB24D ESCLM_PEPS（接收，来自 NODE_4D） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 25：0x18FF904D ESCL_NM（接收，来自 NODE_4D） */
+	/* 24：0x18FF904D ESCL_NM（接收，来自 NODE_4D） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 26：0x18FF0CEC DW_State（接收，来自 NODE_EC） */
+	/* 25：0x18FF0CEC DW_State（接收，来自 NODE_EC） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 27：0x18FF0917 IC_MSG（接收，来自 NODE_17） */
+	/* 26：0x18FF0917 IC_MSG（接收，来自 NODE_17） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 28：0x0CF00400 EEC1_Electronic_Engine_Controller_1（接收，来自 NODE_00） */
+	/* 27：0x0CF00400 EEC1_Electronic_Engine_Controller_1（接收，来自 NODE_00） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 29：0x18FEF121 CCVS（接收，来自 NODE_21） */
+	/* 28：0x18FEF121 CCVS（接收，来自 NODE_21） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 30：0x18FF12EF VCU_4（接收，来自 NODE_EF） */
+	/* 29：0x18FF12EF VCU_4（接收，来自 NODE_EF） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 31：0x0CFE6CEE TCO1（接收，来自 NODE_EE） */
+	/* 30：0x0CFE6CEE TCO1（接收，来自 NODE_EE） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 32：0x18FEF433 TireCondition（接收，来自 NODE_33） */
+	/* 31：0x18FEF433 TireCondition（接收，来自 NODE_33） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 33：0x18FECA33 DM1_TPMS（接收，来自 NODE_33） */
+	/* 32：0x18FECA33 DM1_TPMS（接收，来自 NODE_33） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 34：0x18F0010B EBC1_Electronic_Brake_Controller_1（接收，来自 NODE_0B） */
+	/* 33：0x18F0010B EBC1_Electronic_Brake_Controller_1（接收，来自 NODE_0B） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 35：0x18FDC40B EBC5_Electronic_Brake_Controller_5（接收，来自 NODE_0B） */
+	/* 34：0x18FDC40B EBC5_Electronic_Brake_Controller_5（接收，来自 NODE_0B） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 36：0x18FD0700 DLCC1_Direct_Lamp_Control_Command_1（接收，来自 NODE_00） */
+	/* 35：0x18FD0700 DLCC1_Direct_Lamp_Control_Command_1（接收，来自 NODE_00） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 37：0x18FEF100 CCVS1_Cruise_Control_Vehicle_Speed_1（接收，来自 NODE_00） */
+	/* 36：0x18FEF100 CCVS1_Cruise_Control_Vehicle_Speed_1（接收，来自 NODE_00） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 38：0x18FE4F0B VDC1_Vehicle_Dynamic_Stability_Control_1（接收，来自 NODE_0B） */
+	/* 37：0x18FE4F0B VDC1_Vehicle_Dynamic_Stability_Control_1（接收，来自 NODE_0B） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 39：0x18F0000F ERC1（接收，来自 NODE_0F） */
+	/* 38：0x18F0000F ERC1（接收，来自 NODE_0F） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 40：0x18F00000 ERC3（接收，来自 NODE_00） */
+	/* 39：0x18F00000 ERC3（接收，来自 NODE_00） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 41：0x1CFEC321 ETC5（接收，来自 NODE_21） */
+	/* 40：0x1CFEC321 ETC5（接收，来自 NODE_21） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 42：0x18FFBA19 EEC3（接收，来自 NODE_19） */
+	/* 41：0x18FFBA19 EEC3（接收，来自 NODE_19） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 43：0x18FFBC19 ECC2（接收，来自 NODE_19） */
+	/* 42：0x18FFBC19 ECC2（接收，来自 NODE_19） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 44：0x18FF4C56 ID1（接收，来自 NODE_56） */
+	/* 43：0x18FF4C56 ID1（接收，来自 NODE_56） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 45：0x18FF4D56 ID2（接收，来自 NODE_56） */
+	/* 44：0x18FF4D56 ID2（接收，来自 NODE_56） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 46：0x18FF4E56 ID3（接收，来自 NODE_56） */
+	/* 45：0x18FF4E56 ID3（接收，来自 NODE_56） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 47：0x1CECFF21 TP_CM（接收，来自 NODE_21） */
+	/* 46：0x1CECFF21 TP_CM（接收，来自 NODE_21） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 48：0x1CEBFF21 TP_DT（接收，来自 NODE_21） */
+	/* 47：0x1CEBFF21 TP_DT（接收，来自 NODE_21） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
-	/* 49：0x200 信号测试帧（M10） */
+	/* 48：0x200 信号测试帧（M10） */
 	{ PDUR_MODULE_COM,   (PduIdType)COM_CANTEST_TX_TEST, &PduR_ComApi  },
-	/* 50：0x201 信号测试帧（M10） */
+	/* 49：0x201 信号测试帧（M10） */
 	{ PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi },
 /* @generated END: CAN1 real matrix */
 };
@@ -276,96 +274,94 @@ static const PduR_PduType PduR_DstPdu[PDUR_NUM_ROUTING_PATHS][1] = {
 	{ { PDUR_MODULE_CANNM, 0u, &PduR_CanNmApi } },
 	/* 5：确认 → CanIf（只用 Src，Dest.api 不参与） */
 	{ { PDUR_MODULE_CANIF, 0u, &PduR_CanIfApi } },
-	/* 6：信号下行 → CanIf。PduHandleId = CanIf 的 PDU 号，见 PduR_Cfg.h */
-	{ { PDUR_MODULE_CANIF, (PduIdType)CANIF_TX_COM_TEST, &PduR_CanIfApi } },
-	/* 7：信号上行 → Com 的测试接收报文。PduHandleId = Com 的 IPdu 下标 */
+	/* 6：信号上行 → Com 的测试接收报文。PduHandleId = Com 的 IPdu 下标 */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CANTEST_RX_TEST, &PduR_ComApi } },
-	/* 8：确认 → CanIf（只用 Src） */
+	/* 7：确认 → CanIf（只用 Src） */
 	{ { PDUR_MODULE_CANIF, (PduIdType)CANIF_TX_COM_TEST, &PduR_CanIfApi } },
 /* @generated BEGIN: CAN1 real matrix */
-	/* 9：→ CanIf CANIF_TX_CAN1_LCSF */
+	/* 8：→ CanIf CANIF_TX_CAN1_LCSF */
 	{ { PDUR_MODULE_CANIF, (PduIdType)CANIF_TX_CAN1_LCSF, &PduR_CanIfApi } },
-	/* 10：→ CanIf CANIF_TX_CAN1_CTRL */
+	/* 9：→ CanIf CANIF_TX_CAN1_CTRL */
 	{ { PDUR_MODULE_CANIF, (PduIdType)CANIF_TX_CAN1_CTRL, &PduR_CanIfApi } },
-	/* 11：→ CanIf CANIF_TX_CAN1_OEL */
+	/* 10：→ CanIf CANIF_TX_CAN1_OEL */
 	{ { PDUR_MODULE_CANIF, (PduIdType)CANIF_TX_CAN1_OEL, &PduR_CanIfApi } },
-	/* 12：→ CanIf CANIF_TX_CAN1_OWW */
+	/* 11：→ CanIf CANIF_TX_CAN1_OWW */
 	{ { PDUR_MODULE_CANIF, (PduIdType)CANIF_TX_CAN1_OWW, &PduR_CanIfApi } },
-	/* 13：→ CanIf CANIF_TX_CAN1_DOOR */
+	/* 12：→ CanIf CANIF_TX_CAN1_DOOR */
 	{ { PDUR_MODULE_CANIF, (PduIdType)CANIF_TX_CAN1_DOOR, &PduR_CanIfApi } },
-	/* 14：→ CanIf CANIF_TX_CAN1_DM1 */
+	/* 13：→ CanIf CANIF_TX_CAN1_DM1 */
 	{ { PDUR_MODULE_CANIF, (PduIdType)CANIF_TX_CAN1_DM1, &PduR_CanIfApi } },
-	/* 15：→ Com COM_CAN1_CRASH_NOTIFICATION_RX */
+	/* 14：→ Com COM_CAN1_CRASH_NOTIFICATION_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_CRASH_NOTIFICATION_RX, &PduR_ComApi } },
-	/* 16：→ Com COM_CAN1_AMB_AMBIENT_CONDITIONS_RX */
+	/* 15：→ Com COM_CAN1_AMB_AMBIENT_CONDITIONS_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_AMB_AMBIENT_CONDITIONS_RX, &PduR_ComApi } },
-	/* 17：→ Com COM_CAN1_PEPS1_RX */
+	/* 16：→ Com COM_CAN1_PEPS1_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_PEPS1_RX, &PduR_ComApi } },
-	/* 18：→ Com COM_CAN1_PEPS2_RX */
+	/* 17：→ Com COM_CAN1_PEPS2_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_PEPS2_RX, &PduR_ComApi } },
-	/* 19：→ Com COM_CAN1_PEPS_ESCLM_RX */
+	/* 18：→ Com COM_CAN1_PEPS_ESCLM_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_PEPS_ESCLM_RX, &PduR_ComApi } },
-	/* 20：→ Com COM_CAN1_ACL_RX */
+	/* 19：→ Com COM_CAN1_ACL_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_ACL_RX, &PduR_ComApi } },
-	/* 21：→ Com COM_CAN1_EOI_RX */
+	/* 20：→ Com COM_CAN1_EOI_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_EOI_RX, &PduR_ComApi } },
-	/* 22：→ Com COM_CAN1_ETC2_RX */
+	/* 21：→ Com COM_CAN1_ETC2_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_ETC2_RX, &PduR_ComApi } },
-	/* 23：→ Com COM_CAN1_ESCL1_RX */
+	/* 22：→ Com COM_CAN1_ESCL1_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_ESCL1_RX, &PduR_ComApi } },
-	/* 24：→ Com COM_CAN1_ESCLM_PEPS_RX */
+	/* 23：→ Com COM_CAN1_ESCLM_PEPS_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_ESCLM_PEPS_RX, &PduR_ComApi } },
-	/* 25：→ Com COM_CAN1_ESCL_NM_RX */
+	/* 24：→ Com COM_CAN1_ESCL_NM_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_ESCL_NM_RX, &PduR_ComApi } },
-	/* 26：→ Com COM_CAN1_DW_STATE_RX */
+	/* 25：→ Com COM_CAN1_DW_STATE_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_DW_STATE_RX, &PduR_ComApi } },
-	/* 27：→ Com COM_CAN1_IC_MSG_RX */
+	/* 26：→ Com COM_CAN1_IC_MSG_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_IC_MSG_RX, &PduR_ComApi } },
-	/* 28：→ Com COM_CAN1_EEC1_ELECTRONIC_ENGINE_CONTROLLER_1_RX */
+	/* 27：→ Com COM_CAN1_EEC1_ELECTRONIC_ENGINE_CONTROLLER_1_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_EEC1_ELECTRONIC_ENGINE_CONTROLLER_1_RX, &PduR_ComApi } },
-	/* 29：→ Com COM_CAN1_CCVS_RX */
+	/* 28：→ Com COM_CAN1_CCVS_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_CCVS_RX, &PduR_ComApi } },
-	/* 30：→ Com COM_CAN1_VCU_4_RX */
+	/* 29：→ Com COM_CAN1_VCU_4_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_VCU_4_RX, &PduR_ComApi } },
-	/* 31：→ Com COM_CAN1_TCO1_RX */
+	/* 30：→ Com COM_CAN1_TCO1_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_TCO1_RX, &PduR_ComApi } },
-	/* 32：→ Com COM_CAN1_TIRE_CONDITION_RX */
+	/* 31：→ Com COM_CAN1_TIRE_CONDITION_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_TIRE_CONDITION_RX, &PduR_ComApi } },
-	/* 33：→ Com COM_CAN1_DM1_TPMS_RX */
+	/* 32：→ Com COM_CAN1_DM1_TPMS_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_DM1_TPMS_RX, &PduR_ComApi } },
-	/* 34：→ Com COM_CAN1_EBC1_ELECTRONIC_BRAKE_CONTROLLER_1_RX */
+	/* 33：→ Com COM_CAN1_EBC1_ELECTRONIC_BRAKE_CONTROLLER_1_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_EBC1_ELECTRONIC_BRAKE_CONTROLLER_1_RX, &PduR_ComApi } },
-	/* 35：→ Com COM_CAN1_EBC5_ELECTRONIC_BRAKE_CONTROLLER_5_RX */
+	/* 34：→ Com COM_CAN1_EBC5_ELECTRONIC_BRAKE_CONTROLLER_5_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_EBC5_ELECTRONIC_BRAKE_CONTROLLER_5_RX, &PduR_ComApi } },
-	/* 36：→ Com COM_CAN1_DLCC1_DIRECT_LAMP_CONTROL_COMMAND_1_RX */
+	/* 35：→ Com COM_CAN1_DLCC1_DIRECT_LAMP_CONTROL_COMMAND_1_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_DLCC1_DIRECT_LAMP_CONTROL_COMMAND_1_RX, &PduR_ComApi } },
-	/* 37：→ Com COM_CAN1_CCVS1_CRUISE_CONTROL_VEHICLE_SPEED_1_RX */
+	/* 36：→ Com COM_CAN1_CCVS1_CRUISE_CONTROL_VEHICLE_SPEED_1_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_CCVS1_CRUISE_CONTROL_VEHICLE_SPEED_1_RX, &PduR_ComApi } },
-	/* 38：→ Com COM_CAN1_VDC1_VEHICLE_DYNAMIC_STABILITY_CONTROL_1_RX */
+	/* 37：→ Com COM_CAN1_VDC1_VEHICLE_DYNAMIC_STABILITY_CONTROL_1_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_VDC1_VEHICLE_DYNAMIC_STABILITY_CONTROL_1_RX, &PduR_ComApi } },
-	/* 39：→ Com COM_CAN1_ERC1_RX */
+	/* 38：→ Com COM_CAN1_ERC1_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_ERC1_RX, &PduR_ComApi } },
-	/* 40：→ Com COM_CAN1_ERC3_RX */
+	/* 39：→ Com COM_CAN1_ERC3_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_ERC3_RX, &PduR_ComApi } },
-	/* 41：→ Com COM_CAN1_ETC5_RX */
+	/* 40：→ Com COM_CAN1_ETC5_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_ETC5_RX, &PduR_ComApi } },
-	/* 42：→ Com COM_CAN1_EEC3_RX */
+	/* 41：→ Com COM_CAN1_EEC3_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_EEC3_RX, &PduR_ComApi } },
-	/* 43：→ Com COM_CAN1_ECC2_RX */
+	/* 42：→ Com COM_CAN1_ECC2_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_ECC2_RX, &PduR_ComApi } },
-	/* 44：→ Com COM_CAN1_ID1_RX */
+	/* 43：→ Com COM_CAN1_ID1_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_ID1_RX, &PduR_ComApi } },
-	/* 45：→ Com COM_CAN1_ID2_RX */
+	/* 44：→ Com COM_CAN1_ID2_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_ID2_RX, &PduR_ComApi } },
-	/* 46：→ Com COM_CAN1_ID3_RX */
+	/* 45：→ Com COM_CAN1_ID3_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_ID3_RX, &PduR_ComApi } },
-	/* 47：→ Com COM_CAN1_TP_CM_RX */
+	/* 46：→ Com COM_CAN1_TP_CM_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_TP_CM_RX, &PduR_ComApi } },
-	/* 48：→ Com COM_CAN1_TP_DT_RX */
+	/* 47：→ Com COM_CAN1_TP_DT_RX */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CAN1_TP_DT_RX, &PduR_ComApi } },
-	/* 49：→ CanIf CANIF_TX_COM_TEST */
+	/* 48：→ CanIf CANIF_TX_COM_TEST */
 	{ { PDUR_MODULE_CANIF, (PduIdType)CANIF_TX_COM_TEST, &PduR_CanIfApi } },
-	/* 50：→ Com COM_CANTEST_RX_TEST */
+	/* 49：→ Com COM_CANTEST_RX_TEST */
 	{ { PDUR_MODULE_COM, (PduIdType)COM_CANTEST_RX_TEST, &PduR_ComApi } },
 /* @generated END: CAN1 real matrix */
 };
@@ -416,14 +412,6 @@ static const PduR_RoutingPathType PduR_RoutingPaths[PDUR_NUM_ROUTING_PATHS] = {
 		&PduR_SrcPdu[PDUR_CANNM_TX_CONFIRM],
 		PduR_DstPdu[PDUR_CANNM_TX_CONFIRM],
 		NULL,
-		NULL,
-		0u,
-		1u,
-	},
-	{
-		&PduR_SrcPdu[PDUR_COM_TO_CANIF_TX],
-		PduR_DstPdu[PDUR_COM_TO_CANIF_TX],
-		NULL,                             /* 不用内部缓冲：Com 自带报文镜像 */
 		NULL,
 		0u,
 		1u,
