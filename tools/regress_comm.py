@@ -50,6 +50,7 @@ CASES = [
 	("rte_cfg",     "RTE 端口规则（14 项）",            [PY, "tools/rte_cfg_check.py"], "static", 120),
 	("rte_portmap", "换项目：业务不含下层符号 + 变体可编译", [PY, "tools/rte_portmap_check.py"], "static", 180),
 	("rte_sched",   "调度表规则 S1~S4 + 变体运行（16 项）",  [PY, "tools/rte_sched_check.py"], "static", 180),
+	("config_editor", "配置编辑器 schema 字段覆盖率",        [PY, "tools/config_editor.py", "--check"], "static", 60),
 	("can_tx_all",  "全 TX 邮箱覆盖（12 个）",      [PY, "tools/can_tx_all_check.py"], "hw", 120),
 	("m3",          "诊断链路（18 项）",            [PY, "tools/m3_check.py"], "hw", 180),
 	("m10",         "Com 信号层（22 项）",          [PY, "tools/m10_check.py"], "hw", 180),

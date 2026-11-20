@@ -8,14 +8,8 @@
         "baud": 115200
     },
     "can": [
-        {
-            "instance": 0,
-            "bitrate": 500000
-        },
-        {
-            "instance": 1,
-            "bitrate": 500000
-        }
+        { "instance": 0, "bitrate": 500000 },
+        { "instance": 1, "bitrate": 500000 }
     ],
     "adc": {
         "groups": 2
@@ -48,132 +42,36 @@
         ],
         "_comment_schedule": "应用 runnable 调度表（10.5）。数组顺序 = 同一拍内的执行顺序；period_ms 必须是 10 的倍数。表由 BcmRte.py 生成到 Rte_Schedule.h，由 rte_sched.c 的 Rte_MainFunction() 执行（main.c 10ms 节拍在 EcuM_BswService 之后调用）",
         "schedule": [
-            { "func": "BcmSig_MainFunction",     "period_ms": 10 },
-            { "func": "BcmBiz_MainFunction",     "period_ms": 10 },
-            { "func": "LedBiz_MainFunction",     "period_ms": 10 },
-            { "func": "ComApp_Tick",             "period_ms": 10 },
+            { "func": "BcmSig_MainFunction", "period_ms": 10 },
+            { "func": "BcmBiz_MainFunction", "period_ms": 10 },
+            { "func": "LedBiz_MainFunction", "period_ms": 10 },
+            { "func": "ComApp_Tick", "period_ms": 10 },
             { "func": "AdcSampler_MainFunction", "period_ms": 10 },
-            { "func": "IoHwAb_MainFunction",     "period_ms": 10 }
+            { "func": "IoHwAb_MainFunction", "period_ms": 10 }
         ]
     },
     "io": {
         "_comment": "逻辑 IO 通道（IoHwAb V1.0.1）。source=direct 绑 dioChannels/ADC/PWM；host 仅 Host 测试用；mux 经 selectBuses/devices 选通（当前无实物，故两表为空）",
         "din": [
-            {
-                "name": "DOOR_FL",
-                "source": "host",
-                "channel": 0,
-                "activeLevel": "LOW",
-                "debounceMs": 20,
-                "staleMs": 500
-            },
-            {
-                "name": "DOOR_FR",
-                "source": "host",
-                "channel": 1,
-                "activeLevel": "LOW",
-                "debounceMs": 30,
-                "staleMs": 500
-            }
+            { "name": "DOOR_FL", "source": "host", "channel": 0, "activeLevel": "LOW", "debounceMs": 20, "staleMs": 500 },
+            { "name": "DOOR_FR", "source": "host", "channel": 1, "activeLevel": "LOW", "debounceMs": 30, "staleMs": 500 }
         ],
         "ain": [
-            {
-                "name": "VBAT",
-                "source": "host",
-                "channel": 0,
-                "filterShift": 3,
-                "factor": 33,
-                "offset": 0,
-                "staleMs": 200
-            },
-            {
-                "name": "TEMP",
-                "source": "host",
-                "channel": 1,
-                "filterShift": 2,
-                "factor": 100,
-                "offset": -4000,
-                "staleMs": 500
-            },
-            {
-                "name": "POT1_ADC",
-                "_note": "板载电位计 1（ADC0_SE12，slot 0）；mV = raw*3300/4095",
-                "source": "direct",
-                "adcGroup": 0,
-                "channel": 0,
-                "filterShift": 2,
-                "factor": 806,
-                "offset": 0,
-                "staleMs": 200
-            },
-            {
-                "name": "VBAT_ADC",
-                "_note": "板载 I_AN_VBAT（ADC0_SE13，slot 1，分压 0.23）；mV = raw*3300/4095/0.23",
-                "source": "direct",
-                "adcGroup": 0,
-                "channel": 1,
-                "filterShift": 2,
-                "factor": 3503,
-                "offset": 0,
-                "staleMs": 200
-            },
-            {
-                "name": "AIN_OVF",
-                "_note": "Host 专用：raw×factor=6.5e12 超出 sint32，且 /1000 后仍超 INT32_MAX，验证 int64 中间量与饱和（板上是不可用桩）",
-                "source": "host",
-                "channel": 2,
-                "filterShift": 0,
-                "factor": 100000000,
-                "offset": 0,
-                "staleMs": 500
-            }
+            { "name": "VBAT", "source": "host", "channel": 0, "filterShift": 3, "factor": 33, "offset": 0, "staleMs": 200 },
+            { "name": "TEMP", "source": "host", "channel": 1, "filterShift": 2, "factor": 100, "offset": -4000, "staleMs": 500 },
+            { "name": "POT1_ADC", "_note": "板载电位计 1（ADC0_SE12，slot 0）；mV = raw*3300/4095", "source": "direct", "adcGroup": 0, "channel": 0, "filterShift": 2, "factor": 806, "offset": 0, "staleMs": 200 },
+            { "name": "VBAT_ADC", "_note": "板载 I_AN_VBAT（ADC0_SE13，slot 1，分压 0.23）；mV = raw*3300/4095/0.23", "source": "direct", "adcGroup": 0, "channel": 1, "filterShift": 2, "factor": 3503, "offset": 0, "staleMs": 200 },
+            { "name": "AIN_OVF", "_note": "Host 专用：raw×factor=6.5e12 超出 sint32，且 /1000 后仍超 INT32_MAX，验证 int64 中间量与饱和（板上是不可用桩）", "source": "host", "channel": 2, "filterShift": 0, "factor": 100000000, "offset": 0, "staleMs": 500 }
         ],
         "dout": [
-            {
-                "name": "LED_R",
-                "source": "direct",
-                "pin": "LED_R",
-                "activeLevel": "LOW",
-                "safeLevel": false
-            },
-            {
-                "name": "LED_G",
-                "source": "direct",
-                "pin": "LED_G",
-                "activeLevel": "LOW",
-                "safeLevel": false
-            },
-            {
-                "name": "LED_B",
-                "source": "direct",
-                "pin": "LED_B",
-                "activeLevel": "LOW",
-                "safeLevel": false
-            },
-            {
-                "name": "HOST0",
-                "source": "host",
-                "channel": 0,
-                "activeLevel": "HIGH",
-                "safeLevel": false
-            },
-            {
-                "name": "HOST_LOW",
-                "_note": "Host 专用：低有效，验证极性在 Core 完成、Adapter 只见电气电平",
-                "source": "host",
-                "channel": 1,
-                "activeLevel": "LOW",
-                "safeLevel": false
-            }
+            { "name": "LED_R", "source": "direct", "pin": "LED_R", "activeLevel": "LOW", "safeLevel": false },
+            { "name": "LED_G", "source": "direct", "pin": "LED_G", "activeLevel": "LOW", "safeLevel": false },
+            { "name": "LED_B", "source": "direct", "pin": "LED_B", "activeLevel": "LOW", "safeLevel": false },
+            { "name": "HOST0", "source": "host", "channel": 0, "activeLevel": "HIGH", "safeLevel": false },
+            { "name": "HOST_LOW", "_note": "Host 专用：低有效，验证极性在 Core 完成、Adapter 只见电气电平", "source": "host", "channel": 1, "activeLevel": "LOW", "safeLevel": false }
         ],
         "pwm": [
-            {
-                "name": "DIM_HOST",
-                "source": "host",
-                "channel": 0,
-                "freqHz": 100,
-                "safeDuty": 0
-            }
+            { "name": "DIM_HOST", "source": "host", "channel": 0, "freqHz": 100, "safeDuty": 0 }
         ],
         "hsd": [],
         "lsd": [],
@@ -181,93 +79,15 @@
         "expanders": []
     },
     "pins": [
-        {
-            "name": "CAN0_RX",
-            "mode": "CAN",
-            "dir": "UNUSED",
-            "level": "LOW",
-            "port": "E",
-            "pin": 4,
-            "mux": 5
-        },
-        {
-            "name": "CAN0_TX",
-            "mode": "CAN",
-            "dir": "UNUSED",
-            "level": "LOW",
-            "port": "E",
-            "pin": 5,
-            "mux": 5
-        },
-        {
-            "name": "CAN0_STB",
-            "mode": "DIO",
-            "dir": "OUT",
-            "level": "HIGH",
-            "port": "C",
-            "pin": 1,
-            "mux": 1
-        },
-        {
-            "name": "CAN1_RX",
-            "mode": "CAN",
-            "dir": "UNUSED",
-            "level": "LOW",
-            "port": "C",
-            "pin": 6,
-            "mux": 3
-        },
-        {
-            "name": "CAN1_TX",
-            "mode": "CAN",
-            "dir": "UNUSED",
-            "level": "LOW",
-            "port": "C",
-            "pin": 7,
-            "mux": 3
-        },
-        {
-            "name": "CAN1_STB",
-            "mode": "DIO",
-            "dir": "OUT",
-            "level": "HIGH",
-            "port": "E",
-            "pin": 13,
-            "mux": 1
-        },
-        {
-            "name": "LED_R",
-            "mode": "DIO",
-            "dir": "OUT",
-            "level": "HIGH",
-            "port": "D",
-            "pin": 1,
-            "mux": 1
-        },
-        {
-            "name": "LED_G",
-            "mode": "DIO",
-            "dir": "OUT",
-            "level": "HIGH",
-            "port": "D",
-            "pin": 3,
-            "mux": 1
-        },
-        {
-            "name": "LED_B",
-            "mode": "DIO",
-            "dir": "OUT",
-            "level": "HIGH",
-            "port": "A",
-            "pin": 17,
-            "mux": 1
-        }
+        { "name": "CAN0_RX", "mode": "CAN", "dir": "UNUSED", "level": "LOW", "port": "E", "pin": 4, "mux": 5 },
+        { "name": "CAN0_TX", "mode": "CAN", "dir": "UNUSED", "level": "LOW", "port": "E", "pin": 5, "mux": 5 },
+        { "name": "CAN0_STB", "mode": "DIO", "dir": "OUT", "level": "HIGH", "port": "C", "pin": 1, "mux": 1 },
+        { "name": "CAN1_RX", "mode": "CAN", "dir": "UNUSED", "level": "LOW", "port": "C", "pin": 6, "mux": 3 },
+        { "name": "CAN1_TX", "mode": "CAN", "dir": "UNUSED", "level": "LOW", "port": "C", "pin": 7, "mux": 3 },
+        { "name": "CAN1_STB", "mode": "DIO", "dir": "OUT", "level": "HIGH", "port": "E", "pin": 13, "mux": 1 },
+        { "name": "LED_R", "mode": "DIO", "dir": "OUT", "level": "HIGH", "port": "D", "pin": 1, "mux": 1 },
+        { "name": "LED_G", "mode": "DIO", "dir": "OUT", "level": "HIGH", "port": "D", "pin": 3, "mux": 1 },
+        { "name": "LED_B", "mode": "DIO", "dir": "OUT", "level": "HIGH", "port": "A", "pin": 17, "mux": 1 }
     ],
-    "dioChannels": [
-        "CAN0_STB",
-        "LED_R",
-        "LED_G",
-        "LED_B",
-        "CAN1_STB"
-    ]
+    "dioChannels": ["CAN0_STB", "LED_R", "LED_G", "LED_B", "CAN1_STB"]
 }

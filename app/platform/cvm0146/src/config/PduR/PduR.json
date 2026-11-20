@@ -1,16 +1,8 @@
 {
   "class": "PduR",
   "routines": [
-    {
-      "name": "P2P_RX",
-      "from": "CanTp",
-      "to": "Dcm"
-    },
-    {
-      "name": "P2P_TX",
-      "from": "Dcm",
-      "to": "CanTp"
-    }
+    { "name": "P2P_RX", "from": "CanTp", "to": "Dcm" },
+    { "name": "P2P_TX", "from": "Dcm", "to": "CanTp" }
   ],
   "networks": [
     {
@@ -20,19 +12,10 @@
       "dbc": "../dbc/can1.dbc",
       "manualPaths": {
         "tx": [
-          {
-            "path": "PDUR_CANTEST_TX_TEST",
-            "com": "COM_CANTEST_TX_TEST",
-            "canIf": "CANIF_TX_COM_TEST",
-            "note": "0x200 信号测试帧（M10）"
-          }
+          { "path": "PDUR_CANTEST_TX_TEST", "com": "COM_CANTEST_TX_TEST", "canIf": "CANIF_TX_COM_TEST", "note": "0x200 信号测试帧（M10）" }
         ],
         "rx": [
-          {
-            "path": "PDUR_CANTEST_RX_TEST",
-            "com": "COM_CANTEST_RX_TEST",
-            "note": "0x201 信号测试帧（M10）"
-          }
+          { "path": "PDUR_CANTEST_RX_TEST", "com": "COM_CANTEST_RX_TEST", "note": "0x201 信号测试帧（M10）" }
         ]
       }
     }

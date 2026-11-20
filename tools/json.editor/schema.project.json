@@ -1,0 +1,939 @@
+[
+  {
+    "title": "Board",
+    "type": "object",
+    "properties": {
+      "class": {
+        "type": "string",
+        "default": "Board"
+      },
+      "boardName": {
+        "type": "string",
+        "default": "CVM0146-EVK"
+      },
+      "mcu": {
+        "type": "string",
+        "default": "CVM0146FMLQ"
+      },
+      "coreClockHz": {
+        "type": "integer",
+        "default": 120000000
+      },
+      "console": {
+        "type": "object",
+        "properties": {
+          "uart": {
+            "type": "integer",
+            "default": 2
+          },
+          "baud": {
+            "type": "integer",
+            "default": 115200
+          }
+        }
+      },
+      "can": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "title": "Item",
+          "properties": {
+            "instance": {
+              "type": "integer",
+              "default": 0
+            },
+            "bitrate": {
+              "type": "integer",
+              "default": 500000
+            }
+          }
+        }
+      },
+      "adc": {
+        "type": "object",
+        "properties": {
+          "groups": {
+            "type": "integer",
+            "default": 2
+          }
+        }
+      },
+      "pwm": {
+        "type": "object",
+        "properties": {
+          "frequencyHz": {
+            "type": "integer",
+            "default": 100
+          },
+          "channels": {
+            "type": "integer",
+            "default": 4
+          }
+        }
+      },
+      "selectBuses": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "default": "",
+          "title": "Item"
+        }
+      },
+      "devices": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "default": "",
+          "title": "Item"
+        }
+      },
+      "rte": {
+        "type": "object",
+        "properties": {
+          "_comment": {
+            "type": "string",
+            "default": "应用端口（最小 RTE）。kind=com_tx/com_rx 绑 BcmSig 信号；io_* 绑 io 段的逻辑通道。换项目只改这里，业务代码不动"
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "title": "Item",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "default": "LIGHT_LOW"
+                },
+                "kind": {
+                  "type": "string",
+                  "default": "com_tx"
+                },
+                "ref": {
+                  "type": "string",
+                  "default": "BCM_SIG_LOW_BEAM"
+                }
+              }
+            }
+          },
+          "_comment_schedule": {
+            "type": "string",
+            "default": "应用 runnable 调度表（10.5）。数组顺序 = 同一拍内的执行顺序；period_ms 必须是 10 的倍数。表由 BcmRte.py 生成到 Rte_Schedule.h，由 rte_sched.c 的 Rte_MainFunction() 执行（main.c 10ms 节拍在 EcuM_BswService 之后调用）"
+          },
+          "schedule": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "title": "Item",
+              "properties": {
+                "func": {
+                  "type": "string",
+                  "default": "BcmSig_MainFunction"
+                },
+                "period_ms": {
+                  "type": "integer",
+                  "default": 10
+                }
+              }
+            }
+          }
+        }
+      },
+      "io": {
+        "type": "object",
+        "properties": {
+          "_comment": {
+            "type": "string",
+            "default": "逻辑 IO 通道（IoHwAb V1.0.1）。source=direct 绑 dioChannels/ADC/PWM；host 仅 Host 测试用；mux 经 selectBuses/devices 选通（当前无实物，故两表为空）"
+          },
+          "din": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "title": "Item",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "default": "DOOR_FL"
+                },
+                "source": {
+                  "type": "string",
+                  "default": "host"
+                },
+                "channel": {
+                  "type": "integer",
+                  "default": 0
+                },
+                "activeLevel": {
+                  "type": "string",
+                  "default": "LOW"
+                },
+                "debounceMs": {
+                  "type": "integer",
+                  "default": 20
+                },
+                "staleMs": {
+                  "type": "integer",
+                  "default": 500
+                }
+              }
+            }
+          },
+          "ain": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "title": "Item",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "default": "VBAT"
+                },
+                "source": {
+                  "type": "string",
+                  "default": "host"
+                },
+                "channel": {
+                  "type": "integer",
+                  "default": 0
+                },
+                "filterShift": {
+                  "type": "integer",
+                  "default": 3
+                },
+                "factor": {
+                  "type": "integer",
+                  "default": 33
+                },
+                "offset": {
+                  "type": "integer",
+                  "default": 0
+                },
+                "staleMs": {
+                  "type": "integer",
+                  "default": 200
+                },
+                "_note": {
+                  "type": "string",
+                  "default": "板载电位计 1（ADC0_SE12，slot 0）；mV = raw*3300/4095"
+                },
+                "adcGroup": {
+                  "type": "integer",
+                  "default": 0
+                }
+              }
+            }
+          },
+          "dout": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "title": "Item",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "default": "LED_R"
+                },
+                "source": {
+                  "type": "string",
+                  "default": "direct"
+                },
+                "pin": {
+                  "type": "string",
+                  "default": "LED_R"
+                },
+                "activeLevel": {
+                  "type": "string",
+                  "default": "LOW"
+                },
+                "safeLevel": {
+                  "type": "bool",
+                  "default": false
+                },
+                "channel": {
+                  "type": "integer",
+                  "default": 0
+                },
+                "_note": {
+                  "type": "string",
+                  "default": "Host 专用：低有效，验证极性在 Core 完成、Adapter 只见电气电平"
+                }
+              }
+            }
+          },
+          "pwm": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "title": "Item",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "default": "DIM_HOST"
+                },
+                "source": {
+                  "type": "string",
+                  "default": "host"
+                },
+                "channel": {
+                  "type": "integer",
+                  "default": 0
+                },
+                "freqHz": {
+                  "type": "integer",
+                  "default": 100
+                },
+                "safeDuty": {
+                  "type": "integer",
+                  "default": 0
+                }
+              }
+            }
+          },
+          "hsd": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "default": "",
+              "title": "Item"
+            }
+          },
+          "lsd": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "default": "",
+              "title": "Item"
+            }
+          },
+          "hbridge": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "default": "",
+              "title": "Item"
+            }
+          },
+          "expanders": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "default": "",
+              "title": "Item"
+            }
+          }
+        }
+      },
+      "pins": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "title": "Item",
+          "properties": {
+            "name": {
+              "type": "string",
+              "default": "CAN0_RX"
+            },
+            "mode": {
+              "type": "string",
+              "default": "CAN"
+            },
+            "dir": {
+              "type": "string",
+              "default": "UNUSED"
+            },
+            "level": {
+              "type": "string",
+              "default": "LOW"
+            },
+            "port": {
+              "type": "string",
+              "default": "E"
+            },
+            "pin": {
+              "type": "integer",
+              "default": 4
+            },
+            "mux": {
+              "type": "integer",
+              "default": 5
+            }
+          }
+        }
+      },
+      "dioChannels": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "default": "CAN0_STB",
+          "title": "Item"
+        }
+      },
+      "Class": {
+        "type": "string",
+        "default": "Board"
+      }
+    }
+  },
+  {
+    "title": "Can",
+    "type": "object",
+    "properties": {
+      "class": {
+        "type": "string",
+        "default": "Can"
+      },
+      "pdurIdBase": {
+        "type": "integer",
+        "default": 8
+      },
+      "txPdus": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "title": "Item",
+          "properties": {
+            "dbc": {
+              "type": "string",
+              "default": "BCM_LCSF"
+            },
+            "short": {
+              "type": "string",
+              "default": "LCSF"
+            },
+            "pdurMacro": {
+              "type": "string",
+              "default": "PDUR_CAN1_BCM_LCSF_TX"
+            }
+          }
+        }
+      },
+      "channels": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "title": "Item",
+          "properties": {
+            "index": {
+              "type": "integer",
+              "default": 0
+            },
+            "mailboxes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "title": "Item",
+                "properties": {
+                  "mb": {
+                    "type": "integer",
+                    "default": 0
+                  },
+                  "name": {
+                    "type": "string",
+                    "default": "HEARTBEAT"
+                  },
+                  "id": {
+                    "type": "string",
+                    "default": "0x123"
+                  },
+                  "ext": {
+                    "type": "bool",
+                    "default": false
+                  },
+                  "dir": {
+                    "type": "string",
+                    "default": "TX"
+                  },
+                  "hth": {
+                    "type": "integer",
+                    "default": 0
+                  },
+                  "canIfMacro": {
+                    "type": "string",
+                    "default": "CANIF_TX_HEARTBEAT"
+                  },
+                  "txConfirm": {
+                    "type": "string",
+                    "default": "App_CanIfTxConfirmation"
+                  },
+                  "mask": {
+                    "type": "string",
+                    "default": "0xFFFFFFFF"
+                  },
+                  "int": {
+                    "type": "bool",
+                    "default": true
+                  },
+                  "note": {
+                    "type": "string",
+                    "default": "NM 发送：与 mb12 同一 ID，方向不同（FlexCAN 邮箱方向配置期定死）。int 必须为 true：发送完成中断是 s_txPending 的唯一释放点，关掉会让首帧之后永久 CAN_BUSY。"
+                  },
+                  "pf": {
+                    "type": "string",
+                    "default": "0xEB"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "_comment": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "default": "PDU 编号起点不在这里：CanIf 的在 CanIf.json 的 rxPduIdBase，PduR 的在文件开头的 pdurIdBase。",
+          "title": "Item"
+        }
+      },
+      "Class": {
+        "type": "string",
+        "default": "Can"
+      }
+    }
+  },
+  {
+    "title": "Shell",
+    "type": "object",
+    "properties": {
+      "class": {
+        "type": "string",
+        "default": "Shell"
+      },
+      "boardName": {
+        "type": "string",
+        "default": "CVM014x-BCM"
+      },
+      "version": {
+        "type": "string",
+        "default": "1.0.0"
+      },
+      "prompt": {
+        "type": "string",
+        "default": "CVM014x >> "
+      },
+      "lineMax": {
+        "type": "integer",
+        "default": 128
+      },
+      "maxArgs": {
+        "type": "integer",
+        "default": 16
+      },
+      "txRing": {
+        "type": "integer",
+        "default": 1024
+      },
+      "printBuf": {
+        "type": "integer",
+        "default": 256
+      },
+      "historyDepth": {
+        "type": "integer",
+        "default": 8
+      },
+      "ctxPool": {
+        "type": "integer",
+        "default": 2
+      },
+      "defaultMode": {
+        "type": "string",
+        "default": "manual"
+      },
+      "disabledCmds": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "default": "",
+          "title": "Item"
+        }
+      },
+      "Class": {
+        "type": "string",
+        "default": "Shell"
+      }
+    }
+  },
+  {
+    "title": "CanIf",
+    "type": "object",
+    "properties": {
+      "class": {
+        "type": "string",
+        "default": "CanIf"
+      },
+      "RxPacketPoolSize": {
+        "type": "integer",
+        "default": 0
+      },
+      "TxPacketPoolSize": {
+        "type": "integer",
+        "default": 0
+      },
+      "RxPacketDataSize": {
+        "type": "integer",
+        "default": 64
+      },
+      "TxPacketDataSize": {
+        "type": "integer",
+        "default": 64
+      },
+      "networks": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "title": "Item",
+          "properties": {
+            "name": {
+              "type": "string",
+              "default": "CAN1"
+            },
+            "me": {
+              "type": "string",
+              "default": "BCM"
+            },
+            "dbc": {
+              "type": "string",
+              "default": "../dbc/can1.dbc"
+            },
+            "RxPdus": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "default": "",
+                "title": "Item"
+              }
+            },
+            "TxPdus": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "default": "",
+                "title": "Item"
+              }
+            },
+            "shimPrefixRx": {
+              "type": "string",
+              "default": "CanIfCfg_RxPduR_"
+            },
+            "shimPrefixTx": {
+              "type": "string",
+              "default": "CanIfCfg_TxPduR_"
+            },
+            "NumHrh": {
+              "type": "integer",
+              "default": 15
+            },
+            "NumHth": {
+              "type": "integer",
+              "default": 12
+            },
+            "rxPduNamePrefix": {
+              "type": "string",
+              "default": "RX_"
+            },
+            "rxIndicationShim": {
+              "type": "bool",
+              "default": true
+            },
+            "hohFrom": {
+              "type": "string",
+              "default": "../Can/Can.json"
+            }
+          }
+        }
+      },
+      "rxPduIdBase": {
+        "type": "integer",
+        "default": 23
+      },
+      "Class": {
+        "type": "string",
+        "default": "CanIf"
+      }
+    }
+  },
+  {
+    "title": "PduR",
+    "type": "object",
+    "properties": {
+      "class": {
+        "type": "string",
+        "default": "PduR"
+      },
+      "routines": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "title": "Item",
+          "properties": {
+            "name": {
+              "type": "string",
+              "default": "P2P_RX"
+            },
+            "from": {
+              "type": "string",
+              "default": "CanTp"
+            },
+            "to": {
+              "type": "string",
+              "default": "Dcm"
+            }
+          }
+        }
+      },
+      "networks": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "title": "Item",
+          "properties": {
+            "name": {
+              "type": "string",
+              "default": "CAN1"
+            },
+            "me": {
+              "type": "string",
+              "default": "BCM"
+            },
+            "network": {
+              "type": "string",
+              "default": "CAN"
+            },
+            "dbc": {
+              "type": "string",
+              "default": "../dbc/can1.dbc"
+            },
+            "manualPaths": {
+              "type": "object",
+              "properties": {
+                "tx": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "title": "Item",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "default": "PDUR_CANTEST_TX_TEST"
+                      },
+                      "com": {
+                        "type": "string",
+                        "default": "COM_CANTEST_TX_TEST"
+                      },
+                      "canIf": {
+                        "type": "string",
+                        "default": "CANIF_TX_COM_TEST"
+                      },
+                      "note": {
+                        "type": "string",
+                        "default": "0x200 信号测试帧（M10）"
+                      }
+                    }
+                  }
+                },
+                "rx": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "title": "Item",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "default": "PDUR_CANTEST_RX_TEST"
+                      },
+                      "com": {
+                        "type": "string",
+                        "default": "COM_CANTEST_RX_TEST"
+                      },
+                      "note": {
+                        "type": "string",
+                        "default": "0x201 信号测试帧（M10）"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Class": {
+        "type": "string",
+        "default": "PduR"
+      }
+    }
+  },
+  {
+    "title": "Com",
+    "type": "object",
+    "properties": {
+      "class": {
+        "type": "string",
+        "default": "Com"
+      },
+      "networks": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "title": "Item",
+          "properties": {
+            "name": {
+              "type": "string",
+              "default": "CAN1"
+            },
+            "network": {
+              "type": "string",
+              "default": "CAN"
+            },
+            "device": {
+              "type": "string",
+              "default": "cvm0146"
+            },
+            "port": {
+              "type": "integer",
+              "default": 0
+            },
+            "baudrate": {
+              "type": "integer",
+              "default": 250000
+            },
+            "me": {
+              "type": "string",
+              "default": "BCM"
+            },
+            "use_dbc": {
+              "type": "bool",
+              "default": true
+            },
+            "dbc": {
+              "type": "string",
+              "default": "../dbc/can1.dbc"
+            },
+            "messages": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "title": "Item",
+                "properties": {
+                  "id": {
+                    "type": "integer",
+                    "default": 512
+                  },
+                  "name": {
+                    "type": "string",
+                    "default": "CANTEST_TX_TEST"
+                  },
+                  "dlc": {
+                    "type": "integer",
+                    "default": 8
+                  },
+                  "node": {
+                    "type": "string",
+                    "default": "BCM"
+                  },
+                  "CycleTime": {
+                    "type": "integer",
+                    "default": 100
+                  },
+                  "FirstTime": {
+                    "type": "integer",
+                    "default": 0
+                  },
+                  "signals": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "title": "Item",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "default": "TX_COUNTER"
+                        },
+                        "start": {
+                          "type": "integer",
+                          "default": 0
+                        },
+                        "size": {
+                          "type": "integer",
+                          "default": 8
+                        },
+                        "endian": {
+                          "type": "string",
+                          "default": "little"
+                        },
+                        "sign": {
+                          "type": "string",
+                          "default": "+"
+                        },
+                        "factor": {
+                          "type": "integer",
+                          "default": 1
+                        },
+                        "offset": {
+                          "type": "integer",
+                          "default": 0
+                        },
+                        "min": {
+                          "type": "integer",
+                          "default": 0
+                        },
+                        "max": {
+                          "type": "integer",
+                          "default": 255
+                        },
+                        "unit": {
+                          "type": "string",
+                          "default": "\"\""
+                        },
+                        "node": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "default": "Vector__XXX",
+                            "title": "Item"
+                          }
+                        },
+                        "InitialValue": {
+                          "type": "integer",
+                          "default": 0
+                        },
+                        "FirstTimeout": {
+                          "type": "integer",
+                          "default": 0
+                        },
+                        "Timeout": {
+                          "type": "integer",
+                          "default": 1000
+                        },
+                        "RxDataTimeoutAction": {
+                          "type": "string",
+                          "default": "SUBSTITUTE"
+                        },
+                        "TimeoutSubstitutionValue": {
+                          "type": "integer",
+                          "default": 238
+                        }
+                      }
+                    }
+                  },
+                  "FirstTimeout": {
+                    "type": "integer",
+                    "default": 0
+                  },
+                  "Timeout": {
+                    "type": "integer",
+                    "default": 1000
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Class": {
+        "type": "string",
+        "default": "Com"
+      }
+    }
+  }
+]
