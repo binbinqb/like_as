@@ -7,7 +7,8 @@
 
 	1. **周期发送**：0x200 每 100 ms 一帧，标准帧 8 字节；
 	2. **字节对齐打包**：byte0 = TX_COUNTER，每帧 +1；
-	3. **非字节对齐的单 bit**：TX_FLAG 起始位 9 → byte1 = 0x02（只置 bit1）；
+	3. **非字节对齐的单 bit**：TX_FLAG 起始位 9 → byte1 的 bit1；
+	   （10.6 起 byte1 的 bit2~7 是 LED 状态，断言只按位看 TX_FLAG）
 	4. **跨字节但不占满**：TX_LEVEL = 0xABC、12 位 → byte2=0xBC、byte3=0x0A，
 	   且 byte3 高 4 位必须是 0（写成 16 位就会变成 0x?BC）；
 	5. **接收解包**：注入 0x201 → `!v` 读到的 cnt / temp 与注入值一致；
@@ -224,9 +225,11 @@ def main():
 		 "deltas=%s" % deltas[:8])
 
 	# ---------- 4) 1 位信号在 byte1 的 bit1 ----------
+	# 10.6 起 byte1 的 bit2~7 被 LED 状态占用（LedRunMode/LedOut/Phase/2 个故障位），
+	# 不能再断言"整字节 == 0x02"；只校验 TX_FLAG 自己那一位。
 	b1 = [f[1][1] for f in frames]
-	note("byte1（TX_FLAG@bit9）恒为 0x02",
-		 (len(b1) > 0) and all(v == (EXPECT_FLAG << 1) for v in b1),
+	note("byte1 的 bit1（TX_FLAG@bit9）恒为 1（bit2~7 为 LED 状态位）",
+		 (len(b1) > 0) and all((v & (EXPECT_FLAG << 1)) == (EXPECT_FLAG << 1) for v in b1),
 		 "值集合=%s" % sorted(set(b1)))
 
 	# ---------- 5) 12 位跨字节 ----------

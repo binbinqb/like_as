@@ -263,6 +263,17 @@
     "tools/led_loop_check.py",
     "app/platform/host/test/test_led_biz.c"
    ]
+  },
+  {
+   "id": "D-LED-LOOP-VERIFY",
+   "date": "2026-11-20",
+   "title": "10.6 闭环上板验收通过：16/16，全量回归 16/16",
+   "decision": "上板发现并修复真 bug：超时被算两遍（BcmSig 的 500ms 到达年龄窗口内 Rte_Read 仍 OK，业务每拍清零自有计数器 → 帧停发 1s 才停）。修正为帧丢失立即停、仅无效值用 50 拍计数。Host 补'帧完全停发'用例（12/12）。m10 的 byte1==0x02 整字节断言因 LED 状态占用 bit2~7 改为按位校验（22/22）。上板 led_loop 16/16，全量回归 16/16（含 m3/m10/m19/com_retry/can_tx_all）。",
+   "evidence": [
+    "build/regress/run_141727",
+    "tools/led_loop_check.py",
+    "tools/m10_check.py"
+   ]
   }
  ],
  "current": {
