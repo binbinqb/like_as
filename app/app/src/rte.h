@@ -41,9 +41,10 @@
  *          - 只有 **switch 类型**（4 值）端口。数值信号（车速那类需要
  *            factor/offset 的）等"物理值转换层"落地时一起加，避免现在
  *            先造一个 `Rte_Read_uint16` 却没有 factor 可用的空壳。
- *          - **没有 runnable 调度**：`BcmBiz_MainFunction()` 仍由 `main.c`
- *            按拍调用。调度表是 10.5「验证缓存与执行顺序」的事，现在加
- *            只会多一层没人验证的间接。
+ *          - **runnable 调度**（V0.4 加入）：顺序与周期在 `Board.json` 的
+ *            `rte.schedule`（生成 `Rte_Schedule.h`），由 `rte_sched.c` 的
+ *            @ref Rte_MainFunction 执行 —— main.c 不再逐个手写调用。
+ *            设计与验证见 `doc/设计评审/RTE调度表.md`。
  *          - **没有读缓存**：结论见 @ref RTE_SNAPSHOT。
  *          - **没有 init runnable**：TX 端口的初值由 `BcmSig_Init()` 统一写，
  *            保持"一个写者"。RTE 再写一次会出现两个初始化源，谁后跑谁赢。
@@ -73,13 +74,15 @@
  *          第一次调用时就暴露，而不是等到总线上出现一条自己发给自己的报文。
  *
  * @author  binbina
- * @version V0.2.0
+ * @version V0.4.0
  *
  * @par 修改记录
  * | 版本   | 日期       | 作者    | 变更说明 |
  * |--------|------------|---------|----------|
  * | V0.1.0 | 2026-11-17 | binbina | 首版：switch 端口、四态映射、单向校验 |
  * | V0.2.0 | 2026-11-18 | binbina | 端口表改由 Board.json 生成；增加 U16/S32 读接口与 IO 绑定（DIN/AIN/DOUT） |
+ * | V0.3.0 | 2026-11-18 | binbina | 删手写端口宏，业务只认生成端口名（换项目可行性有静态断言） |
+ * | V0.4.0 | 2026-11-20 | binbina | 增加 runnable 调度表（Rte_MainFunction，表由 Board.json 生成） |
  */
 
 #ifndef RTE_H
@@ -187,6 +190,24 @@ Rte_StatusType Rte_ReadU16(Rte_PortIdType port, uint16_t *data);
  *       RTE 只负责状态映射 —— 不在这里二次换算，否则会出现两套 factor。
  */
 Rte_StatusType Rte_ReadS32(Rte_PortIdType port, sint32_t *data);
+
+/* ============================== [ 周期调度 ] ============================== */
+
+/**
+ * @brief RTE 周期入口：按调度表执行一遍到拍的应用 runnable
+ *
+ * @details 由 `main.c` 的 10 ms 节拍在 `EcuM_BswService()` **之后**调用
+ *          （应用在 BSW 之后跑，端到端延迟少一拍）。表的内容（顺序、周期、
+ *          增删 runnable）全部来自 `Board.json` 的 `rte.schedule`，
+ *          本函数只按表执行 —— 改调度不改代码。
+ *
+ * @note  顺序语义：表内顺序 = **同一拍内的执行顺序**，依赖关系靠表序表达
+ *        （BcmSig 在 BcmBiz 之前、AdcSampler 在 IoHwAb 之前）。
+ *        跨周期的依赖不允许 —— 周期不同的两个 runnable 不会每拍都同拍执行。
+ * @note  reload ≥ 1 由生成规则 S2 保证，计数器不会卡死；
+ *        表项 func 为 NULL（空表占位）直接跳过。
+ */
+void Rte_MainFunction(void);
 
 /* ============================== [ 端口名从哪来 ] ============================== */
 

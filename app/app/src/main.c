@@ -34,7 +34,7 @@
  *          打印放主循环。
  *
  * @author  binbina
- * @version V2.8.0
+ * @version V2.9.0
  *
  * @par 修改记录
  * | 版本   | 日期       | 作者    | 变更说明 |
@@ -58,6 +58,7 @@
  * | V2.6.0 | 2026-11-11 | binbina | M15：ADC 模块（as-master 无，按三段式补；双单元 + 多通道 + PDB/TRGMUX） |
  * | V2.7.0 | 2026-11-11 | binbina | M18：PWM 模块（PwmLite 4 路、0%/100% 静态电平、同实例同频约束） |
  * | V2.8.0 | 2026-11-11 | binbina | M19：CAN1 真实通信矩阵接入（34 RX 按 PF 分组 / 6 TX / 生成器注入） |
+ * | V2.9.0 | 2026-11-20 | binbina | 10.5：应用 runnable 收进 RTE 调度表（Board.json rte.schedule → Rte_MainFunction） |
  */
 
 #include "platform_cvm0146.h"
@@ -108,6 +109,7 @@
 #include "stack_mon.h"    /* A6：栈水位（main 第一条语句就要填图案） */
 #include "perf_mon.h"     /* A6：DWT 周期计数（SysTick 迟到量 / 单拍耗时） */
 #include "bcm_biz.h"      /* A9：业务骨架（驻车制动 → 制动灯） */
+#include "rte.h"          /* V2.9.0：应用 runnable 收进调度表，入口 Rte_MainFunction */
 
 /* ECU 状态管理（M11）。应用只碰标准接口：
  *   EcuM_Init / EcuM_StartupTwo / EcuM_RequestRUN / EcuM_RequestPOST_RUN
@@ -472,25 +474,15 @@ int main(void)
 			 * | Com 之前（旧） | 上一拍解包的 | 同一拍发出 | **2 拍** |
 			 * | Com 之后（现在） | 本拍刚解包的 | 下一拍发出 | **1 拍** |
 			 *
-			 * 旧顺序只想优化发送方向（"抢在 Com 打包前写进缓冲"），代价是
-			 * **读永远晚一拍**：业务拿 N-1 的输入做决定，输出在 N+1 发出，
-			 * 整条链仍是两拍。移到 Com 之后，读变新一拍、写晚一拍，
-			 * 总延迟少一拍，也与 AUTOSAR 的 RTE 任务位置一致。
-			 *
-			 * 内部依赖没变：BcmSig 仍必须在 BcmBiz 之前（BcmBiz 读的是
-			 * 本拍刚刷新的 shadow）；`Rte_Write` 的"下一拍进 Com"语义
-			 * 也仍然成立（见 rte.h）。
+			 * 应用 runnable 的**顺序与周期**已收进调度表（V2.9.0）：
+			 * `Board.json` 的 `rte.schedule` → 生成 `Rte_Schedule.h` →
+			 * `Rte_MainFunction()`（rte_sched.c）按表执行：
+			 * BcmSig → BcmBiz → ComApp → AdcSampler → IoHwAb，全 10 ms。
+			 * 顺序为什么不能反（BcmSig 先于 BcmBiz、AdcSampler 先于
+			 * IoHwAb）见 `doc/设计评审/RTE调度表.md`。
+			 * `Rte_Write` 的"下一拍进 Com"语义不变（见 rte.h）。
 			 */
-			BcmSig_MainFunction();
-			BcmBiz_MainFunction();
-			ComApp_Tick();
-
-			/* 逻辑 IO 采样：DIN 消抖、AIN 滤波（10 ms 节拍）。
-			 * 读接口只取这里的缓存，不在业务里访问 HAL。
-			 * 顺序：先让 ADC 调度器推进（可能发布新样本），
-			 * 再让 IoHwAb 消费 —— 反过来会晚一拍。 */
-			AdcSampler_MainFunction();
-			IoHwAb_MainFunction();
+			Rte_MainFunction();
 
 			/* 状态机单独推进：负责 RUN / POST_RUN / SLEEP 的迁移，
 			 * 与 BSW 主函数是两件事（AUTOSAR 里也是两个入口），

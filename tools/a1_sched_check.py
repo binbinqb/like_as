@@ -50,8 +50,20 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# 调度表定义处（注册点，唯一允许出现 BSW 模块名的地方）
-SCHED_TABLES = ["app/app/src/EcuM_Cfg.c"]
+# 调度表定义处（注册点，唯一允许出现被调度模块名的地方）
+# - EcuM_Cfg.c：BSW 主函数表（A1 原始范围）
+# - GEN/Rte_Schedule.h：应用 runnable 调度表（10.5，Board.json 生成）——
+#   注册进去后，正向检查同样管住"应用 runnable 被写回 main.c 直接调"
+SCHED_TABLES = [
+	"app/app/src/EcuM_Cfg.c",
+	"app/platform/cvm0146/src/config/Board/GEN/Rte_Schedule.h",
+]
+
+# 各注册点的表体模式：捕获组 1 = 表体文本
+SCHED_PATTERNS = [
+	re.compile(r"EcuM_DriverMain\w*List\[\]\s*=\s*\{(.*?)\n\};", re.S),
+	re.compile(r"#define RTE_SCHEDULE_LIST \{(.*?)\n\}", re.S),
+]
 
 # 主循环文件 —— 这里的直接调用与调度表叠加即为重复调度
 MAIN_FILE = "app/app/src/main.c"
@@ -121,8 +133,9 @@ def parse_registered():
 	registered = set()
 	for rel in SCHED_TABLES:
 		text = "\n".join(read(rel))
-		for m in re.finditer(r"EcuM_DriverMain\w*List\[\]\s*=\s*\{(.*?)\n\};", text, re.S):
-			registered |= set(re.findall(r"\b(\w+_MainFunction(?:_Fast)?)\b", m.group(1)))
+		for pat in SCHED_PATTERNS:
+			for m in pat.finditer(text):
+				registered |= set(re.findall(r"\b(\w+_MainFunction(?:_Fast)?)\b", m.group(1)))
 	return registered
 
 
@@ -234,10 +247,15 @@ def main():
 		print("  PASS  所有需要的 MainFunction 都有归属")
 
 	# ---------- 调用点登记：非 main.c 的调用必须在白名单内 ----------
+	# Host 测试目录整体豁免：测试驱动器**本来就要**直接驱动被测模块
+	# （按拍推进 BcmSig / IoHwAb / AdcSampler 制造确定性场景），
+	# 不是固件调度，登记它没有意义 —— 固件调度只在 app/ 与 boot/ 的
+	# 生产源码里，那才是 A1 要管的对象。
 	print("\n--- 调用点登记 ---")
 	extra = [c for c in calls
 	         if c["name"] in registered
 	         and c["file"] != MAIN_FILE
+	         and not c["file"].startswith("app/platform/host/")
 	         and (c["file"], c["func"]) not in WAIT_LOOP_OK]
 	if not extra:
 		print("  PASS  非 main.c 的已注册模块调用全部落在白名单内")

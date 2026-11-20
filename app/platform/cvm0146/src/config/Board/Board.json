@@ -39,6 +39,14 @@
             { "name": "TEMP_MC", "kind": "io_ain_phys", "ref": "TEMP" },
             { "name": "TEMP_RAW", "kind": "io_ain_raw", "ref": "TEMP" },
             { "name": "LED_R", "kind": "io_dout", "ref": "LED_R" }
+        ],
+        "_comment_schedule": "应用 runnable 调度表（10.5）。数组顺序 = 同一拍内的执行顺序；period_ms 必须是 10 的倍数。表由 BcmRte.py 生成到 Rte_Schedule.h，由 rte_sched.c 的 Rte_MainFunction() 执行（main.c 10ms 节拍在 EcuM_BswService 之后调用）",
+        "schedule": [
+            { "func": "BcmSig_MainFunction",     "period_ms": 10 },
+            { "func": "BcmBiz_MainFunction",     "period_ms": 10 },
+            { "func": "ComApp_Tick",             "period_ms": 10 },
+            { "func": "AdcSampler_MainFunction", "period_ms": 10 },
+            { "func": "IoHwAb_MainFunction",     "period_ms": 10 }
         ]
     },
     "io": {

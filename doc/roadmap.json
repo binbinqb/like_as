@@ -241,6 +241,17 @@
    "title": "RTE V0.3：删手写封装、业务只认生成端口名，并证明换项目不改业务",
    "decision": "删除 rte.h 里的 Rte_Read_ParkBrake / Rte_Write_BrakeLamp 两个手写宏（同一件事不留两条路），bcm_biz.c 直接用 Rte_Read(RTE_PORT_PARK_BRAKE, …) / Rte_Write(RTE_PORT_BRAKE_LAMP, …)。新增 tools/rte_portmap_check.py 五类断言：P1 业务去注释后不含下层标识符与头；P1b 端口实参不得写死数字；P2 引用端口必须存在于生成头；P3 变体配置下业务仍可编译；P4 变体确实改变绑定与索引（防 P3 空转）；P5 目标文件只引用 Rte_*/Platform_*。变体把 PARK_BRAKE 改为本地 DIN、BRAKE_LAMP 改为本地 DOUT 并整体移位索引。",
    "impact": "Host rte 24/24、bcm 14/14、host_build 8/8；通信回归 14 例全过（新增 rte_portmap）；App/AppB 零警。三次缺陷注入全部被抓（业务调 BcmSig_*、端口写死数字、配置删端口）。尺寸 +8 B 来自新增的 2 个 RTE 端口（表项 4 B/项），迁移本身尺寸中性。**同时补齐 67c85b9 漏提交的四个核心文件**（rte.c/rte.h/rte_cfg.c/rte_cfg.h）——该提交因 git add 带坏路径且 stderr 被重定向而静默失败，导致远程 HEAD 的 test_rte.c 引用了不存在的 Rte_ReadU16 而编译不过。"
+  },
+  {
+   "id": "D-RTE-V04",
+   "date": "2026-11-20",
+   "title": "RTE V0.4：应用 runnable 收进调度表（10.5），改调度不改代码",
+   "decision": "把 main.c 10ms 节拍里 5 个手写应用调用（BcmSig/BcmBiz/ComApp/AdcSampler/IoHwAb）收进 Board.json 的 rte.schedule：数组顺序=同一拍执行顺序，period_ms 必须 10 的倍数（S2）。BcmRte.py 校验 S1~S4 生成 Rte_Schedule.h（runnable 原型随表生成，生成物自包含，换项目不必手工补 include）；新文件 rte_sched.c 展开表并执行（Rte_MainFunction），分频语义为执行后重装 reload-1（reload=1 每拍执行）。EcuM_MainFunction/BootApp_MainFunction 是框架状态机，不进板级 JSON，留在 main.c。验证：host sched 套件（真实配置替身）+ rte_sched_check 16 项（含变体 10/20/30ms 多周期与顺序重排）+ a1 把 Rte_Schedule.h 登记为第二个调度注册点。App/AppB 零警告，text +144B。",
+   "evidence": [
+    "doc/设计评审/RTE调度表.md",
+    "tools/rte_sched_check.py",
+    "tools/host_build.py:sched"
+   ]
   }
  ],
  "current": {

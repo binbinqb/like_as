@@ -14,13 +14,14 @@
  *          改超时要动 RTE 表，两个人都改同一个文件，冲突不断。
  *
  * @author  binbina
- * @version V0.2.0
+ * @version V0.3.0
  *
  * @par 修改记录
  * | 版本   | 日期       | 作者    | 变更说明 |
  * |--------|------------|---------|----------|
  * | V0.1.0 | 2026-11-17 | binbina | 首版：2 个端口（1 进 1 出） |
  * | V0.2.0 | 2026-11-18 | binbina | 表改由 Board.json 生成；增加 kind/ref，支持 DIN/AIN/DOUT |
+ * | V0.3.0 | 2026-11-20 | binbina | 增加 runnable 调度项类型（表体由 rte_sched.c 展开） |
  */
 
 #ifndef RTE_CFG_H
@@ -59,6 +60,21 @@ typedef struct
 
 /** @brief 端口表，下标即 `Rte_PortIdType`；初始化列表来自生成的 `Rte_Ports.h` */
 extern const Rte_PortCfgType Rte_PortCfg[RTE_PORT_NUM];
+
+/** @brief runnable 入口签名：无参无返回的周期函数 */
+typedef void (*Rte_SchedFunc)(void);
+
+/**
+ * @brief 一个 runnable 的调度项
+ *
+ * @note `reload` 是**基准拍数**（= period_ms / RTE_SCHED_BASE_MS），
+ *       由生成器折算好；≥1 由生成规则 S2 保证。
+ */
+typedef struct
+{
+	uint8_t       reload;  /**< 重装值（基准拍数，≥1） */
+	Rte_SchedFunc func;    /**< runnable 入口；空表占位为 NULL，跳过不执行 */
+} Rte_SchedEntryType;
 
 #ifdef __cplusplus
 }

@@ -93,11 +93,16 @@ TESTS = [
 	  "app/app/src/iohwab_mux.c",
 	  "app/platform/host/test/mux_host_ops.c"],
 	 [], []),
+	# 10.5 runnable 调度表：真实配置（Board.json rte.schedule）驱动替身 runnable，
+	# 验证顺序与分频；多周期/变体配置在 tools/rte_sched_check.py
+	("sched", "app/platform/host/test/test_sched.c",
+	 ["app/app/src/rte_sched.c"],
+	 ["app/platform/cvm0146/src/config/Board/GEN"], []),
 ]
 
 # 这些用例**不**套用 APP_SRCS + HOST_SRCS：它们验证的是与宿主平台无关的
 # 纯判定逻辑，源码集合由 TESTS 的第 3 项显式给出。
-STANDALONE_TESTS = {"boot_meta", "boot_dev", "boot_prod", "iohwab", "mux", "adc_sampler"}
+STANDALONE_TESTS = {"boot_meta", "boot_dev", "boot_prod", "iohwab", "mux", "adc_sampler", "sched"}
 
 INCLUDES = [
 	"app/include",
