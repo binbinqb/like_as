@@ -109,6 +109,7 @@
 #include "stack_mon.h"    /* A6：栈水位（main 第一条语句就要填图案） */
 #include "perf_mon.h"     /* A6：DWT 周期计数（SysTick 迟到量 / 单拍耗时） */
 #include "bcm_biz.h"      /* A9：业务骨架（驻车制动 → 制动灯） */
+#include "led_biz.h"      /* 10.6：LED 闭环业务（控制/闪烁/超时/状态上报） */
 #include "rte.h"          /* V2.9.0：应用 runnable 收进调度表，入口 Rte_MainFunction */
 
 /* ECU 状态管理（M11）。应用只碰标准接口：
@@ -369,6 +370,11 @@ int main(void)
 	 * 默认**不接管**输出 —— 理由见 bcm_biz.h 的 BcmBiz_SetEnabled：
 	 * `bcm all on|off` 这类验收命令与业务会抢同一个发送 shadow。 */
 	BcmBiz_Init();
+
+	/* LED 闭环业务（10.6）：必须在 BcmSig_Init 之后 —— 它通过 RTE 写端口
+	 * 影子，把上电上报值从绑定层的"全 OFF"改成"尚未收到命令"。
+	 * 默认灯灭；控制命令到了才动作。 */
+	LedBiz_Init();
 
 	Platform_Puts("========================================\n\n");
 

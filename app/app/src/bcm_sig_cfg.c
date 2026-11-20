@@ -99,7 +99,13 @@ const BcmSig_TxCfgType BcmSig_TxCfg[BCM_SIG_TX_NUM] =
 	{ (Com_SignalIdType)COM_SID_BCM_RearFogSts,        NULL }, /* 后雾灯 */
 	{ (Com_SignalIdType)COM_SID_BackUpLightSt,         NULL }, /* 倒车灯 */
 	{ (Com_SignalIdType)COM_SID_BrakelightST,          NULL }, /* 制动灯 */
-	{ (Com_SignalIdType)COM_SID_InteriorLampSt,        NULL }  /* 室内灯 */
+	{ (Com_SignalIdType)COM_SID_InteriorLampSt,        NULL }, /* 室内灯 */
+	/* ---- 10.6 LED 业务闭环：状态上报（CAN0 0x200，100 ms） ---- */
+	{ (Com_SignalIdType)COM_SID_LedRunMode,            NULL }, /* 运行模式（0=停 / 1=闪 / 3=未收到） */
+	{ (Com_SignalIdType)COM_SID_LedOut,                NULL }, /* 驱动提交状态 */
+	{ (Com_SignalIdType)COM_SID_LedBlinkPhase,         NULL }, /* 闪烁相位 */
+	{ (Com_SignalIdType)COM_SID_LedFaultTimeout,       NULL }, /* 通信超时故障 */
+	{ (Com_SignalIdType)COM_SID_LedFaultCmd,           NULL }  /* 命令无效故障 */
 };
 
 /* ============================ [ 接收表 ] ============================ */
@@ -123,7 +129,12 @@ const BcmSig_TxCfgType BcmSig_TxCfg[BCM_SIG_TX_NUM] =
 const BcmSig_RxCfgType BcmSig_RxCfg[BCM_SIG_RX_NUM] =
 {
 	/* Com 信号号                                覆盖表  CanIf PDU 号                  超时(ms) */
-	{ (Com_SignalIdType)COM_SID_ParkingBrakeSwitch, NULL, CANIF_RX_CAN1_CCVS,      300u } /* 手刹开关 */
+	{ (Com_SignalIdType)COM_SID_ParkingBrakeSwitch, NULL, CANIF_RX_CAN1_CCVS,      300u }, /* 手刹开关 */
+	/* 10.6 控制命令：复用 CCVS 的手刹位承载（CAN1，100 ms）。
+	 * 超时 500 ms = 5 个周期 —— 验收口径要求"500 ms 未收到有效控制即停"。
+	 * 与上一行是**同一 Com 信号、同一 PDU 的第二个绑定**：值相同、门限不同，
+	 * 互不影响（shadow 按业务编号分开存）。 */
+	{ (Com_SignalIdType)COM_SID_ParkingBrakeSwitch, NULL, CANIF_RX_CAN1_CCVS,      500u } /* LED 控制命令 */
 };
 
 /**

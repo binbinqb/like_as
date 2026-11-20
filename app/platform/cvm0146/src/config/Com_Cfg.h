@@ -642,10 +642,15 @@
 #define COM_SID_TX_COUNTER 372 /* little 8@0 */
 #define COM_SID_TX_FLAG 373 /* little 1@9 */
 #define COM_SID_TX_LEVEL 374 /* little 12@16 */
+#define COM_SID_LedRunMode 375 /* little 2@10 */
+#define COM_SID_LedOut 376 /* little 1@12 */
+#define COM_SID_LedBlinkPhase 377 /* little 1@13 */
+#define COM_SID_LedFaultTimeout 378 /* little 1@14 */
+#define COM_SID_LedFaultCmd 379 /* little 1@15 */
 
 /* signals for network CANTEST message CANTEST_RX_TEST: id=0x201 dlc=8, dir=RX */
-#define COM_SID_RX_COUNTER 375 /* little 8@0 */
-#define COM_SID_RX_TEMP 376 /* big 16@23 */
+#define COM_SID_RX_COUNTER 380 /* little 8@0 */
+#define COM_SID_RX_TEMP 381 /* big 16@23 */
 
 
 /* NOTE: manually modify to create more groups */

@@ -30,7 +30,7 @@
 /* ============================ [ 替身 runnable ] ============================ */
 /* 下标 = 期望顺序（真实配置：BcmSig → BcmBiz → ComApp → AdcSampler → IoHwAb） */
 
-#define RTEST_N_STUB   (5)
+#define RTEST_N_STUB   (6)
 static int s_order[64];   /**< 执行顺序记录（存替身下标） */
 static int s_n;           /**< 已记录条数 */
 static int s_cnt[RTEST_N_STUB]; /**< 每个替身的累计执行次数 */
@@ -47,9 +47,10 @@ static void Rec(int idx)
 /* 名字必须与 Board.json rte.schedule[].func 一致（见文件头说明） */
 void BcmSig_MainFunction(void)     { Rec(0); }
 void BcmBiz_MainFunction(void)     { Rec(1); }
-void ComApp_Tick(void)             { Rec(2); }
-void AdcSampler_MainFunction(void) { Rec(3); }
-void IoHwAb_MainFunction(void)     { Rec(4); }
+void LedBiz_MainFunction(void)     { Rec(2); }
+void ComApp_Tick(void)             { Rec(3); }
+void AdcSampler_MainFunction(void) { Rec(4); }
+void IoHwAb_MainFunction(void)     { Rec(5); }
 
 /* ============================ [ 断言 ] ============================ */
 
@@ -64,7 +65,7 @@ static void Check(const char *name, int cond, const char *detail)
 	}
 }
 
-static const char *EXP_ORDER[] = { "BcmSig", "BcmBiz", "ComApp", "AdcSampler", "IoHwAb" };
+static const char *EXP_ORDER[] = { "BcmSig", "BcmBiz", "LedBiz", "ComApp", "AdcSampler", "IoHwAb" };
 
 int main(void)
 {
@@ -73,12 +74,12 @@ int main(void)
 	char buf[256];
 
 	/* ---- 1. 真实配置进了生成物 ---- */
-	Check("RTE_SCHED_NUM == 5", RTE_SCHED_NUM == RTEST_N_STUB, "实际=%d");
+	Check("RTE_SCHED_NUM == 6", RTE_SCHED_NUM == RTEST_N_STUB, "实际=%d");
 
 	/* ---- 2. 一拍内顺序 == 配置顺序 ---- */
 	Rte_MainFunction();
 	(void)sprintf(buf, "实际=%d", s_n);
-	Check("一拍执行 5 个 runnable", s_n == RTEST_N_STUB, buf);
+	Check("一拍执行 6 个 runnable", s_n == RTEST_N_STUB, buf);
 	for (k = 0; k < RTEST_N_STUB; k++) {
 		if ((k < s_n) && (s_order[k] != k)) {
 			break;
@@ -89,7 +90,7 @@ int main(void)
 		 * 但计数断言会失真 —— 先报出来 */
 		Check("一拍执行 5 个 runnable", 0, "超出记录缓冲，替身被多调");
 	}
-	Check("一拍内顺序 == 配置顺序（BcmSig→BcmBiz→ComApp→AdcSampler→IoHwAb）",
+	Check("一拍内顺序 == 配置顺序（BcmSig→BcmBiz→LedBiz→ComApp→AdcSampler→IoHwAb）",
 	      k == RTEST_N_STUB, "首个不符位置见上方顺序打印");
 
 	printf("  order :");
@@ -111,8 +112,8 @@ int main(void)
 			break;
 		}
 	}
-	(void)sprintf(buf, "s_cnt=[%d,%d,%d,%d,%d]",
-	              s_cnt[0], s_cnt[1], s_cnt[2], s_cnt[3], s_cnt[4]);
+	(void)sprintf(buf, "s_cnt=[%d,%d,%d,%d,%d,%d]",
+	              s_cnt[0], s_cnt[1], s_cnt[2], s_cnt[3], s_cnt[4], s_cnt[5]);
 	Check("连续 10 拍每个 runnable 执行 10 次（reload=1 每拍执行）",
 	      k == RTEST_N_STUB, buf);
 

@@ -57,6 +57,9 @@ GEN_H = os.path.join(ROOT, "app", "platform", "cvm0146", "src",
                      "config", "Board", "GEN", "Rte_Ports.h")
 BIZ_C = os.path.join(ROOT, "app", "app", "src", "bcm_biz.c")
 BIZ_H = os.path.join(ROOT, "app", "app", "src", "bcm_biz.h")
+# 10.6 起有第二个业务组件：LED 闭环（同样必须只认端口名）
+LED_BIZ_C = os.path.join(ROOT, "app", "app", "src", "led_biz.c")
+LED_BIZ_H = os.path.join(ROOT, "app", "app", "src", "led_biz.h")
 
 CC = "C:/soft/mingw64/bin/gcc.exe"
 NM = "C:/soft/mingw64/bin/nm.exe"
@@ -184,7 +187,7 @@ def undef_syms(obj):
 def main():
 	print("== RTE 端口映射：换项目可行性验证 ==")
 
-	biz_src = read(BIZ_C) + "\n" + read(BIZ_H)
+	biz_src = read(BIZ_C) + "\n" + read(BIZ_H) + "\n" + read(LED_BIZ_C) + "\n" + read(LED_BIZ_H)
 	biz_code = strip_comments(biz_src)
 
 	# ---- P1 业务层不碰下层 ----
@@ -223,8 +226,9 @@ def main():
 	cfg = json.loads(read(BOARD_JSON))
 	variant = json.loads(json.dumps(cfg))   # 深拷贝
 	ports = variant["rte"]["ports"]
-	# 1) 去掉会被"复用"的独立端口，避免 E6（同 kind+ref 重复绑定）
-	ports = [p for p in ports if p["name"] not in ("DOOR_FL", "LED_R")]
+	# 1) 只去掉会被"复用"的 DOOR_FL；LED_R 端口必须保留（业务依赖它），
+	#    改把它绑到另一个灯，避免 E6（同 kind+ref 重复绑定）
+	ports = [p for p in ports if p["name"] != "DOOR_FL"]
 	# 2) 驻车制动从 CAN 输入改为本地开关；制动灯从 CAN 输出改为本地输出
 	for p in ports:
 		if p["name"] == "PARK_BRAKE":
@@ -233,6 +237,10 @@ def main():
 		elif p["name"] == "BRAKE_LAMP":
 			p["kind"] = "io_dout"
 			p["ref"] = "LED_R"
+		elif p["name"] == "LED_R":
+			# 变体里这块板的 LED_R 端口接到另一个灯：端口名不变、绑定变
+			p["kind"] = "io_dout"
+			p["ref"] = "LED_G"
 	# 3) 末尾端口挪到最前：所有索引整体移位
 	ports.insert(0, ports.pop())
 	variant["rte"]["ports"] = ports
@@ -272,6 +280,9 @@ def main():
 		ok, msg = compile_obj(BIZ_C, incs, None, syntax_only=True)
 		check("P3a 业务源在变体配置下能编译（换项目不改业务）", ok,
 		      msg.splitlines()[-1] if msg else "")
+		ok_led, msg_led = compile_obj(LED_BIZ_C, incs, None, syntax_only=True)
+		check("P3b LED 业务源在变体配置下能编译", ok_led,
+		      msg_led.splitlines()[-1] if msg_led else "")
 
 		# ---- P5 目标文件只引用 Rte_*/Platform_* ----
 		obj = os.path.join(d, "bcm_biz.o")

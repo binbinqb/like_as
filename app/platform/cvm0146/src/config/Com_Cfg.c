@@ -392,6 +392,11 @@ static const uint8_t SequenceNumber_InitialValue = 0;
 static const uint8_t TX_COUNTER_InitialValue = 0;
 static const uint8_t TX_FLAG_InitialValue = 1;
 static const uint16_t TX_LEVEL_InitialValue = 2748;
+static const uint8_t LedRunMode_InitialValue = 3;
+static const uint8_t LedOut_InitialValue = 0;
+static const uint8_t LedBlinkPhase_InitialValue = 0;
+static const uint8_t LedFaultTimeout_InitialValue = 0;
+static const uint8_t LedFaultCmd_InitialValue = 0;
 static const uint8_t RX_COUNTER_InitialValue = 0;
 static const uint8_t RX_COUNTER_TimeoutSubstitutionValue = 238;
 static const uint16_t RX_TEMP_InitialValue = 0;
@@ -7128,6 +7133,66 @@ static const Com_SignalTxConfigType Com_SignalTxConfig_TX_FLAG = {
 };
 
 static const Com_SignalTxConfigType Com_SignalTxConfig_TX_LEVEL = {
+  #ifdef COM_USE_SIGNAL_TX_ERROR_NOTIFICATION
+  NULL, /* ErrorNotification */
+  #endif
+  #ifdef COM_USE_SIGNAL_TX_NOTIFICATION
+  NULL, /* TxNotification */
+  #endif
+  #if !defined(COM_USE_SIGNAL_TX_ERROR_NOTIFICATION) && !defined(COM_USE_SIGNAL_TX_NOTIFICATION)
+  0,
+  #endif
+};
+
+static const Com_SignalTxConfigType Com_SignalTxConfig_LedRunMode = {
+  #ifdef COM_USE_SIGNAL_TX_ERROR_NOTIFICATION
+  NULL, /* ErrorNotification */
+  #endif
+  #ifdef COM_USE_SIGNAL_TX_NOTIFICATION
+  NULL, /* TxNotification */
+  #endif
+  #if !defined(COM_USE_SIGNAL_TX_ERROR_NOTIFICATION) && !defined(COM_USE_SIGNAL_TX_NOTIFICATION)
+  0,
+  #endif
+};
+
+static const Com_SignalTxConfigType Com_SignalTxConfig_LedOut = {
+  #ifdef COM_USE_SIGNAL_TX_ERROR_NOTIFICATION
+  NULL, /* ErrorNotification */
+  #endif
+  #ifdef COM_USE_SIGNAL_TX_NOTIFICATION
+  NULL, /* TxNotification */
+  #endif
+  #if !defined(COM_USE_SIGNAL_TX_ERROR_NOTIFICATION) && !defined(COM_USE_SIGNAL_TX_NOTIFICATION)
+  0,
+  #endif
+};
+
+static const Com_SignalTxConfigType Com_SignalTxConfig_LedBlinkPhase = {
+  #ifdef COM_USE_SIGNAL_TX_ERROR_NOTIFICATION
+  NULL, /* ErrorNotification */
+  #endif
+  #ifdef COM_USE_SIGNAL_TX_NOTIFICATION
+  NULL, /* TxNotification */
+  #endif
+  #if !defined(COM_USE_SIGNAL_TX_ERROR_NOTIFICATION) && !defined(COM_USE_SIGNAL_TX_NOTIFICATION)
+  0,
+  #endif
+};
+
+static const Com_SignalTxConfigType Com_SignalTxConfig_LedFaultTimeout = {
+  #ifdef COM_USE_SIGNAL_TX_ERROR_NOTIFICATION
+  NULL, /* ErrorNotification */
+  #endif
+  #ifdef COM_USE_SIGNAL_TX_NOTIFICATION
+  NULL, /* TxNotification */
+  #endif
+  #if !defined(COM_USE_SIGNAL_TX_ERROR_NOTIFICATION) && !defined(COM_USE_SIGNAL_TX_NOTIFICATION)
+  0,
+  #endif
+};
+
+static const Com_SignalTxConfigType Com_SignalTxConfig_LedFaultCmd = {
   #ifdef COM_USE_SIGNAL_TX_ERROR_NOTIFICATION
   NULL, /* ErrorNotification */
   #endif
@@ -15056,6 +15121,111 @@ static const Com_SignalConfigType Com_SignalConfigs[] = {
   },
   {
 #ifdef USE_SHELL
+    "LedRunMode",
+#endif
+    &Com_PduData_CANTEST_TX_TEST[1], /* ptr */
+    &LedRunMode_InitialValue, /* initPtr */
+#ifdef COM_USE_SIGNAL_CONFIG
+    NULL, /* rxConfig */
+    &Com_SignalTxConfig_LedRunMode, /* txConfig */
+#endif
+    COM_SID_LedRunMode, /* HandleId */
+    COM_CANTEST_TX_TEST, /* PduId */
+    2, /* BitPosition */
+    2, /* BitSize */
+#ifdef COM_USE_SIGNAL_UPDATE_BIT
+    COM_UPDATE_BIT_NOT_USED, /* UpdateBit */
+#endif
+    COM_UINT8, /* type */
+    COM_LITTLE_ENDIAN, /* Endianness */
+    FALSE,
+  },
+  {
+#ifdef USE_SHELL
+    "LedOut",
+#endif
+    &Com_PduData_CANTEST_TX_TEST[1], /* ptr */
+    &LedOut_InitialValue, /* initPtr */
+#ifdef COM_USE_SIGNAL_CONFIG
+    NULL, /* rxConfig */
+    &Com_SignalTxConfig_LedOut, /* txConfig */
+#endif
+    COM_SID_LedOut, /* HandleId */
+    COM_CANTEST_TX_TEST, /* PduId */
+    4, /* BitPosition */
+    1, /* BitSize */
+#ifdef COM_USE_SIGNAL_UPDATE_BIT
+    COM_UPDATE_BIT_NOT_USED, /* UpdateBit */
+#endif
+    COM_UINT8, /* type */
+    COM_LITTLE_ENDIAN, /* Endianness */
+    FALSE,
+  },
+  {
+#ifdef USE_SHELL
+    "LedBlinkPhase",
+#endif
+    &Com_PduData_CANTEST_TX_TEST[1], /* ptr */
+    &LedBlinkPhase_InitialValue, /* initPtr */
+#ifdef COM_USE_SIGNAL_CONFIG
+    NULL, /* rxConfig */
+    &Com_SignalTxConfig_LedBlinkPhase, /* txConfig */
+#endif
+    COM_SID_LedBlinkPhase, /* HandleId */
+    COM_CANTEST_TX_TEST, /* PduId */
+    5, /* BitPosition */
+    1, /* BitSize */
+#ifdef COM_USE_SIGNAL_UPDATE_BIT
+    COM_UPDATE_BIT_NOT_USED, /* UpdateBit */
+#endif
+    COM_UINT8, /* type */
+    COM_LITTLE_ENDIAN, /* Endianness */
+    FALSE,
+  },
+  {
+#ifdef USE_SHELL
+    "LedFaultTimeout",
+#endif
+    &Com_PduData_CANTEST_TX_TEST[1], /* ptr */
+    &LedFaultTimeout_InitialValue, /* initPtr */
+#ifdef COM_USE_SIGNAL_CONFIG
+    NULL, /* rxConfig */
+    &Com_SignalTxConfig_LedFaultTimeout, /* txConfig */
+#endif
+    COM_SID_LedFaultTimeout, /* HandleId */
+    COM_CANTEST_TX_TEST, /* PduId */
+    6, /* BitPosition */
+    1, /* BitSize */
+#ifdef COM_USE_SIGNAL_UPDATE_BIT
+    COM_UPDATE_BIT_NOT_USED, /* UpdateBit */
+#endif
+    COM_UINT8, /* type */
+    COM_LITTLE_ENDIAN, /* Endianness */
+    FALSE,
+  },
+  {
+#ifdef USE_SHELL
+    "LedFaultCmd",
+#endif
+    &Com_PduData_CANTEST_TX_TEST[1], /* ptr */
+    &LedFaultCmd_InitialValue, /* initPtr */
+#ifdef COM_USE_SIGNAL_CONFIG
+    NULL, /* rxConfig */
+    &Com_SignalTxConfig_LedFaultCmd, /* txConfig */
+#endif
+    COM_SID_LedFaultCmd, /* HandleId */
+    COM_CANTEST_TX_TEST, /* PduId */
+    7, /* BitPosition */
+    1, /* BitSize */
+#ifdef COM_USE_SIGNAL_UPDATE_BIT
+    COM_UPDATE_BIT_NOT_USED, /* UpdateBit */
+#endif
+    COM_UINT8, /* type */
+    COM_LITTLE_ENDIAN, /* Endianness */
+    FALSE,
+  },
+  {
+#ifdef USE_SHELL
     "RX_COUNTER",
 #endif
     &Com_PduData_CANTEST_RX_TEST[0], /* ptr */
@@ -15594,6 +15764,11 @@ static const Com_SignalConfigType* Com_IPduSignals_CANTEST_TX_TEST[] = {
   &Com_SignalConfigs[COM_SID_TX_COUNTER],
   &Com_SignalConfigs[COM_SID_TX_FLAG],
   &Com_SignalConfigs[COM_SID_TX_LEVEL],
+  &Com_SignalConfigs[COM_SID_LedRunMode],
+  &Com_SignalConfigs[COM_SID_LedOut],
+  &Com_SignalConfigs[COM_SID_LedBlinkPhase],
+  &Com_SignalConfigs[COM_SID_LedFaultTimeout],
+  &Com_SignalConfigs[COM_SID_LedFaultCmd],
 };
 
 static const Com_SignalConfigType* Com_IPduSignals_CANTEST_RX_TEST[] = {

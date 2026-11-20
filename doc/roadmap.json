@@ -252,6 +252,17 @@
     "tools/rte_sched_check.py",
     "tools/host_build.py:sched"
    ]
+  },
+  {
+   "id": "D-LED-LOOP",
+   "date": "2026-11-20",
+   "title": "10.6 第一条完整纵向切片：CAN1 控制 → LED 状态机 → CAN0 状态上报",
+   "decision": "控制复用 CAN1 CCVS.ParkingBrakeSwitch（100ms，raw 0=停/1=闪/2·3=无效），状态挂 CAN0 0x200（100ms）新增 5 位；新增 led_biz.c 状态机（500ms 亮相/500ms 灭相、非阻塞、500ms 无有效命令停）；RTE 端口 6 个、调度表加 LedBiz；业务只认端口名。验证：host led_biz 11 项 + 全套件 10/10 + 静态 10/10 + 双镜像零警告（text +1060B）；上板脚本 tools/led_loop_check.py 待跑。",
+   "evidence": [
+    "doc/设计评审/LED闭环业务.md",
+    "tools/led_loop_check.py",
+    "app/platform/host/test/test_led_biz.c"
+   ]
   }
  ],
  "current": {

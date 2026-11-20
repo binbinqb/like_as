@@ -55,6 +55,7 @@ CASES = [
 	("m10",         "Com 信号层（22 项）",          [PY, "tools/m10_check.py"], "hw", 180),
 	("m19",         "CAN1 接收（34 条）",           [PY, "tools/m19_check.py"], "hw", 240),
 	("com_retry",   "Com 发送重试（5 项）",         [PY, "tools/com_retry_check.py"], "hw", 120),
+	("led_loop",    "LED 闭环：启动/停止/超时/无效/恢复", [PY, "tools/led_loop_check.py"], "hw", 120),
 ]
 
 RE_FAIL_CN = re.compile(r"(\d+)\s*项失败")

@@ -44,6 +44,7 @@ APP_SRCS = [
 	"app/app/src/bcm_sig.c",
 	"app/app/src/bcm_sig_cfg.c",
 	"app/app/src/bcm_biz.c",
+	"app/app/src/led_biz.c",
 	"app/app/src/rx_mon.c",
 	"app/app/src/rte.c",
 	"app/app/src/rte_cfg.c",
@@ -68,6 +69,8 @@ BOOT_INCS = ["app/platform/host/include/boot_sim", "app/platform/cvm0146/include
 TESTS = [
 	("bcm", "app/platform/host/test/test_bcm.c", [], [], []),
 	("rte", "app/platform/host/test/test_rte.c", [], [], []),
+	# 10.6 第一条完整业务闭环：LED 控制/闪烁/超时状态机
+	("led_biz", "app/platform/host/test/test_led_biz.c", [], [], []),
 	# 22.3 元数据/校验：真编译 BootMeta.c + 假 Flash
 	("boot_meta", "app/platform/host/test/test_boot_meta.c", BOOT_SRCS, BOOT_INCS, []),
 	# 22.3 选槽判定：同一份 boot_choice.c 编两次，分别验开发/量产策略

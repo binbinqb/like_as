@@ -152,6 +152,12 @@ typedef enum
 	BCM_SIG_REVERSE,       /**< 倒车灯状态（BackUpLightSt） */
 	BCM_SIG_BRAKE,         /**< 制动灯状态（BrakelightST） */
 	BCM_SIG_INTERIOR,      /**< 室内灯状态（InteriorLampSt） */
+	/* ---- 10.6 业务闭环：LED 运行状态上报（CAN0 0x200，100 ms） ---- */
+	BCM_SIG_LED_RUN_MODE,  /**< 运行模式：raw 0=已停止 / 1=闪烁 / 3=尚未收到命令 */
+	BCM_SIG_LED_OUT,       /**< LED 驱动提交状态（不是电气反馈） */
+	BCM_SIG_LED_PHASE,     /**< 闪烁当前相位：0=灭相 / 1=亮相 */
+	BCM_SIG_LED_FAULT_TIMEOUT, /**< 通信超时故障（500 ms 无有效控制） */
+	BCM_SIG_LED_FAULT_CMD, /**< 控制命令无效（raw 2/3） */
 	BCM_SIG_TX_NUM         /**< 发送信号总数（不是有效编号） */
 } Bcm_SigIdType;
 
@@ -163,6 +169,8 @@ typedef enum
 typedef enum
 {
 	BCM_SIG_RX_PARK_BRAKE = 0, /**< 手刹开关（ParkingBrakeSwitch） */
+	BCM_SIG_RX_LED_CMD,        /**< LED 控制命令（10.6 复用 CCVS.ParkingBrakeSwitch 承载：
+	                                *   raw 0=停止 / 1=启动闪烁 / 2·3=无效） */
 	BCM_SIG_RX_NUM             /**< 接收信号总数（不是有效编号） */
 } Bcm_SigRxIdType;
 

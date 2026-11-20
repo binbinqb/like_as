@@ -38,12 +38,19 @@
             { "name": "POT1_RAW", "kind": "io_ain_raw", "ref": "POT1_ADC" },
             { "name": "TEMP_MC", "kind": "io_ain_phys", "ref": "TEMP" },
             { "name": "TEMP_RAW", "kind": "io_ain_raw", "ref": "TEMP" },
-            { "name": "LED_R", "kind": "io_dout", "ref": "LED_R" }
+            { "name": "LED_R", "kind": "io_dout", "ref": "LED_R" },
+            { "name": "LED_CTRL", "kind": "com_rx", "ref": "BCM_SIG_RX_LED_CMD" },
+            { "name": "LED_RUN_MODE", "kind": "com_tx", "ref": "BCM_SIG_LED_RUN_MODE" },
+            { "name": "LED_OUT", "kind": "com_tx", "ref": "BCM_SIG_LED_OUT" },
+            { "name": "LED_PHASE", "kind": "com_tx", "ref": "BCM_SIG_LED_PHASE" },
+            { "name": "LED_FAULT_TIMEOUT", "kind": "com_tx", "ref": "BCM_SIG_LED_FAULT_TIMEOUT" },
+            { "name": "LED_FAULT_CMD", "kind": "com_tx", "ref": "BCM_SIG_LED_FAULT_CMD" }
         ],
         "_comment_schedule": "应用 runnable 调度表（10.5）。数组顺序 = 同一拍内的执行顺序；period_ms 必须是 10 的倍数。表由 BcmRte.py 生成到 Rte_Schedule.h，由 rte_sched.c 的 Rte_MainFunction() 执行（main.c 10ms 节拍在 EcuM_BswService 之后调用）",
         "schedule": [
             { "func": "BcmSig_MainFunction",     "period_ms": 10 },
             { "func": "BcmBiz_MainFunction",     "period_ms": 10 },
+            { "func": "LedBiz_MainFunction",     "period_ms": 10 },
             { "func": "ComApp_Tick",             "period_ms": 10 },
             { "func": "AdcSampler_MainFunction", "period_ms": 10 },
             { "func": "IoHwAb_MainFunction",     "period_ms": 10 }
