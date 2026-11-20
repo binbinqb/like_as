@@ -132,29 +132,42 @@ void LedBiz_MainFunction(void)
 	}
 	else
 	{
-		/* 值无效（raw 2 → ERROR，raw 3 → E_INVALID）→ 记录故障位，不改输出。
-		 * 注意 `Rte_Read` 对 "对方报 FAULT" 返回的是 E_OK + ERROR，不是
-		 * E_INVALID —— 只看返回值会把"对方明确报无效"漏掉。 */
-		if ((RTE_E_INVALID == st) ||
+		boolean valueInvalid = (boolean)(
+		    (RTE_E_INVALID == st) ||
 		    ((RTE_E_OK == st) &&
-		     ((RTE_SWITCH_ERROR == cmd) || (RTE_SWITCH_INVALID == cmd))))
+		     ((RTE_SWITCH_ERROR == cmd) || (RTE_SWITCH_INVALID == cmd))));
+
+		if (TRUE == valueInvalid)
 		{
+			/* 帧还在来，但值不是有效命令（raw 2/3）。
+			 * 注意 `Rte_Read` 对"对方报 FAULT"返回 E_OK + ERROR，不是
+			 * E_INVALID —— 只看返回值会把"对方明确报无效"漏掉。 */
 			s_faultCmd = TRUE;
-		}
 
-		/* 超时按"有效命令"计时：帧再新鲜，只要值无效/类型不符就不算数 */
-		if (s_sinceValidTicks < LEDBIZ_TIMEOUT_TICKS)
-		{
-			s_sinceValidTicks++;
-		}
+			if (s_sinceValidTicks < LEDBIZ_TIMEOUT_TICKS)
+			{
+				s_sinceValidTicks++;
+			}
 
-		if ((s_sinceValidTicks >= LEDBIZ_TIMEOUT_TICKS) && (TRUE == s_cmdSeen))
-		{
-			if ((TRUE == s_blinking) || (TRUE == s_phaseOn))
+			if ((s_sinceValidTicks >= LEDBIZ_TIMEOUT_TICKS) && (TRUE == s_cmdSeen))
 			{
 				LedBiz_Stop();
+				s_faultTimeout = TRUE;
 			}
-			s_faultTimeout = TRUE;
+		}
+		else
+		{
+			/* 帧本身没了（`MAX_AGE_EXCEEDED` / `NEVER_RECEIVED`）。
+			 * BcmSig 已按 500 ms 判过到达年龄，这里**立即**停 —— 不能再等
+			 * 自己的 50 拍，否则帧停发要 1 s 才停（先等新鲜窗口过期，
+			 * 再等业务计数），实测就是这样多拖了一倍。
+			 *
+			 * 从未收到过命令（上电默认）不算故障：保持"尚未收到命令"。 */
+			if (TRUE == s_cmdSeen)
+			{
+				LedBiz_Stop();
+				s_faultTimeout = TRUE;
+			}
 		}
 	}
 

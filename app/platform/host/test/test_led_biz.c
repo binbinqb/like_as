@@ -181,6 +181,19 @@ int main(void)
 	Check("LED_OUT 只在驱动成功提交时更新（Host 上保持 OFF）",
 	      BcmSig_TxGet(BCM_SIG_LED_OUT) == BCM_SW_STATE_OFF, buf);
 
+	/* ---- 8. 帧完全停发（不是发无效值）：500 ms 后同样要停 ---- */
+	Tick(1u, 1);            /* 先启动闪烁 */
+	Run(1u, 0, 60);         /* 之后 60 拍一帧不到（raw 保持 1，但无到达） */
+	(void)sprintf(buf, "mode=%d phase=%d to=%d",
+	              (int)BcmSig_TxGet(BCM_SIG_LED_RUN_MODE),
+	              (int)BcmSig_TxGet(BCM_SIG_LED_PHASE),
+	              (int)BcmSig_TxGet(BCM_SIG_LED_FAULT_TIMEOUT));
+	Check("停发：500 ms 后停止、置超时故障（age 超时路径）",
+	      (BcmSig_TxGet(BCM_SIG_LED_RUN_MODE) == BCM_SW_STATE_OFF) &&
+	      (BcmSig_TxGet(BCM_SIG_LED_PHASE) == BCM_SW_STATE_OFF) &&
+	      (BcmSig_TxGet(BCM_SIG_LED_FAULT_TIMEOUT) == BCM_SW_STATE_ON),
+	      buf);
+
 	printf("-- led_biz: %s\n", (s_bad == 0) ? "全部通过" : "有失败项");
 	return (s_bad == 0) ? 0 : 1;
 }
