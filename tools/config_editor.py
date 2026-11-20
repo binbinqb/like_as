@@ -207,8 +207,11 @@ def make_schema():
 		props["Class"] = {"type": "string", "default": title}
 		out.append({"title": title, "type": "object", "properties": props})
 		print("  %-6s %3d 个顶层字段  ← %s" % (title, len(props), os.path.relpath(path, ROOT)))
+	# ensure_ascii=True 不是洁癖：上游 `main.py` 用 `open(schemaFile)` 读 schema，
+	# Windows 默认 GBK；schema 里带中文（`_comment` 默认值）会 UnicodeDecodeError。
+	# 落盘转义成 ASCII 后，上游无需改动也能正确解析。
 	with io.open(SCHEMA_PROJECT, "w", encoding="utf-8", newline="\n") as f:
-		json.dump(out, f, ensure_ascii=False, indent=2)
+		json.dump(out, f, ensure_ascii=True, indent=2)
 		f.write("\n")
 	print("schema：%s" % os.path.relpath(SCHEMA_PROJECT, ROOT))
 	return out

@@ -92,7 +92,7 @@
         "properties": {
           "_comment": {
             "type": "string",
-            "default": "应用端口（最小 RTE）。kind=com_tx/com_rx 绑 BcmSig 信号；io_* 绑 io 段的逻辑通道。换项目只改这里，业务代码不动"
+            "default": "\u5e94\u7528\u7aef\u53e3\uff08\u6700\u5c0f RTE\uff09\u3002kind=com_tx/com_rx \u7ed1 BcmSig \u4fe1\u53f7\uff1bio_* \u7ed1 io \u6bb5\u7684\u903b\u8f91\u901a\u9053\u3002\u6362\u9879\u76ee\u53ea\u6539\u8fd9\u91cc\uff0c\u4e1a\u52a1\u4ee3\u7801\u4e0d\u52a8"
           },
           "ports": {
             "type": "array",
@@ -117,7 +117,7 @@
           },
           "_comment_schedule": {
             "type": "string",
-            "default": "应用 runnable 调度表（10.5）。数组顺序 = 同一拍内的执行顺序；period_ms 必须是 10 的倍数。表由 BcmRte.py 生成到 Rte_Schedule.h，由 rte_sched.c 的 Rte_MainFunction() 执行（main.c 10ms 节拍在 EcuM_BswService 之后调用）"
+            "default": "\u5e94\u7528 runnable \u8c03\u5ea6\u8868\uff0810.5\uff09\u3002\u6570\u7ec4\u987a\u5e8f = \u540c\u4e00\u62cd\u5185\u7684\u6267\u884c\u987a\u5e8f\uff1bperiod_ms \u5fc5\u987b\u662f 10 \u7684\u500d\u6570\u3002\u8868\u7531 BcmRte.py \u751f\u6210\u5230 Rte_Schedule.h\uff0c\u7531 rte_sched.c \u7684 Rte_MainFunction() \u6267\u884c\uff08main.c 10ms \u8282\u62cd\u5728 EcuM_BswService \u4e4b\u540e\u8c03\u7528\uff09"
           },
           "schedule": {
             "type": "array",
@@ -143,7 +143,7 @@
         "properties": {
           "_comment": {
             "type": "string",
-            "default": "逻辑 IO 通道（IoHwAb V1.0.1）。source=direct 绑 dioChannels/ADC/PWM；host 仅 Host 测试用；mux 经 selectBuses/devices 选通（当前无实物，故两表为空）"
+            "default": "\u903b\u8f91 IO \u901a\u9053\uff08IoHwAb V1.0.1\uff09\u3002source=direct \u7ed1 dioChannels/ADC/PWM\uff1bhost \u4ec5 Host \u6d4b\u8bd5\u7528\uff1bmux \u7ecf selectBuses/devices \u9009\u901a\uff08\u5f53\u524d\u65e0\u5b9e\u7269\uff0c\u6545\u4e24\u8868\u4e3a\u7a7a\uff09"
           },
           "din": {
             "type": "array",
@@ -214,7 +214,7 @@
                 },
                 "_note": {
                   "type": "string",
-                  "default": "板载电位计 1（ADC0_SE12，slot 0）；mV = raw*3300/4095"
+                  "default": "\u677f\u8f7d\u7535\u4f4d\u8ba1 1\uff08ADC0_SE12\uff0cslot 0\uff09\uff1bmV = raw*3300/4095"
                 },
                 "adcGroup": {
                   "type": "integer",
@@ -255,7 +255,7 @@
                 },
                 "_note": {
                   "type": "string",
-                  "default": "Host 专用：低有效，验证极性在 Core 完成、Adapter 只见电气电平"
+                  "default": "Host \u4e13\u7528\uff1a\u4f4e\u6709\u6548\uff0c\u9a8c\u8bc1\u6781\u6027\u5728 Core \u5b8c\u6210\u3001Adapter \u53ea\u89c1\u7535\u6c14\u7535\u5e73"
                 }
               }
             }
@@ -465,7 +465,7 @@
                   },
                   "note": {
                     "type": "string",
-                    "default": "NM 发送：与 mb12 同一 ID，方向不同（FlexCAN 邮箱方向配置期定死）。int 必须为 true：发送完成中断是 s_txPending 的唯一释放点，关掉会让首帧之后永久 CAN_BUSY。"
+                    "default": "NM \u53d1\u9001\uff1a\u4e0e mb12 \u540c\u4e00 ID\uff0c\u65b9\u5411\u4e0d\u540c\uff08FlexCAN \u90ae\u7bb1\u65b9\u5411\u914d\u7f6e\u671f\u5b9a\u6b7b\uff09\u3002int \u5fc5\u987b\u4e3a true\uff1a\u53d1\u9001\u5b8c\u6210\u4e2d\u65ad\u662f s_txPending \u7684\u552f\u4e00\u91ca\u653e\u70b9\uff0c\u5173\u6389\u4f1a\u8ba9\u9996\u5e27\u4e4b\u540e\u6c38\u4e45 CAN_BUSY\u3002"
                   },
                   "pf": {
                     "type": "string",
@@ -481,7 +481,7 @@
         "type": "array",
         "items": {
           "type": "string",
-          "default": "PDU 编号起点不在这里：CanIf 的在 CanIf.json 的 rxPduIdBase，PduR 的在文件开头的 pdurIdBase。",
+          "default": "PDU \u7f16\u53f7\u8d77\u70b9\u4e0d\u5728\u8fd9\u91cc\uff1aCanIf \u7684\u5728 CanIf.json \u7684 rxPduIdBase\uff0cPduR \u7684\u5728\u6587\u4ef6\u5f00\u5934\u7684 pdurIdBase\u3002",
           "title": "Item"
         }
       },
@@ -726,7 +726,7 @@
                       },
                       "note": {
                         "type": "string",
-                        "default": "0x200 信号测试帧（M10）"
+                        "default": "0x200 \u4fe1\u53f7\u6d4b\u8bd5\u5e27\uff08M10\uff09"
                       }
                     }
                   }
@@ -747,7 +747,7 @@
                       },
                       "note": {
                         "type": "string",
-                        "default": "0x201 信号测试帧（M10）"
+                        "default": "0x201 \u4fe1\u53f7\u6d4b\u8bd5\u5e27\uff08M10\uff09"
                       }
                     }
                   }
