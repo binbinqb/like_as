@@ -142,10 +142,26 @@ def main():
 
 	bus = Bus()
 	try:
+		# ---- 0. 镜像/RX 探测：发无效命令（raw 2），看故障位 ----
+		# 判据矩阵：
+		#   fault_cmd=1            → 10.6 镜像 + CAN1 通路正常
+		#   mode=3 且 fault_cmd=0  → 10.6 镜像，但控制帧没进 Com（查 bcm rx）
+		#   mode=0/1 且 fault_cmd=0 → 疑似旧镜像（或 LedBiz 未执行）
+		f = bus.pump(2, 0.5, collect=True)
+		probe_cmd = last(f, "fault_cmd")
+		probe_mode = last(f, "mode")
+		check("镜像探测：无效命令置故障位（10.6 镜像且 CAN1 通）",
+		      probe_cmd == 1,
+		      "fault_cmd=%s mode=%s｜若 mode=3 说明镜像新但控制帧没进 Com"
+		      "（板上跑 `bcm rx` 看 age）；若 mode=0/1 说明可能是旧镜像"
+		      % (probe_cmd, probe_mode))
+		bus.pump(0, 0.3, collect=False)   # 清探测留下的故障位
+
 		# ---- 1. 启动 + 闪烁时序 ----
 		f = bus.pump(1, 1.6, collect=True)
 		check("启动后收到 CAN0 0x200 状态帧", len(f) >= 5, "帧数=%d" % len(f))
-		check("启动：模式=闪烁(1)", last(f, "mode") == 1, "mode=%s" % last(f, "mode"))
+		check("启动：模式=闪烁(1)", last(f, "mode") == 1,
+		      "mode=%s（0=停止/1=闪烁/3=未收到）" % last(f, "mode"))
 		edges = phase_edges(f)
 		check("闪烁：出现相位跳变", len(edges) >= 1, "跳变=%s" % edges)
 		if len(edges) >= 2:

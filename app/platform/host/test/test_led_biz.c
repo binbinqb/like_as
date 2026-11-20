@@ -98,6 +98,12 @@ int main(void)
 	      (BcmSig_TxGet(BCM_SIG_LED_FAULT_CMD) == BCM_SW_STATE_OFF),
 	      buf);
 
+	/* 同时验证**总线上实际发出的 raw**：新镜像上电第一帧 RunMode 必须是 3，
+	 * 不是 0。上板时若读回 0，说明跑的还是旧镜像（或 LedBiz 未执行）。 */
+	(void)sprintf(buf, "raw=%u", (unsigned)HostCom_GetTx((Com_SignalIdType)COM_SID_LedRunMode));
+	Check("上电默认：0x200 的 RunMode raw=3（尚未收到命令）",
+	      HostCom_GetTx((Com_SignalIdType)COM_SID_LedRunMode) == 3u, buf);
+
 	/* ---- 2. 启动闪烁：立刻亮相，500 ms 后翻灭相 ---- */
 	Tick(1u, 1);
 	(void)sprintf(buf, "mode=%d phase=%d", (int)BcmSig_TxGet(BCM_SIG_LED_RUN_MODE),
